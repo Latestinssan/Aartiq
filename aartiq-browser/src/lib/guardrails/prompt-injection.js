@@ -236,7 +236,7 @@ class PromptInjectionGuard {
             sanitized: normalized,
             triggeredLayer,
         };
-        if (action === 'quarantine') {
+        if (action === 'quarantine' || action === 'block') {
             verdict.quarantineToken = `<<CONTENT_WITHHELD: prompt-injection-risk score=${overall.toFixed(2)}>>`;
         }
         return verdict;
