@@ -11,7 +11,10 @@
     "docs:sync": "node scripts/sync-docs.ts",
     "docs:check": "node scripts/check-docs.ts",
     "docs:test": "node scripts/test-check-docs.ts",
-    "docs:refresh": "npm run docs:facts && npm run docs:sync && npm run docs:check && npm run docs:test"
+    "docs:refresh": "npm run docs:facts && npm run docs:sync && npm run docs:check && npm run docs:test",
+    "version:sync": "node scripts/sync-version.ts",
+    "version:check": "node scripts/sync-version.ts --check",
+    "version:set": "node scripts/sync-version.ts set"
   },
   "engines": {
     "node": ">=22.6"

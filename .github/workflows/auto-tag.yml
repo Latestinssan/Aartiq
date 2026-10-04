@@ -23,6 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify version files are in sync
+        # One tag covers both the desktop and mobile apps, but each has its own
+        # version file. auto-tag.yml derives the tag from package.json, so if
+        # pubspec.yaml has drifted the Flutter app would ship a stale versionName
+        # (and a frozen versionCode, which Play rejects on re-upload).
+        run: node scripts/sync-version.ts --check
+
       - name: Get package.json version and find next available tag
         id: version
         run: |
