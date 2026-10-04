@@ -246,7 +246,7 @@ Two of these bind all interfaces by default with no switch to restrict them. If 
 - The session token is per-process, so it changes on every restart. A client configured once — a phone, another machine, a scheduled job — has to be reconfigured, and remote mode is not a finished design because of it.
 - The token has to travel in the mcp-remote URL, because mcp-remote accepts a bare URL and nothing else. It can therefore appear in a process argument list and in a client's own logs. See aartiq-browser/docs-audit/issues/pairing-token-in-url.md.
 - "Allow Always" is keyed on the full normalised command line, which is narrower than before but is still text matching, and a permanent grant has no lifetime. See aartiq-browser/docs-audit/issues/allow-always-granularity.md.
-- A permanent grant is withheld for a fixed deny-list of network-capable, script-capable and destructive binaries. An unrecognised binary is not on that list, so it can still take an exact-match grant even though its tier is medium only because nothing is known about it.
+- A permanent grant requires a binary that appears in the classifier's table. One that does not — including anything we have never seen — is offered Allow Once only, because a grant that repeats a command nobody can describe is a promise about behaviour rather than about the text. Local writes such as cp, mv, mkdir and touch are in the table and keep exact-match permanent grants.
 - The native bridge and the Agent API are both configured for port 46203. If both start, one fails to bind and the error is logged and swallowed, so it is not visible which one is answering. TODO(verify) — inferred from call order, not observed at runtime.
 <!-- SSOT:END known-limits -->
 
