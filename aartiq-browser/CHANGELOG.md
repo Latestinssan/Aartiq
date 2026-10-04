@@ -1,8 +1,6 @@
 # Aartiq Browser - Recent Changes
 
-## Unreleased — Local listener authentication and shell approval defaults
-
-Not yet tagged. The version number is the maintainer's to choose.
+## Version 0.3.8 — Local listener authentication and shell approval defaults
 
 ### Security
 
@@ -30,16 +28,24 @@ Not yet tagged. The version number is the maintainer's to choose.
 #### "Allow Always" scope
 - Permanent grants were keyed on the first word, so one answer authorised every later invocation of that binary. Grants are now keyed on the whole command line.
 - Permanent grants are no longer offered for network-capable, script-capable and destructive commands, or for anything with a URL in its arguments. Allow Once is always available.
-- Existing grants migrate on first load: eligible ones are kept and narrowed to the exact command line; network-capable, script-capable and destructive ones are dropped with an audit-log entry.
+- Eligibility is an allow-list: a permanent grant requires a binary present in the classifier's table, so an unclassified command is offered Allow Once only. Such a command is `medium` precisely because nothing is known about it. `cp`, `mv`, `mkdir` and `touch` keep exact-match permanent grants.
+- Existing grants migrate on first load: eligible ones are kept and narrowed to the exact command line; network-capable, script-capable and destructive ones are dropped with an audit-log entry, as are grants for unrecognised binaries.
+
+#### Token header accepted by the shipped clients
+- The native macOS bridge and the CLI send `X-Aartiq-Native-Token`. The first cut of the gate did not read that header, so every native-bridge request was answered with 401 after upgrade. It is accepted now, alongside `Authorization: Bearer`, `X-Aartiq-Token` and `?token=`.
+- The header list is pinned by a test that reads the shipped clients rather than a copy of their header, so a client that changes what it sends fails the suite instead of the app.
+
+### Documentation
+- The risk tier table, test counts and live repository figures published by the docs generator are now read from the same source files the runtime reads, and `npm run docs:check` fails when a published number or a security claim disagrees with the code. The gate is not yet wired into a workflow, so it only protects a commit when someone runs it.
 
 ### Behaviour changes users may notice
 - The Claude Desktop config now carries the session token in the `mcp-remote` URL, because `mcp-remote` accepts a bare URL and nothing else. The token changes on every Aartiq start, so a config written by an earlier version is answered with 401 until Auto-Configure is run again.
 
 ### Testing
-- `tests/local-server-auth.test.js` (41 cases, real sockets), `tests/shell-command-tiers.test.js` (189 cases), `tests/shell-approval-defaults.test.js` (55 cases).
+- `tests/local-server-auth.test.js` (44 cases, real sockets), `tests/shell-command-tiers.test.js` (193 cases), `tests/shell-approval-defaults.test.js` (61 cases).
 
 Full detail, including what was deliberately left unfixed, is in
-`release_notes/UNRELEASED.md` and `aartiq-browser/docs-audit/security-defaults-verification.md`.
+`release_notes/v0.3.8.md` and `aartiq-browser/docs-audit/security-defaults-verification.md`.
 
 ## Version 0.3.7 — Windows AppContainer OS-Level Sandboxing
 
