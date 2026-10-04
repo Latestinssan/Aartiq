@@ -207,6 +207,12 @@ describe('SnapshotManager: single-page search', () => {
     expect(hits[0].href).toBe('/pricing');
     expect(hits[0].field).toBe('name');
     expect(hits[0].context).toContain('Pricing');
+
+    // The hit must be one the caller can actually act on: the ref resolves.
+    const manager = new SnapshotManager();
+    buildSnapshot(manager, makePage());
+    const resolved = manager.resolveRef(hits[0].ref);
+    expect(resolved.axId).toBeTruthy();
   });
 
   it('still reaches matches nested inside a non-actionable ancestor', () => {
@@ -214,6 +220,15 @@ describe('SnapshotManager: single-page search', () => {
     // below <nav>, which matches the query but has no element handle.
     const hits = searched({ actionableOnly: true, role: 'link' });
     expect(hits.map((h) => h.href)).toEqual(['/pricing']);
+  });
+
+  it('records an actionable descendant even when its ancestor matches first', () => {
+    // The recording order is document order, so an unfiltered search sees <nav>
+    // before the link inside it. Both are hits; only one can be actuated.
+    const hits = searched({ actionableOnly: false });
+    expect(hits.length).toBeGreaterThan(1);
+    expect(hits.some((h) => h.role === 'nav')).toBe(true);
+    expect(hits.some((h) => h.href === '/pricing')).toBe(true);
   });
 
   it('matches case-insensitively', () => {

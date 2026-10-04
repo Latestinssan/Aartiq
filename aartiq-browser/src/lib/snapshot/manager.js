@@ -108,9 +108,16 @@ class SnapshotManager {
                 selector: raw.selector,
                 children: [],
             };
-            const children = (raw.children ?? [])
-                .map((c) => visit(c, depth + 1))
-                .filter((c) => c !== null);
+            // Depth is checked *before* recursing, so `depth: n` yields levels 0..n and
+            // nothing deeper. Pruning afterwards would still walk the whole subtree —
+            // paying the node budget and minting refs the caller never receives, which
+            // is exactly the cost `depth` exists to avoid.
+            const atLimit = options.depth != null && depth >= options.depth;
+            const children = atLimit
+                ? []
+                : (raw.children ?? [])
+                    .map((c) => visit(c, depth + 1))
+                    .filter((c) => c !== null);
             // Compact: drop empty structural nodes (no name, no interactive children).
             const hasContent = node.name || interactive || children.some((c) => c.interactive || c.name);
             if (options.compact && !hasContent && !interactive) {
@@ -120,9 +127,6 @@ class SnapshotManager {
             }
             else {
                 node.children = children;
-            }
-            if (options.depth != null && depth > options.depth) {
-                node.children = [];
             }
             if (options.interactiveOnly && !interactive && node.children.length === 0) {
                 return null;

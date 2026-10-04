@@ -81,8 +81,19 @@ export class InProcessBridge implements Bridge {
     }
   }
 
+  /** Methods that cannot do anything useful without a live page. */
+  private static readonly NEEDS_PAGE = new Set([
+    'snapshot', 'clickRef', 'fillRef', 'typeRef', 'elementAction', 'fillForm', 'formSubmit',
+    'navigate', 'getPageText', 'listTabs', 'pageSearchText', 'domQuery',
+  ]);
+
   async call(method: string, args: any = {}): Promise<any> {
     const pa = this.deps.pageAdapter;
+    // Check the adapter before touching refs, so a misconfigured build reports
+    // the real problem instead of blaming the caller's ref.
+    if (InProcessBridge.NEEDS_PAGE.has(method) && !pa) {
+      throw new Error('No page adapter configured.');
+    }
     switch (method) {
       case 'snapshot': {
         if (!pa) throw new Error('No page adapter configured.');

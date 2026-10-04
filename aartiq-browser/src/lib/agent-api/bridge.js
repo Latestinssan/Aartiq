@@ -51,6 +51,11 @@ class InProcessBridge {
     }
     async call(method, args = {}) {
         const pa = this.deps.pageAdapter;
+        // Check the adapter before touching refs, so a misconfigured build reports
+        // the real problem instead of blaming the caller's ref.
+        if (InProcessBridge.NEEDS_PAGE.has(method) && !pa) {
+            throw new Error('No page adapter configured.');
+        }
         switch (method) {
             case 'snapshot': {
                 if (!pa)
@@ -172,6 +177,11 @@ class InProcessBridge {
     }
 }
 exports.InProcessBridge = InProcessBridge;
+/** Methods that cannot do anything useful without a live page. */
+InProcessBridge.NEEDS_PAGE = new Set([
+    'snapshot', 'clickRef', 'fillRef', 'typeRef', 'elementAction', 'fillForm', 'formSubmit',
+    'navigate', 'getPageText', 'listTabs', 'pageSearchText', 'domQuery',
+]);
 /** Build a Bridge from a plain HTTP client (remote agent over Tailscale/LAN). */
 function createRemoteBridge(baseUrl, fetchImpl) {
     return {
