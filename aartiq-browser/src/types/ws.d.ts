@@ -3,7 +3,7 @@ declare module 'ws' {
         constructor(address: string, protocols?: string | string[]);
         on(event: string, callback: (...args: any[]) => void): void;
         send(data: string): void;
-        close(): void;
+        close(code?: number, data?: string | Buffer): void;
         readyState: number;
         static OPEN: number;
     }
