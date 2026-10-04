@@ -361,3 +361,51 @@ describe('searchNewsDetailed: dates only when they are real', () => {
     expect(JSON.parse(calls[0].opts.body).max_results).toBe(20);
   });
 });
+
+describe('DuckDuckGo HTML fixture (BUG: search kept only one result)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', 'duckduckgo-results.html'), 'utf8');
+
+  const EXPECTED_URLS = [
+    'https://www.wsj.com/news/live-news',
+    'https://apnews.com/hub/latest-news',
+    'https://www.reuters.com/world/',
+    'https://www.bbc.com/news',
+    'https://www.cnn.com/',
+    'https://www.theguardian.com/world',
+    'https://www.npr.org/sections/news/',
+    'https://www.aljazeera.com/news/',
+    'https://www.theverge.com/tech',
+    'https://www.foxnews.com/news',
+  ];
+
+  it('keeps all ten results parsed from a DuckDuckGo results page', async () => {
+    withFetch(html(fixture));
+    const results = await new WebSearchProvider().search('latest news', 'duckduckgo', 10);
+
+    // Nothing — no date filter, no domain filter, no dedupe — may drop a
+    // parsed result: a one-entry result list made every summary dishonest.
+    expect(results).toHaveLength(10);
+    expect(results.map((r) => r.url)).toEqual(EXPECTED_URLS);
+  });
+
+  it('decodes the uddg redirect and cleans markup out of title and snippet', async () => {
+    withFetch(html(fixture));
+    const [first, , , fourth] = await new WebSearchProvider().search('latest news', 'duckduckgo', 10);
+
+    expect(first.url.startsWith('https://duckduckgo.com/')).toBe(false);
+    expect(first.title).toBe('WSJ Archive: Latest News and Analysis');
+    expect(fourth.title).toBe('BBC News - Home');
+    expect(fourth.title).not.toContain('<b>');
+  });
+
+  it('pairs each result with its own snippet', async () => {
+    withFetch(html(fixture));
+    const results = await new WebSearchProvider().search('latest news', 'duckduckgo', 10);
+
+    expect(results[1].snippet).toContain('breaking news');
+    expect(results[1].snippet).not.toContain('<b>');
+    expect(results.every((r) => r.snippet.length > 0)).toBe(true);
+  });
+});

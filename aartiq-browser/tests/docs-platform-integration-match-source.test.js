@@ -23,10 +23,11 @@
  *   - the protocol scheme is registered but never delivered, because the
  *     handler that would receive a URL is imported and never called;
  *   - the two IPC bridges are internally consistent — every channel the preload
- *     invokes has a handler — with one exception that is an exception in the
- *     other direction, on Linux, described below;
- *   - five Linux bridge channels are registered twice, once by the module and
- *     once by main.js.
+ *     invokes has a handler;
+ *   - on Linux, five channels were registered twice, once by the module and
+ *     once by main.js, which threw during startup; the module's copies are
+ *     gone and this suite asserts the fixed state — no name in both files,
+ *     the page's duplicate list empty, the orphan list unchanged.
  *
  * Findings this suite has already produced, recorded here because they are the
  * reason some assertions are shaped the way they are:
@@ -397,7 +398,9 @@ describe('the IPC bridges have no missing channels', () => {
   });
 
   test('main.js registers no Windows bridge channel of its own', () => {
-    // This is why Windows has no duplicate-registration problem and Linux does.
+    // Windows registers each channel exactly once because main.js contributes
+    // none of them. Linux's equivalent — module and main.js sharing names — is
+    // asserted below as an empty set.
     expect(moduleHandles(MAIN_JS, 'windows')).toEqual([]);
   });
 
@@ -417,41 +420,41 @@ describe('the IPC bridges have no missing channels', () => {
   });
 });
 
-/** The page's own DUPLICATE_HANDLERS array, parsed rather than merely searched for. */
-const docsDuplicateList = (source) => {
-  const start = source.indexOf('const DUPLICATE_HANDLERS = [');
-  return [
-    ...source
-      .slice(start, source.indexOf('];', start))
-      .matchAll(/"([^"]+)"/g),
-  ].map((m) => m[1]);
+/**
+ * The page's own array literal named `name`, parsed rather than merely
+ * searched for. The pattern tolerates a TypeScript annotation between the
+ * name and the bracket (`const DUPLICATE_HANDLERS: string[] = []`) — an exact
+ * `const NAME = [` search missed the annotated declaration and read an empty
+ * list off a broken parse. Returns null when the declaration is gone at all:
+ * an empty array and a deleted array must not look alike, because the page
+ * renders both lists on purpose so the gate can assert their contents.
+ */
+const docsArray = (source, name) => {
+  const match = source.match(new RegExp(`const ${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`));
+  return match ? [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : null;
 };
+
+/** The page's own DUPLICATE_HANDLERS array. */
+const docsDuplicateList = (source) => docsArray(source, 'DUPLICATE_HANDLERS');
 
 /** The page's ORPHAN_HANDLERS array. */
-const docsOrphanList = (source) => {
-  const start = source.indexOf('const ORPHAN_HANDLERS = [');
-  return [
-    ...source
-      .slice(start, source.indexOf('];', start))
-      .matchAll(/"([^"]+)"/g),
-  ].map((m) => m[1]);
-};
+const docsOrphanList = (source) => docsArray(source, 'ORPHAN_HANDLERS');
 
-describe('five Linux bridge channels are registered twice', () => {
+describe('Linux bridge channels are each registered exactly once', () => {
   const handledIn = (source) =>
     new Set([...source.matchAll(/ipcMain\.handle\('(linux:[^']+)'/g)].map((m) => m[1]));
 
   const duplicates = [...handledIn(LINUX_JS)].filter((c) => handledIn(MAIN_JS).has(c)).sort();
   const orphans = [...handledIn(LINUX_JS)].filter((c) => !handledIn(MAIN_JS).has(c)).sort();
 
-  test('the overlap is exactly the five channels the page lists', () => {
-    expect(duplicates).toEqual([
-      'linux:create-launcher',
-      'linux:create-shortcut',
-      'linux:install-gnome-shortcut',
-      'linux:notify',
-      'linux:register-protocol',
-    ]);
+  test('the module and main.js register no channel in common', () => {
+    // This overlap was the Linux startup crash: the module registered these
+    // names first, from inside setupLinuxIPCHandlers(), and main.js then
+    // registered them again at module scope. ipcMain.handle throws on the
+    // second registration, the call was not wrapped, and it ran before the
+    // window was created. The module's copies are gone; an overlap of any
+    // size — not just the old five — fails here.
+    expect({ duplicates }).toEqual({ duplicates: [] });
   });
 
   test('the module also registers five channels nothing invokes', () => {
@@ -464,46 +467,58 @@ describe('five Linux bridge channels are registered twice', () => {
     ]);
   });
 
-  test('the module is set up before main.js registers its own, so the second call throws', () => {
+  test('the setup call stays inside the Linux guard and the kept copies carry the platform guard', () => {
     const moduleSetup = MAIN_JS.indexOf('setupLinuxIPCHandlers()');
-    const mainRegistration = MAIN_JS.indexOf("ipcMain.handle('linux:notify'");
-    expect({ moduleSetup, mainRegistration, moduleFirst: moduleSetup < mainRegistration }).toEqual({
-      moduleSetup,
-      mainRegistration,
-      moduleFirst: true,
-    });
-    // The module call is inside the Linux-only guard, which is why the defect is
-    // invisible on the other two platforms.
+    // The module's five names exist on Linux only, because the call is guarded.
     expect(MAIN_JS.slice(Math.max(0, moduleSetup - 120), moduleSetup)).toMatch(
       /platform === 'linux'/
     );
+    // The five names main.js kept — the ones the module used to register too —
+    // are the copies that answer { error: 'Not Linux' } on the other two
+    // platforms. That is the stated reason main.js's copies were kept rather
+    // than the module's, so the guard is pinned here with the claim.
+    for (const channel of [
+      'linux:create-launcher',
+      'linux:create-shortcut',
+      'linux:install-gnome-shortcut',
+      'linux:notify',
+      'linux:register-protocol',
+    ]) {
+      const at = MAIN_JS.indexOf(`ipcMain.handle('${channel}'`);
+      const end = MAIN_JS.indexOf('});', at);
+      const guarded = at !== -1 && /process\.platform !== 'linux'/.test(MAIN_JS.slice(at, end));
+      expect({ channel, guarded }).toEqual({ channel, guarded: true });
+    }
   });
 
-  test('the duplicate registration is not wrapped in a try', () => {
-    const at = MAIN_JS.indexOf("ipcMain.handle('linux:notify'");
-    const before = MAIN_JS.slice(at - 200, at);
-    expect({ precedingTry: /\btry\s*\{/.test(before) }).toEqual({ precedingTry: false });
-  });
-
-  test('the Linux page reports all of it', () => {
+  test('the Linux page reports the fix', () => {
     const text = live(LINUX_DOCS);
-    expect(text).toMatch(/registers five channels a second time/);
+    expect(text).toMatch(/The Linux startup crash is fixed/);
+    expect(text).toMatch(/Each channel is now registered exactly once/);
+    expect(text).toMatch(/registered again at module scope/);
     expect(text).toMatch(/never invoked/);
-    expect(text).toMatch(/Attempted to register a second handler/);
   });
 
   test("the page's duplicate list is the derived set, not a subset of it", () => {
-    // An earlier version of this test only required the page to *contain* each
-    // derived name. That passed even with a channel deleted from the list,
-    // because every duplicated channel is also named in the bridge table. The
-    // lists are now compared as sets.
-    expect({ published: docsDuplicateList(LINUX_DOCS).sort() }).toEqual({
+    // The lists are compared as sets, and the declaration itself must exist:
+    // an earlier version only required the page to *contain* each derived
+    // name, which passed even with a channel deleted from the list, because
+    // every duplicated channel is also named in the bridge table. A null here
+    // means the array was deleted rather than emptied, which the page avoids
+    // precisely so this assertion can pin the emptiness.
+    const published = docsDuplicateList(LINUX_DOCS);
+    expect({ present: published !== null, published: published?.slice().sort() }).toEqual({
+      present: true,
       published: duplicates,
     });
   });
 
   test("the page's orphan list is the derived set", () => {
-    expect({ published: docsOrphanList(LINUX_DOCS).sort() }).toEqual({ published: orphans });
+    const published = docsOrphanList(LINUX_DOCS);
+    expect({ present: published !== null, published: published?.slice().sort() }).toEqual({
+      present: true,
+      published: orphans,
+    });
   });
 });
 

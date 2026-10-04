@@ -43,7 +43,10 @@ async function executeCommand(command, args = []) {
   });
 }
 
-async function executeDBus(method, interface, object, params = []) {
+// `iface`, not `interface`: `interface` is a reserved word in strict mode,
+// which rejects this module under strict-mode parsers even though Node's
+// CommonJS loader accepts it.
+async function executeDBus(method, iface, object, params = []) {
   const desktop = await detectDesktop();
   if (desktop !== 'gnome' && desktop !== 'kde') {
     return { success: false, message: 'D-Bus not available' };
@@ -51,7 +54,7 @@ async function executeDBus(method, interface, object, params = []) {
 
   try {
     const paramStr = params.map(p => `"${p}"`).join(' ');
-    const cmd = `gdbus call --session --dest ${interface} --object-path ${object} --method ${interface}.${method} ${paramStr}`;
+    const cmd = `gdbus call --session --dest ${iface} --object-path ${object} --method ${iface}.${method} ${paramStr}`;
     const result = await executeCommand(cmd);
     return { success: true, result };
   } catch (error) {
@@ -403,12 +406,16 @@ MimeType=x-scheme-handler/aartiq;
 }
 
 function setupLinuxIPCHandlers() {
+  // Only the module's own channel names live here. Five more were registered
+  // here and again by main.js at module scope — linux:register-protocol,
+  // linux:create-shortcut, linux:install-gnome-shortcut, linux:create-launcher
+  // and linux:notify. ipcMain.handle throws on a second registration for the
+  // same channel, this call runs at startup inside the Linux guard, and the
+  // throw was not wrapped: on Linux the main process died before the window
+  // was created. main.js's copies are the ones kept, because they carry the
+  // `process.platform !== 'linux'` guard the renderer relies on elsewhere.
   ipcMain.handle('linux:get-desktop', async () => {
     return await detectDesktop();
-  });
-  
-  ipcMain.handle('linux:register-protocol', async () => {
-    return await registerLinuxProtocol();
   });
   
   ipcMain.handle('linux:shortcut-action', async (event, action, params) => {
@@ -425,22 +432,6 @@ function setupLinuxIPCHandlers() {
   
   ipcMain.handle('linux:start-voice', async (event, options) => {
     return await startVoiceRecognition(options);
-  });
-  
-  ipcMain.handle('linux:create-shortcut', async (event, name, action, params) => {
-    return await createLinuxShortcut(name, action, params);
-  });
-  
-  ipcMain.handle('linux:install-gnome-shortcut', async (event, name, action, params) => {
-    return await installGNOMEShortcut(name, action, params);
-  });
-  
-  ipcMain.handle('linux:create-launcher', async () => {
-    return await createDesktopLauncher();
-  });
-  
-  ipcMain.handle('linux:notify', async (event, title, body, options) => {
-    return await showDesktopNotification(title, body, options);
   });
   
   console.log('[Linux] IPC handlers registered');

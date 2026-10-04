@@ -27,4 +27,24 @@ describe('ApprovalGate', () => {
       expect(failures).toBe(1);
     });
   });
+
+  describe('one-time consumption', () => {
+    it('rejects a serial replay after a successful consumption', async () => {
+      const ticketId = await gate.createTicket('TEST_ACTION', { value: 1 });
+      const first = await gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 1 });
+      const second = await gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 1 });
+
+      expect(first).toEqual({ valid: true });
+      expect(second.valid).toBe(false);
+    });
+
+    it('burns the ticket when the input does not match, so the correct input cannot retry it', async () => {
+      const ticketId = await gate.createTicket('TEST_ACTION', { value: 1 });
+      const tampered = await gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 2 });
+      const retried = await gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 1 });
+
+      expect(tampered).toEqual({ valid: false, error: ERRORS.APPROVAL_SCOPE_MISMATCH });
+      expect(retried.valid).toBe(false);
+    });
+  });
 });

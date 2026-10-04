@@ -1395,9 +1395,12 @@ class BrowserMcpServer {
     return extractFromHtml(html, 'about:blank', { maxChars, useReadability: true });
   }
 
-  async _browserSearch(query, engine, count) {
+  async _browserSearch(query, engine, count, readCount) {
     engine = engine || 'duckduckgo';
     count = count || 3;
+    // `count` = results to keep; `readCount` = how many of them to open and read.
+    // Defaults to reading every kept result, which is what the MCP tool expects.
+    const pagesToRead = Math.max(0, Math.min(readCount == null ? count : readCount, count));
     const { view } = this._getSearchView();
     let usedEngine = engine;
 
@@ -1425,6 +1428,18 @@ class BrowserMcpServer {
 
     for (let i = 0; i < topResults.length; i++) {
       const result = topResults[i];
+      // Keep the result in the list even when its page is not opened, so a
+      // caller gets every parsed hit instead of just the ones we read.
+      if (i >= pagesToRead) {
+        results.push({
+          index: i + 1,
+          title: result.title,
+          url: result.url,
+          snippet: result.snippet,
+          content: '',
+        });
+        continue;
+      }
       try {
         await view.loadURL(result.url);
         await new Promise(resolve => setTimeout(resolve, 1500));

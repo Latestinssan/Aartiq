@@ -115,7 +115,18 @@ module.exports = function registerSystemHandlers(ipcMain, handlers) {
 
   ipcMain.handle('show-item-in-folder', async (event, filePath) => {
     const { shell } = require('electron');
-    try { shell.showItemInFolder(filePath); return { success: true }; }
+    try {
+      // Chat messages use home-relative paths (`~/Documents/report.pdf`);
+      // shell.showItemInFolder does not expand `~`, so resolve it here.
+      let resolved = String(filePath);
+      if (resolved === '~') {
+        resolved = require('os').homedir();
+      } else if (resolved.startsWith('~/') || resolved.startsWith('~\\')) {
+        resolved = require('os').homedir() + resolved.slice(1);
+      }
+      shell.showItemInFolder(resolved);
+      return { success: true };
+    }
     catch (e) { return { success: false, error: e.message }; }
   });
 

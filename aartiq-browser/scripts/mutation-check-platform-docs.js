@@ -94,16 +94,25 @@ const MUTATIONS = [
     label: 'remove the Linux duplicate-registration section',
     file: 'linuxDocs',
     apply: (s) => {
-      const start = s.indexOf('{/* The duplicate registration */}');
+      const start = s.indexOf('{/* The duplicate registration, now fixed */}');
       const end = s.indexOf('{/* Desktop entries */}', start);
       if (start === -1 || end === -1) throw new Error('section markers not found');
       return s.slice(0, start) + s.slice(end);
     },
   },
   {
-    label: 'drop one duplicated channel from the Linux page list',
+    label: 'publish a Linux duplicate that no longer exists',
+    // The list is empty now, so the drift to catch is the other direction:
+    // a channel claimed as duplicated that the source registers once. The
+    // suite compares the parsed list against the derived set.
     file: 'linuxDocs',
-    apply: (s) => once(s, /  "linux:notify",\n/, '', 'DUPLICATE_HANDLERS entry'),
+    apply: (s) =>
+      once(
+        s,
+        /const DUPLICATE_HANDLERS: string\[\] = \[\];/,
+        'const DUPLICATE_HANDLERS: string[] = ["linux:notify"];',
+        'empty DUPLICATE_HANDLERS'
+      ),
   },
   {
     label: 're-claim that Linux bridge methods have no handler',
@@ -156,14 +165,17 @@ const MUTATIONS = [
       ),
   },
   {
-    label: 'remove a duplicated Linux channel from the module',
+    label: 're-register a Linux bridge channel from the module again',
+    // The crash this suite exists to prevent: a channel main.js already
+    // registers, registered once more from setupLinuxIPCHandlers(). The
+    // suite derives the intersection of the two files and requires it empty.
     file: 'linuxJs',
     apply: (s) =>
       once(
         s,
-        /  ipcMain\.handle\('linux:notify',[\s\S]*?\n  \}\);\n/,
-        '',
-        'module linux:notify handler'
+        /function setupLinuxIPCHandlers\(\) \{\n/,
+        "function setupLinuxIPCHandlers() {\n  ipcMain.handle('linux:notify', async (event, title, body, options) => {\n    return await showDesktopNotification(title, body, options);\n  });\n",
+        'setupLinuxIPCHandlers entry'
       ),
   },
   {

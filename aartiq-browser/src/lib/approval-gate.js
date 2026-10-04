@@ -35,6 +35,11 @@ function canonicalJSON(obj) {
 const tickets = new Map();
 const consumedTickets = new Set();
 const MAX_TICKETS = 500;
+// Ticket ids must be unique across every ApprovalGate instance: the stores
+// above are module-global, so a per-instance counter let two gates created in
+// the same millisecond mint the same id — one gate's ticket would then read
+// as consumed because the other gate consumed its namesake.
+let ticketCounter = 0;
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -87,7 +92,7 @@ class ApprovalGate {
     const hashInput = `${actionType}:${inputStr}`;
     const inputHash = await sha256(hashInput);
 
-    const ticketId = `ticket-${++this.ticketCounter}-${Date.now()}`;
+    const ticketId = `ticket-${++ticketCounter}-${Date.now()}`;
     const ticket = new ApprovalTicket(ticketId, actionType, inputHash, context);
 
     tickets.set(ticketId, ticket);
@@ -114,7 +119,7 @@ class ApprovalGate {
       return { valid: false, error: ERRORS.APPROVAL_INVALID };
     }
 
-    if (consumedTickets.has(ticketId)) {
+    if (ticket.consumed || consumedTickets.has(ticketId)) {
       return { valid: false, error: ERRORS.APPROVAL_INVALID };
     }
 
@@ -128,18 +133,28 @@ class ApprovalGate {
       return { valid: false, error: ERRORS.APPROVAL_SCOPE_MISMATCH };
     }
 
+    // Claim the ticket before the first await. This method used to verify the
+    // input hash first and only mark the ticket consumed afterwards, so two
+    // callers started together (Promise.all) both passed every check above
+    // before either resumed, and both returned { valid: true } — replaying a
+    // one-time ticket. JS runs this claim synchronously, so exactly one caller
+    // can own the ticket; a concurrent second caller sees ticket.consumed and
+    // is rejected by the check above.
+    ticket.consumed = true;
+
     // Verify input hash matches
     const inputStr = typeof input === 'object' ? canonicalJSON(input) : String(input);
     const hashInput = `${actionType}:${inputStr}`;
     const inputHash = await sha256(hashInput);
 
     if (inputHash !== ticket.inputHash) {
+      // Tampered input: burn the ticket. It was already claimed above and the
+      // delete below makes it unusable either way (fail closed).
       tickets.delete(ticketId);
       return { valid: false, error: ERRORS.APPROVAL_SCOPE_MISMATCH };
     }
 
-    // Mark consumed (one-time use)
-    ticket.consumed = true;
+    // Finalize the one-time consumption.
     consumedTickets.add(ticketId);
     tickets.delete(ticketId);
 
@@ -152,7 +167,11 @@ class ApprovalGate {
   async peekTicket(ticketId, actionType, input) {
     const ticket = tickets.get(ticketId);
     if (!ticket) return { valid: false, error: ERRORS.APPROVAL_INVALID };
-    if (consumedTickets.has(ticketId)) return { valid: false, error: ERRORS.APPROVAL_INVALID };
+    // ticket.consumed covers the window between a concurrent consumeTicket's
+    // claim and its finalization — the ticket still exists but is owned.
+    if (ticket.consumed || consumedTickets.has(ticketId)) {
+      return { valid: false, error: ERRORS.APPROVAL_INVALID };
+    }
     if (ticket.isExpired()) return { valid: false, error: ERRORS.APPROVAL_EXPIRED };
 
     const inputStr = typeof input === 'object' ? canonicalJSON(input) : String(input);

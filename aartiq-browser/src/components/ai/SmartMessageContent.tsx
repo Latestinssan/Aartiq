@@ -44,7 +44,9 @@ const URLCard = memo(function URLCard({ url, title, compact = true }: URLCardPro
     e.preventDefault();
     e.stopPropagation();
     try {
-      window.electronAPI?.createView?.({ tabId: `url-${Date.now()}`, url });
+      // addTab creates the store entry *and* its BrowserView under one id —
+      // a separate createView here would leak an orphan view for a tab id
+      // that never exists in the store.
       const { addTab } = require('@/store/useAppStore').useAppStore.getState();
       addTab(url, 'ai-session');
     } catch {

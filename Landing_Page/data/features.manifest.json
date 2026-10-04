@@ -1373,7 +1373,7 @@
       ],
       "tests": [
         "tests/docs-platform-integration-match-source.test.js#every Linux channel the bridge invokes has a handler",
-        "tests/docs-platform-integration-match-source.test.js#the overlap is exactly the five channels the page lists"
+        "tests/docs-platform-integration-match-source.test.js#the module and main.js register no channel in common"
       ],
       "plannedTestIds": [
         "tests/linux-integration.test.js#desktop-entry-is-valid"
@@ -1382,7 +1382,7 @@
       "riskTier": "low",
       "requiredApproval": "none",
       "notes": "The file generation and protocol registration are real. It installs a handler for a scheme the app never reads (see deeplink.dispatch.linux), so the shortcut launches the app and drops the link.",
-      "coverage": "Partial. The gate proves the eleven bridge channels are registered and names the five that are registered twice. It does not parse a generated .desktop file, so the file contents remain unproven and tests/linux-integration.test.js#desktop-entry-is-valid is still owed."
+      "coverage": "Partial. The gate proves the eleven bridge channels are registered and that no channel is registered twice. It does not parse a generated .desktop file, so the file contents remain unproven and tests/linux-integration.test.js#desktop-entry-is-valid is still owed."
     },
     {
       "id": "keyboard.docs-table",

@@ -18,11 +18,10 @@ import {
 } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import remarkBreaks from 'remark-breaks';
-import rehypeKatex from 'rehype-katex';
 import 'katex/contrib/mhchem';
+import { markdownRemarkPlugins, markdownRehypePlugins } from './ai/markdownPlugins';
+import { normalizeCitationLinks } from './ai/normalizeCitationLinks';
+import { isClickableFilePath, preprocessFilePaths } from './ai/filePaths';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import dracula from 'react-syntax-highlighter/dist/cjs/styles/prism/dracula';
 
@@ -222,7 +221,9 @@ const formatSearchResultsForLLM = (query: string, results: SearchResultEntry[]):
 // ---------------------------------------------------------------------------
 // File Path Detection & Clickable Link
 // ---------------------------------------------------------------------------
-const FILE_PATH_RE = /^\/(?:[^\s]+\/)+[^\s]+(?:\.[a-zA-Z0-9]+)?$|^[A-Za-z]:\\(?:[^\s]+\\)+[^\s]+(?:\.[a-zA-Z0-9]+)?$/;
+// Detection lives in ai/filePaths.ts so the message pre-processor and this
+// code renderer agree on what is a path — and, crucially, on what is a URL
+// (a `https://…/page.html` tail must never render as a file chip).
 
 function FilePathLink({ filePath }: { filePath: string }) {
   const [hovered, setHovered] = useState(false);
@@ -279,7 +280,9 @@ function SourceLink({ href, children }: { href?: string; children: React.ReactNo
     event.preventDefault();
     if (!link) return;
     try {
-      window.electronAPI?.createView?.({ tabId: `source-${Date.now()}`, url: link });
+      // addTab creates the store entry *and* its BrowserView under one id.
+      // A second createView here would spawn an orphan view for a tab id that
+      // never exists in the store (leaks, and is never closed with the tab).
       useAppStore.getState().addTab(link, 'ai-session');
     } catch {
       window.open(link, '_blank', 'noopener,noreferrer');
@@ -336,8 +339,8 @@ function SourceLink({ href, children }: { href?: string; children: React.ReactNo
 
 const renderMarkdownContent = (content: string) => (
   <ReactMarkdown
-    remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-    rehypePlugins={[rehypeKatex]}
+    remarkPlugins={markdownRemarkPlugins}
+    rehypePlugins={markdownRehypePlugins}
     components={{
       a({ href, children }) {
         return <SourceLink href={href}>{children}</SourceLink>;
@@ -387,7 +390,7 @@ const renderMarkdownContent = (content: string) => (
         ) : (
           (() => {
             const codeText = String(children).trim();
-            if (codeText && FILE_PATH_RE.test(codeText)) {
+            if (codeText && isClickableFilePath(codeText)) {
               return <FilePathLink filePath={codeText} />;
             }
             return (
@@ -404,13 +407,8 @@ const renderMarkdownContent = (content: string) => (
   </ReactMarkdown>
 );
 
-// Wrap bare file paths in backticks so they get detected by the code handler
-function preprocessFilePaths(text: string): string {
-  return text.replace(
-    /(^|[^`\/\w])((?:\/[\w\-.~/]+(?:\.[a-zA-Z0-9]+)(?=[\s\n.,;:!?)]|$))|(?:[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]+(?:\.[a-zA-Z0-9]+)?(?=[\s\n.,;:!?)]|$)))/g,
-    (match, before, path) => before + '`' + path + '`'
-  );
-}
+// Bare file paths are wrapped in backticks by preprocessFilePaths (ai/filePaths)
+// before rendering, so the code handler above can detect them.
 
 const StreamingMarkdownMessage = memo(function StreamingMarkdownMessage({
   content,
@@ -419,7 +417,10 @@ const StreamingMarkdownMessage = memo(function StreamingMarkdownMessage({
   content: string;
   animate: boolean;
 }) {
-  const processed = useMemo(() => content ? preprocessFilePaths(content) : content, [content]);
+  const processed = useMemo(
+    () => (content ? normalizeCitationLinks(preprocessFilePaths(content)) : content),
+    [content]
+  );
   const markdownContent = useMemo(() => (
     processed ? renderMarkdownContent(processed) : null
   ), [processed]);
@@ -2509,8 +2510,15 @@ Do NOT perform a single broad search for the whole request.`
         }
 
         case 'PLAN': {
-          output = `Executing plan: ${command.value}`;
-          setMessages(prev => [...prev, { role: 'model', content: `🎯 **STRATEGIC PLAN:** ${command.value}` }]);
+          // The plan text can arrive under the documented "description" (or
+          // "plan") field instead of "value"; falling back keeps the plan on
+          // screen instead of showing an empty "STRATEGIC PLAN:".
+          const planText = command.value
+            || getCmdParam(command as any, 'description')
+            || getCmdParam(command as any, 'plan')
+            || '';
+          output = `Executing plan: ${planText}`;
+          setMessages(prev => [...prev, { role: 'model', content: `🎯 **STRATEGIC PLAN:** ${planText}` }]);
           break;
         }
 
@@ -3006,11 +3014,16 @@ Do NOT perform a single broad search for the whole request.`
           }
 
           // ── Primary: server-side search via MCP BrowserMcpServer (DuckDuckGo, offscreen) ──
+          // `pages` controls how many result pages are opened and read — it must
+          // NOT cap how many results are kept. The result list is capped at 10
+          // (the number of results a search page returns) so a default search
+          // no longer reports "Found 1 result".
+          const MAX_WEB_SEARCH_RESULTS = 10;
           let searchResults: Array<{ title: string; url: string; snippet: string; content: string }> = [];
           let usedEngine = 'duckduckgo';
           const effectivePages = pagesOverride || 1;
           try {
-            const mcpSearchResult = await (window.electronAPI as any).aiWebSearch(originalQuery, 'duckduckgo', effectivePages);
+            const mcpSearchResult = await (window.electronAPI as any).aiWebSearch(originalQuery, 'duckduckgo', MAX_WEB_SEARCH_RESULTS, effectivePages);
             if (mcpSearchResult?.results?.length > 0) {
               searchResults = mcpSearchResult.results;
               usedEngine = mcpSearchResult.engine || 'duckduckgo';
@@ -3024,7 +3037,7 @@ Do NOT perform a single broad search for the whole request.`
             try {
               const ragResults = await window.electronAPI.webSearchRag(originalQuery);
               const normalized = normalizeSearchResults(ragResults as any[]);
-              searchResults = normalized.slice(0, effectivePages).map(r => ({
+              searchResults = normalized.slice(0, MAX_WEB_SEARCH_RESULTS).map(r => ({
                 title: r.title,
                 url: r.url,
                 snippet: r.snippet,
@@ -7972,7 +7985,7 @@ I've successfully executed the following real tasks:
               {researchState.sources.length > 0 && (
                 <ResearchSourceCarousel sources={researchState.sources} />
               )}
-              {(researchState.contradictions as any[] | undefined)?.length > 0 && (
+              {((researchState.contradictions as any[] | undefined)?.length ?? 0) > 0 && (
                 <div className="rounded-xl border border-amber-500/15 bg-amber-500/5 overflow-hidden">
                   <div className="px-4 py-3 border-b border-amber-500/10 flex items-center gap-2">
                     <span className="text-sm">⚠️</span>
