@@ -1,0 +1,104 @@
+name: 📚 Docs Gate
+
+# Why this exists
+# ---------------
+# `npm run docs:check` is the only thing standing between a documentation claim and
+# the code that has to support it. Until now it ran in no workflow at all, so it
+# protected a commit only when a human happened to run it. The published tier
+# table, test counts and security claims are all generated or gated; a gate nobody
+# invokes is a gate that does not gate.
+#
+# Why it needs a token
+# --------------------
+# The gate is cross-repository by nature. It reads this repo's classifier
+# (`aartiq-browser/src/lib/shell-command-tiers.js`) and compares it against the
+# landing site, which lives in `Latestinssan2/Aartiq-Landing-Page` — a different
+# owner account. `GITHUB_TOKEN` is scoped to the repository running the workflow
+# and cannot read across, so a personal access token with read access to both
+# repositories is required as `DOCS_GATE_TOKEN`.
+#
+# If that secret is absent this job FAILS rather than skipping. An earlier version
+# of the gate walked no landing files and reported success, which is how the site
+# kept advertising a startup shell grant for a release after that grant had been
+# removed. A green run that checked half the surface is worse than a red one,
+# because it is trusted.
+#
+# Ordering
+# --------
+# The landing checkout is its default branch, so this job compares a pull request
+# against landing `main`. When a change alters a published fact and the code that
+# produces it, the landing half has to merge first or this will correctly fail.
+# That coupling is the gate working, not a bug in it.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Node 24: the gate scripts are TypeScript executed through Node's native type
+  # stripping, and 24 is the version jest.yml pins and the scripts are developed
+  # against. 22.6 is the floor in package.json engines; 24 is what is verified.
+  NODE_VERSION: '24'
+  LANDING_REPO: 'Latestinssan2/Aartiq-Landing-Page'
+
+jobs:
+  docs-gate:
+    name: Docs Gate (README, landing site, SSOT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Aartiq
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Require the cross-repository read token
+        env:
+          # Referenced through env rather than interpolated into the shell line, so
+          # the value is never echoed into a log even by a failing step.
+          DOCS_GATE_TOKEN: ${{ secrets.DOCS_GATE_TOKEN }}
+        run: |
+          if [ -z "${DOCS_GATE_TOKEN}" ]; then
+            echo "::error::DOCS_GATE_TOKEN is not set. The docs gate reads ${LANDING_REPO}, which GITHUB_TOKEN cannot reach because it is owned by a different account. Add a PAT with read access to both repositories under Settings -> Secrets -> Actions. The gate deliberately fails here instead of checking only this repository — see the header of .github/workflows/docs-gate.yml."
+            exit 1
+          fi
+
+      - name: Checkout Aartiq-Landing-Page
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LANDING_REPO }}
+          path: Aartiq-Landing-Page
+          token: ${{ secrets.DOCS_GATE_TOKEN }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Assert the landing checkout is where the gate expects it
+        run: |
+          # The gate derives its default landing path as <repo>/../Aartiq-Landing-Page,
+          # which is where the checkout above lands. Assert it rather than trusting
+          # it: if the path ever moves, every rule that walks the landing site
+          # would silently find nothing and pass.
+          if [ ! -f "Aartiq-Landing-Page/src/data/project-facts.ts" ]; then
+            echo "::error::Aartiq-Landing-Page checked out but src/data/project-facts.ts is absent — the gate would compare against nothing and pass."
+            exit 1
+          fi
+
+      - name: Check that the docs, the code and the SSOT agree
+        env:
+          AARTIQ_LANDING_DIR: ${{ github.workspace }}/Aartiq-Landing-Page
+        run: node scripts/check-docs.ts
+
+      - name: Test the gate itself
+        env:
+          AARTIQ_LANDING_DIR: ${{ github.workspace }}/Aartiq-Landing-Page
+        # These are negative tests: each one asserts the gate rejects a document
+        # that makes a specific false claim. Without them a rule that silently
+        # stopped matching would look identical to a gate that passes.
+        run: node scripts/test-check-docs.ts
