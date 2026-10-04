@@ -111,7 +111,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | Protocol / Service | Port | Notes |
 | --- | --- | --- |
 | HTTP (Next.js, dev) | 3003 | Next.js dev server. Development only — never started in a packaged build. |
-| MCP browser bridge | 3001 | mcp-bridge — binds `all interfaces (0.0.0.0 / ::)` |
+| MCP browser bridge | 3001 | mcp-bridge — binds `127.0.0.1` |
 | WiFi sync (desktop ↔ mobile) | 3004 | wifi-sync — binds `all interfaces (0.0.0.0 / ::)` |
 | Native macOS / CLI bridge | 46203 | native-bridge — binds `127.0.0.1` |
 | Agent API tool server | 46203 | agent-api — binds `127.0.0.1` |

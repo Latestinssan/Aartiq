@@ -17,28 +17,44 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
+import type {
+  GeneratedTestFacts,
+  GeneratedRepoFacts,
+  GeneratedShellTiers,
+} from "../../Aartiq-Landing-Page/src/data/project-facts.ts";
+
+const REPO = join(import.meta.dirname, "..");
+
+/**
+ * The landing page is a separate repository that normally sits beside this one.
+ * `AARTIQ_LANDING_DIR` overrides that: inside a git worktree the sibling path is
+ * not the landing repo, and following it would read one tree and write another.
+ * scripts/gen-shell-tiers.ts and scripts/check-docs.ts use the same variable.
+ */
+const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
+
+const readJson = <T>(rel: string): T => JSON.parse(readFileSync(join(LANDING, rel), "utf8")) as T;
+
 // Node requires explicit import attributes for JSON, which the bundler-style bare
 // import in facts.ts cannot carry. So scripts take authored facts straight from
 // project-facts.ts (pure, no imports) and read generated JSON directly. facts.ts
-// is the page-facing merge of exactly these two.
-import {
-  version,
-  security,
-  network,
-  ci,
-  benchmarks,
-  legal,
-  skills,
-  type GeneratedTestFacts,
-  type GeneratedRepoFacts,
-} from "../../Aartiq-Landing-Page/src/data/project-facts.ts";
-import testFactsJson from "../../Aartiq-Landing-Page/src/data/test-facts.generated.json" with { type: "json" };
-import repoFactsJson from "../../Aartiq-Landing-Page/src/data/repo-facts.generated.json" with { type: "json" };
+// is the page-facing merge of exactly these.
+//
+// The facts module is loaded dynamically rather than with a static `import`,
+// because a static specifier is resolved against this file's own location at load
+// time and cannot be pointed at AARTIQ_LANDING_DIR. Reading the JSON off disk
+// instead of importing it keeps all three inputs on the same resolution rule.
+const facts = (await import(
+  pathToFileURL(join(LANDING, "src", "data", "project-facts.ts")).href
+)) as typeof import("../../Aartiq-Landing-Page/src/data/project-facts.ts");
 
-const tests = testFactsJson as unknown as GeneratedTestFacts;
-const repoStats = repoFactsJson as unknown as GeneratedRepoFacts;
+const { version, security, network, ci, benchmarks, legal, skills } = facts;
 
-const REPO = join(import.meta.dirname, "..");
+const tests = readJson<GeneratedTestFacts>("src/data/test-facts.generated.json");
+const repoStats = readJson<GeneratedRepoFacts>("src/data/repo-facts.generated.json");
+const shellTiers = readJson<GeneratedShellTiers>("src/data/shell-tiers.generated.json");
+
 const README = join(REPO, "README.md");
 
 const start = (name: string) => `<!-- SSOT:START ${name} -->`;
@@ -192,6 +208,23 @@ function renderLicense(): string {
 }
 
 /** Every network listener, with its bind address and auth state. */
+/**
+ * The "Reachable from LAN when" cell.
+ *
+ * `bindsAllInterfacesWhen === null` means "no switch restricts this", which on its
+ * own is ambiguous: a listener hard-coded to 127.0.0.1 has no switch either, and
+ * is still unreachable from the LAN. Reading null as "always" printed a row that
+ * contradicted its own bind-address cell. So null is resolved against the bind
+ * address: loopback means never, anything else means always.
+ */
+function lanReachability(s: (typeof network.servers)[number]): string {
+  if (s.bindsAllInterfacesWhen) return s.bindsAllInterfacesWhen;
+  const loopback = /\b127\.0\.0\.1\b|\blocalhost\b|\b::1\b/.test(s.defaultBindAddress);
+  return loopback
+    ? "never — the host is a literal in the source, not a switch anyone can flip"
+    : "**always** — there is no switch to restrict it";
+}
+
 function renderNetwork(): string {
   return table(
     ["Service", "Port", "Default bind address", "Reachable from LAN when", "Authentication"],
@@ -199,7 +232,7 @@ function renderNetwork(): string {
       s.name,
       typeof s.port === "number" ? `${s.port}` : `${s.port} (env-overridable)`,
       `\`${s.defaultBindAddress}\``,
-      s.bindsAllInterfacesWhen ?? "**always** — there is no switch to restrict it",
+      lanReachability(s),
       s.auth,
     ]),
   );
@@ -311,7 +344,7 @@ const TARGETS: { path: string; blocks: string[] }[] = [
   { path: join(REPO, "README.md"), blocks: Object.keys(BLOCKS).filter((n) => !README_ONLY.has(n)) },
   { path: join(REPO, "AGENTS.md"), blocks: ["protocols", "workflows"] },
   {
-    path: join(REPO, "..", "Aartiq-Landing-Page", "AI-GUIDE.md"),
+    path: join(LANDING, "AI-GUIDE.md"),
     blocks: ["current-version", "risk-table"],
   },
 ];
@@ -326,11 +359,11 @@ const TARGETS: { path: string; blocks: string[] }[] = [
  */
 const MIRRORS: { source: string; dest: string }[] = [
   {
-    source: join(REPO, "..", "Aartiq-Landing-Page", "AI-GUIDE.md"),
+    source: join(LANDING, "AI-GUIDE.md"),
     dest: join(REPO, "Landing_Page", "AI-GUIDE.md"),
   },
   {
-    source: join(REPO, "..", "Aartiq-Landing-Page", "src", "lib", "release-notes.ts"),
+    source: join(LANDING, "src", "lib", "release-notes.ts"),
     dest: join(REPO, "Landing_Page", "src", "lib", "release-notes.ts"),
   },
 ];

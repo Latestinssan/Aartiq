@@ -11,7 +11,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node
 import { join, dirname } from "node:path";
 
 const REPO = join(import.meta.dirname, "..");
-const LANDING = join(REPO, "..", "Aartiq-Landing-Page");
+
+/**
+ * Must resolve the landing tree the same way check-docs.ts does, or every case that
+ * mutates a landing file reports "file missing" instead of the failure it is
+ * testing. Same `AARTIQ_LANDING_DIR` override as the other scripts.
+ */
+const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
 
 const README = join(REPO, "README.md");
 const OVERVIEW = join(LANDING, "src", "app", "docs", "overview", "page.tsx");
@@ -19,12 +25,17 @@ const SECURITY = join(LANDING, "src", "app", "docs", "security", "page.tsx");
 const LLMS_FULL = join(LANDING, "src", "app", "llms-full.txt", "route.ts");
 const NAVBAR = join(LANDING, "src", "components", "Navbar.tsx");
 const FSOT = join(LANDING, "src", "data", "project-facts.ts");
+const SHELL_TIERS = join(LANDING, "src", "data", "shell-tiers.generated.json");
 
 function run() {
   try {
     execFileSync("node", [join(REPO, "scripts", "check-docs.ts")], {
       cwd: REPO,
       stdio: "pipe",
+      // Passed through so the child checks the same landing tree this harness
+      // mutates. Without it the child follows the sibling path and, in a
+      // worktree, reads a different repository than the one being edited.
+      env: { ...process.env, AARTIQ_LANDING_DIR: LANDING },
     });
     return { ok: true, out: "" };
   } catch (e) {
@@ -194,6 +205,104 @@ for (const [label, file, mutate, needle] of cases) {
   if (expectFailure(label, file, mutate, needle)) pass++;
 }
 
+// ---------------------------------------------------------------------------
+// (h) The security-default guardrails
+//
+// Each of these exists because the wording it rejects was published. The gate
+// is worthless if the rules have never been seen rejecting anything, so every
+// rule below is exercised by putting the old sentence back into a live page.
+// ---------------------------------------------------------------------------
+
+const SECURITY_PAGE = join(LANDING, "src", "app", "docs", "security", "page.tsx");
+
+/** Add a paragraph to a page without disturbing anything else on it. */
+function addParagraph(marker, paragraph) {
+  return (s) => s.replace(marker, `${marker}\n\n{/* docs:check negative test */}\n<p>${paragraph}</p>`);
+}
+
+const hCases = [
+  [
+    "(h) startup session grant is not a default",
+    SECURITY_PAGE,
+    addParagraph(
+      "export default function",
+      "Low-risk shell commands are auto-approved via a session grant created at startup, so no dialog appears.",
+    ),
+    "[h]",
+  ],
+  [
+    "(h) first-word Allow Always is no longer how grants work",
+    SECURITY_PAGE,
+    addParagraph(
+      "export default function",
+      '"Allow Always" persists on the FIRST WORD of the command, so approving curl permanently allowlists it.',
+    ),
+    "[h]",
+  ],
+  [
+    "(h) pairing no longer auto-confirms",
+    SECURITY_PAGE,
+    addParagraph("export default function", "Pairing auto-confirms over the local connection."),
+    "[h]",
+  ],
+  [
+    "(h) no pairing token exists to expire",
+    SECURITY_PAGE,
+    addParagraph("export default function", "Pairing tokens expire after 10 minutes."),
+    "[h]",
+  ],
+  [
+    // Written without the port number so this exercises the [h] rule rather than
+    // being caught first by [b], which rejects a hand-typed port in a page.
+    "(h) the bridge is no longer bound to every interface",
+    SECURITY_PAGE,
+    addParagraph(
+      "export default function",
+      "The MCP bridge listens on every interface and is reachable from the local network.",
+    ),
+    "listens on every interface, but it binds",
+  ],
+  [
+    "(h) medium is not the default tier any more",
+    SECURITY_PAGE,
+    addParagraph("export default function", "medium is the DEFAULT tier for any unmatched command."),
+    "[h]",
+  ],
+];
+
+for (const [label, file, mutate, needle] of hCases) {
+  if (!existsSync(file)) {
+    console.log(`✗ ${label} — ${file} missing`);
+    continue;
+  }
+  if (expectFailure(label, file, mutate, needle)) pass++;
+}
+
+// (h) A stale generated tier file must fail even when no prose mentions tiers.
+// The numbers on a page come from the JSON, so a classifier change that is not
+// regenerated would otherwise publish counts the code no longer supports.
+//
+// The original is held in memory rather than on disk: restoring from a file read
+// after the mutation would put the tampered version back.
+if (existsSync(SHELL_TIERS)) {
+  const shellTiersOriginal = readFileSync(SHELL_TIERS, "utf8");
+  const tampered = shellTiersOriginal.replace(/"commandsInTable": \d+/, '"commandsInTable": 79');
+  if (tampered === shellTiersOriginal) {
+    console.log("✗ (h) stale shell-tiers.generated.json is caught — mutation did not change the file");
+  } else if (
+    expectFailureWithSetup(
+      "(h) stale shell-tiers.generated.json is caught",
+      () => writeFileSync(SHELL_TIERS, tampered),
+      () => writeFileSync(SHELL_TIERS, shellTiersOriginal),
+      "no longer matches",
+    )
+  ) {
+    pass++;
+  }
+} else {
+  console.log(`✗ (h) stale shell-tiers.generated.json is caught — ${SHELL_TIERS} missing`);
+}
+
 // (f) A stale static copy in `public/` outranks the app route at runtime, so every
 // SSOT fix applied to the route is invisible. This is the bug that shipped a stale
 // `v0.3.7` llms-full.txt while the route beside it was already correct.
@@ -239,5 +348,9 @@ if (clean.ok) {
   console.log(`✗ clean tree FAILED:\n${clean.out}`);
 }
 
-console.log(`\n${pass}/${cases.length + 3} checks behaved as expected`);
+// Counted as cases are added rather than hand-maintained: a stale denominator
+// makes a newly failing rule look like a shrinking suite.
+const total = cases.length + hCases.length + 4;
+console.log(`\n${pass}/${total} checks behaved as expected`);
+if (pass !== total) process.exitCode = 1;
 if (pass !== cases.length + 3) process.exit(1);

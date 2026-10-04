@@ -19,7 +19,16 @@ import { join } from "node:path";
 import type { GeneratedRepoFacts } from "../../Aartiq-Landing-Page/src/data/project-facts.ts";
 
 const REPO = join(import.meta.dirname, "..");
-const OUT = join(REPO, "..", "Aartiq-Landing-Page", "src", "data", "repo-facts.generated.json");
+/**
+ * The landing page is a separate repository that normally sits beside this one.
+ * `AARTIQ_LANDING_DIR` overrides that. Without it, running this from a git
+ * worktree wrote the facts into whatever tree happened to sit beside the
+ * worktree — a different repository, mid-edit by someone else.
+ * scripts/gen-test-facts.ts, gen-shell-tiers.ts, sync-docs.ts and check-docs.ts
+ * resolve the landing tree the same way.
+ */
+const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
+const OUT = join(LANDING, "src", "data", "repo-facts.generated.json");
 const SLUG = "Latestinssan/Aartiq";
 
 function gh(args: string[]): string | null {

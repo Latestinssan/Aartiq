@@ -14,20 +14,31 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
-import { join, relative, resolve, dirname, extname } from "node:path";
-import {
-  version,
-  benchmarks,
-  security,
-  legal,
-  network,
-  ci,
-  platforms,
-  type SecurityLayer,
+import { join, relative, resolve, dirname, extname, isAbsolute } from "node:path";
+import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import type {
+  GeneratedShellTiers,
+  SecurityLayer,
 } from "../../Aartiq-Landing-Page/src/data/project-facts.ts";
 
 const REPO = join(import.meta.dirname, "..");
-const LANDING = join(REPO, "..", "Aartiq-Landing-Page");
+
+/**
+ * The landing page is a separate repository that normally sits beside this one.
+ * `AARTIQ_LANDING_DIR` overrides that, so a worktree or a CI checkout checks the
+ * landing tree it was pointed at rather than whatever happens to be next door.
+ * scripts/sync-docs.ts and scripts/gen-shell-tiers.ts use the same variable.
+ */
+const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
+
+// The facts module is loaded dynamically rather than with a static `import`,
+// because a static specifier is resolved against this file's own location at load
+// time and cannot be pointed at AARTIQ_LANDING_DIR. The `import type` above keeps
+// the shape checked at compile time; this is the value read at run time.
+const { version, benchmarks, security, legal, network, ci, platforms } = (await import(
+  pathToFileURL(join(LANDING, "src", "data", "project-facts.ts")).href
+)) as typeof import("../../Aartiq-Landing-Page/src/data/project-facts.ts");
 
 // Keep this identical to the renderers in sync-docs.ts. Rather than importing them
 // (they are not exported), we run sync in check mode — see README_CHECK below.
@@ -74,7 +85,23 @@ function walk(root: string, exts?: string[]): string[] {
   return out;
 }
 
-const rel = (p: string) => relative(join(REPO, ".."), p).replace(/\\/g, "/");
+/**
+ * Display path, always spelled as if the landing repo sat beside this one.
+ *
+ * Rules below match on `Aartiq-Landing-Page/src/...`. Deriving that prefix from
+ * the actual directory name meant a checkout where the landing repo is called
+ * something else — a worktree, or a CI layout — matched no rule at all, so every
+ * landing file was silently skipped and the gate passed on pages it never read.
+ * A worktree copy is named after its branch, so the prefix is derived from
+ * `LANDING`, not from the folder.
+ */
+const rel = (p: string) => {
+  const landingRel = relative(LANDING, p).replace(/\\/g, "/");
+  if (landingRel && !landingRel.startsWith("..") && !isAbsolute(landingRel)) {
+    return `Aartiq-Landing-Page/${landingRel}`;
+  }
+  return relative(join(REPO, ".."), p).replace(/\\/g, "/");
+};
 const relInRepo = (p: string) => relative(REPO, p).replace(/\\/g, "/");
 
 /**
@@ -746,6 +773,28 @@ function isDocLineNegated(line: string): boolean {
   return /\b(?:no|not|never|without|nor|cannot|can't|isn't|aren't)\b/i.test(line);
 }
 
+/**
+ * Whether the claim at `at` is contradicted by what precedes it.
+ *
+ * `isDocLineNegated` tests the whole line, which is the right default for a rule
+ * that matches a subject ("no Google Play listing" — the phrase appears in a
+ * denial) and the wrong one for a rule that matches a claim. Two failures came
+ * from the blunt version: "auto-approved via a session grant created at startup,
+ * so no dialog appears" is a positive claim that happens to mention "no" later in
+ * the sentence, and a rule that also tested whole files was silenced by any file
+ * containing "no longer" anywhere, including in a changelog it was not reading.
+ *
+ * So only the text before the match is examined. A retraction written as "no longer
+ * listens on every interface" is still caught, because "no longer" precedes the
+ * phrase being retracted.
+ */
+function isClaimNegatedAt(line: string, at: number): boolean {
+  const before = line.slice(0, at);
+  return /\b(?:no|not|never|without|nor|cannot|can't|isn't|aren't|used to|previously|formerly|instead of|rather than)\b/i.test(
+    before,
+  );
+}
+
 function checkDistributionClaims() {
   const files = [...walk(REPO), ...walk(LANDING)].filter(isDocSurface);
 
@@ -811,6 +860,200 @@ function checkDistributionClaims() {
   }
 }
 
+/**
+ * Guardrails for the security defaults, added after those defaults were changed.
+ *
+ * Every rule here corresponds to a sentence that was published and was wrong.
+ * The tier table claimed a startup session grant that auto-approved low and medium
+ * commands; the network table said the MCP bridge listened on every interface when
+ * it was bound to loopback; a docs page said pairing auto-confirmed over a local
+ * connection; and a release note described a token expiry the code never had.
+ *
+ * The rule is not "don't write these words" — it is "don't state these defaults
+ * without deriving them." A page that imports the SSOT is exempt, because a
+ * generated table cannot go stale. Each rule names the behaviour it protects so a
+ * later reader can tell whether it still applies.
+ */
+function checkSecurityDefaultClaims() {
+  const files = [...walk(REPO), ...walk(LANDING)].filter(isDocSurface);
+
+  /** Phrases that described a default which no longer exists, or never existed. */
+  const superseded: Array<{ re: RegExp; why: string }> = [
+    {
+      re: /session grant (?:for|is created at|created at) startup|grant (?:is )?issued at startup/i,
+      why:
+        "nothing is granted at startup any more. Shell auto-approval exists only behind the " +
+        "opt-in autoApproveLowRiskShell setting, which defaults to off",
+    },
+    {
+      re: /first[- ]word of the command|FIRST WORD/,
+      why:
+        '"Allow Always" is keyed on the full normalised command line, not the first word, so ' +
+        "approving one command no longer permanently allowlists the binary",
+    },
+    {
+      re: /pairing auto-?confirms?/i,
+      why:
+        "the pairing route is gone; a client cannot be admitted without the session token, " +
+        "and /sse records a completed handshake rather than granting one",
+    },
+    {
+      re: /auto-?confirm(?:ed|s)? (?:pairing )?when mcp-remote/i,
+      why: "there is no auto-confirming pairing path left to describe",
+    },
+    {
+      re: /pairing token[s]? expire/i,
+      why:
+        "there is no pairing token and no expiry; each listener generates its own token per " +
+        "process and requires it on every request",
+    },
+    {
+      re: /auto-?approve[sd]? by default/i,
+      why:
+        "no shell tier is auto-approved by default. If this describes an MCP tool path or " +
+        "another subsystem, say which one — the two auto-approve settings are independent",
+    },
+    {
+      re: /medium is the DEFAULT tier/i,
+      why:
+        "the classifier has a low tier, so medium is the fallback for unknown and capable " +
+        "commands rather than the default for everything unrecognised as destructive",
+    },
+  ];
+
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    const where = rel(file);
+
+    // This file is the SSOT itself: it is where a claim is corrected, not a place
+    // one may be repeated. Its own audit notes deliberately quote the old wording.
+    if (file === join(LANDING, "src", "data", "project-facts.ts")) continue;
+    if (isGeneratedOrAudit(file)) continue;
+
+    for (const line of text.split("\n")) {
+      for (const { re, why } of superseded) {
+        // Scoped to the match, not the line: the claim is the phrase, and only
+        // what comes before it can retract it.
+        const m = re.exec(line);
+        if (!m) continue;
+        if (isClaimNegatedAt(line, m.index)) continue;
+        problems.push(`[h] ${where} describes a security default that no longer holds: ${why}`);
+      }
+    }
+  }
+
+  // h8 — a listener that requires a token may not be published as unauthenticated.
+  //
+  // This is the highest-value rule in the file. The network table is generated, but
+  // prose pages describe ports by hand, and one of them asserted the bridge listened
+  // on every interface for months after the code bound it to loopback.
+  const mcp = network.servers.find((s) => s.id === "mcp-bridge");
+  const bridgeRequiresToken = /token/i.test(mcp?.auth ?? "");
+  const bindsLoopback = /\b127\.0\.0\.1\b|\blocalhost\b|\b::1\b/.test(mcp?.defaultBindAddress ?? "");
+  if (bridgeRequiresToken && bindsLoopback) {
+    for (const file of files) {
+      if (isGeneratedOrAudit(file)) continue;
+      const text = readFileSync(file, "utf8");
+      for (const line of text.split("\n")) {
+        // Line-scoped, and matched on the phrase rather than the file. An earlier
+        // version of this rule tested the whole text for "not"/"no longer", which
+        // meant any file containing a retraction anywhere silently passed.
+        const m = /listens on every interface|binds all network interfaces|reachable from the local network/i.exec(
+          line,
+        );
+        if (!m) continue;
+        if (isClaimNegatedAt(line, m.index)) continue;
+        // Only flag it if the line is about a listener we know the bind address of.
+        if (!/bridge|MCP/i.test(line)) continue;
+        problems.push(
+          `[h] ${rel(file)} says the MCP bridge listens on every interface, but it binds ` +
+            `${mcp?.defaultBindAddress} and requires a token. Read network.servers instead of restating it.`,
+        );
+      }
+    }
+  }
+
+  // h9 — the generated tier file must match the classifier it was read from.
+  //
+  // Cheap to check by invoking the generator in --check mode rather than
+  // re-deriving the classification here, so this rule and the generator can never
+  // disagree about what "matching" means.
+  const stale = spawnSync(process.execPath, [join(REPO, "scripts", "gen-shell-tiers.ts"), "--check"], {
+    encoding: "utf8",
+    env: { ...process.env, AARTIQ_LANDING_DIR: LANDING },
+  });
+  if (stale.status !== 0) {
+    problems.push(
+      "[h] shell-tiers.generated.json no longer matches src/lib/shell-command-tiers.js — " +
+        "run: npm run docs:shell-tiers",
+    );
+  }
+
+  // h10 — the published counts must be internally consistent, so a page cannot print
+  // a table whose rows do not add up to the total it claims.
+  const f = readGeneratedShellTiers();
+  if (f) {
+    const c = f.counts;
+    if (c.low + c.medium + c.high + c.critical !== c.commandsInTable) {
+      problems.push(
+        `[h] shell-tiers.generated.json counts do not add up: ${c.low}+${c.medium}+${c.high}+${c.critical} ` +
+          `!= ${c.commandsInTable}`,
+      );
+    }
+    if (f.entries.length !== c.commandsInTable) {
+      problems.push(
+        `[h] shell-tiers.generated.json lists ${f.entries.length} entries but claims ${c.commandsInTable}`,
+      );
+    }
+    if (f.blockedCommands.length !== c.blocked) {
+      problems.push(
+        `[h] shell-tiers.generated.json lists ${f.blockedCommands.length} blocked commands ` +
+          `but claims ${c.blocked}`,
+      );
+    }
+    // The one setting that can skip a dialog must be off. If a page says the app
+    // never auto-approves a shell command, this is what makes that true.
+    if (f.autoApprove.defaultValue !== false) {
+      problems.push(
+        "[h] shell-tiers.generated.json reports autoApproveLowRiskShell defaults to true. " +
+          "The docs state it is opt-in; either the default or the docs must change.",
+      );
+    }
+  }
+}
+
+/**
+ * Files whose stale content is expected and must not trip the rules above.
+ *
+ * Audit trails quote the wording that was wrong at the time — that is the record
+ * working — and the generator's own output is generated. A changelog entry marked
+ * `superseded` is excluded too: it describes a past release on purpose.
+ */
+function isGeneratedOrAudit(file: string): boolean {
+  const r = rel(file);
+  return (
+    /docs-audit/.test(r) ||
+    /release[_-]?notes/i.test(r) ||
+    /CHANGELOG/i.test(r) ||
+    /UNRELEASED\.md$/.test(r) ||
+    /\.generated\.json$/.test(r) ||
+    /Landing_Page\//.test(r) ||
+    /project-facts\.ts$/.test(r) ||
+    /facts\.ts$/.test(r)
+  );
+}
+
+function readGeneratedShellTiers(): GeneratedShellTiers | null {
+  const p = join(LANDING, "src", "data", "shell-tiers.generated.json");
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, "utf8")) as GeneratedShellTiers;
+  } catch {
+    problems.push("[h] shell-tiers.generated.json is unreadable — run: npm run docs:shell-tiers");
+    return null;
+  }
+}
+
 async function main() {
   checkSsotIntegrity();
   await checkReadmeBlocks();
@@ -821,6 +1064,7 @@ async function main() {
   checkDuplicateDocs();
   checkPublicShadowing();
   checkDistributionClaims();
+  checkSecurityDefaultClaims();
 
   if (warnings.length) {
     console.log(`\n${warnings.length} warning(s):`);

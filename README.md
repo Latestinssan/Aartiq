@@ -91,10 +91,10 @@ Risk tiers are assigned to the capability being invoked, not inferred from the w
 <!-- SSOT:START risk-table -->
 | Tier | Approval behaviour | Auto-approved? | Examples | What it does not guarantee |
 | --- | --- | --- | --- | --- |
-| **low** | Auto-approved. A session grant for low-risk shell commands is created at startup, so no dialog appears. | Yes, by default — unconditional session grant (8h TTL, not written to disk). | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` | Auto-approval is the default, not an opt-in. The grant is issued at startup before you choose anything. |
-| **medium** | Auto-approved. A session grant for medium-risk shell commands is created at startup alongside the low-risk one. | Yes, by default — same unconditional session grant. | `cp`, `mv`, `mkdir`, `chmod`, `npm`, `git`, `curl`, `osascript` | The shell classifier only ever emits medium or high, so medium is the DEFAULT tier for any command that is not a regex-detected destructive pattern. |
-| **high** | Explicit confirmation. Denied by default, then offered as Allow Once / Always / Deny. | Only if a SHELL_HIGH or SHELL_ALL grant exists, or the user has explicitly auto-approved that binary. | `sudo`, `rm`, `dd`, `shutdown`, `kill`, `mount`, `SHELL_COMMAND` | "Allow Always" persists on the FIRST WORD of the command, so approving `curl <url>` permanently allowlists `curl` generally. |
-| **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Four independent guards refuse it, and it is unreachable from every permission grant and auto-approve setting. | _none assigned by any registry_ | No registry assigns this tier — it is only synthesised at runtime for commands arriving from a remote device. On the desktop shell path it uses no biometric and no QR confirmation, just a dialog. |
+| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` | The setting covers the whole low tier rather than named commands, so turning it on is a decision about a category. It is also independent of the MCP tool path: shell commands read autoApproveLowRiskShell from the permission store, MCP tool calls read a separate security_autoApproveLowRisk key, both default to off, and enabling one does not enable the other. |
+| **medium** | Asked every time. autoApproveMidRisk does not reach shell commands — it still applies to MCP tool actions, which is a separate question. | No. There is no setting that auto-approves a medium shell command. | `cp`, `mv`, `mkdir`, `touch`, `npm`, `git`, `node`, `python`, `curl`, `wget`, `osascript` | An unrecognised command lands here rather than in low, so this tier also means "we have never heard of it". "Allow Always" is withheld for network-capable and script-capable binaries, but a local write like cp or mkdir can still take an exact-match permanent grant. |
+| **high** | Asked every time, then offered as Allow Once / Always / Deny. | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` | A permanent grant is never offered for a destructive command, so the Always button is absent here and Allow Once is the strongest answer available. `chmod` sits in this tier because it matches a destructive pattern, not because it is privileged in the usual sense — it was already high and moving it down would have weakened a default. |
+| **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Refused before the grant store and the auto-approve settings are consulted, and unreachable from every one of them. | _none assigned by any registry_ | No command in the tier table is assigned this tier. It is only synthesised at runtime for commands arriving from a remote device. On the desktop shell path it uses no biometric and no QR confirmation, just a dialog. |
 <!-- SSOT:END risk-table -->
 
 For the complete command catalog, risk assignments, and implementation details:
@@ -193,9 +193,9 @@ Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/
 
 **4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **551 passed / 26 skipped / 0 failed of 577 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **850 passed / 26 skipped / 0 failed of 876 declared** (generated 2026-10-04).
 
-> On ubuntu-latest the full suite reports 537 passed / 40 skipped. A local macOS run of the same 577 declared tests reports 551 passed / 26 skipped. Quote the environment with the number.
+> The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
 ### Skip breakdown — macOS (local), 2026-10-04
 
@@ -223,10 +223,10 @@ Every socket the application opens, and what actually protects it:
 <!-- SSOT:START network -->
 | Service | Port | Default bind address | Reachable from LAN when | Authentication |
 | --- | --- | --- | --- | --- |
-| MCP browser bridge | 3001 | `all interfaces (0.0.0.0 / ::)` | **always** — there is no switch to restrict it | None on connect. CORS is '*'. A pairing token exists but SSE auto-confirms it; only per-tool risk approval gates individual calls. |
-| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | **always** — there is no switch to restrict it | Handshake pairing code only. The command and desktop-control message types are not re-checked against it. |
-| Native macOS / CLI bridge | 46203 | `127.0.0.1` | **always** — there is no switch to restrict it | None. Clients send X-Aartiq-Native-Token; the server never reads it. |
-| Agent API tool server | 46203 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | None. An anonymous caller is auto-registered as a limited-trust agent. |
+| MCP browser bridge | 3001 | `127.0.0.1` | the security_mcpBridgeRemote setting is exactly true (defaults to false; no UI control sets it) | A per-process token, required on every route including SSE. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
+| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | **always** — there is no switch to restrict it | Handshake pairing code only. The command and desktop-control message types are not re-checked against it, and no token, Host or Origin check is applied. |
+| Native macOS / CLI bridge | 46203 | `127.0.0.1` | never — the host is a literal in the source, not a switch anyone can flip | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
+| Agent API tool server | 46203 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | A token, required on every HTTP route, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
 | Background task service (separate Electron app) | 3999 | `0.0.0.0` | **always** — there is no switch to restrict it | None. Serves ~/Documents/Aartiq/public with Access-Control-Allow-Origin: *. |
 <!-- SSOT:END network -->
 
@@ -242,8 +242,12 @@ Two of these bind all interfaces by default with no switch to restrict them. If 
 - Visual extraction reduces the DOM-based prompt-injection surface. It does not prevent prompt injection, and it cannot give semantic immunity against instructions rendered into the viewport.
 - Seatbelt profiles start from (allow default), so not every IPC class is denied by default; Mach IPC stays usable because node/python/shell require it.
 - Apple Events cannot be filtered by the current sandbox-exec — the operation is not exposed — so a sandboxed command could still ask another app to act on its behalf.
-- The MCP bridge and the WiFi sync server bind all network interfaces by default and are reachable from the local network. See network.servers.
-- The native bridge accepts an X-Aartiq-Native-Token header but does not verify it; any local process can call its routes.
+- The WiFi sync server (3004) still binds every network interface by omission and has no token, Host or Origin check. The background task service (3999) still serves files on 0.0.0.0 with a wildcard CORS header. Neither was changed by the listener-authentication work. See network.servers.
+- The session token is per-process, so it changes on every restart. A client configured once — a phone, another machine, a scheduled job — has to be reconfigured, and remote mode is not a finished design because of it.
+- The token has to travel in the mcp-remote URL, because mcp-remote accepts a bare URL and nothing else. It can therefore appear in a process argument list and in a client's own logs. See aartiq-browser/docs-audit/issues/pairing-token-in-url.md.
+- "Allow Always" is keyed on the full normalised command line, which is narrower than before but is still text matching, and a permanent grant has no lifetime. See aartiq-browser/docs-audit/issues/allow-always-granularity.md.
+- A permanent grant requires a binary that appears in the classifier's table. One that does not — including anything we have never seen — is offered Allow Once only, because a grant that repeats a command nobody can describe is a promise about behaviour rather than about the text. Local writes such as cp, mv, mkdir and touch are in the table and keep exact-match permanent grants.
+- The native bridge and the Agent API are both configured for port 46203. If both start, one fails to bind and the error is logged and swallowed, so it is not visible which one is answering. TODO(verify) — inferred from call order, not observed at runtime.
 <!-- SSOT:END known-limits -->
 
 ---
