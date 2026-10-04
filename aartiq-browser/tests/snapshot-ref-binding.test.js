@@ -120,10 +120,16 @@ describe('SnapshotManager: ref lifecycle', () => {
     const manager = new SnapshotManager();
     const result = buildSnapshot(manager, makePage());
     const all = Object.values(result.refs);
-    const email = all.find((n) => n.name === 'Email' || n.selector === '#email');
+    // Select on the selector, not the name: `<label for="email">Email</label>`
+    // has the same accessible name but no element handle.
+    const email = all.find((n) => n.selector === '#email');
     expect(email).toBeDefined();
     expect(email.actionable).toBe(true);
     expect(email.axId).toBeTruthy();
+
+    const label = all.find((n) => n.name === 'Email');
+    expect(label).toBeDefined();
+    expect(label.actionable).toBe(false);
   });
 
   it('resolveRef returns the axId an action script can address', () => {
@@ -193,10 +199,21 @@ describe('SnapshotManager: single-page search', () => {
   }
 
   it('finds a match and returns a usable ref', () => {
-    const hits = searched({});
+    // actionableOnly, because the <nav> ancestor also matches "Pricing" in its
+    // text content — a hit is only useful if it can be acted on.
+    const hits = searched({ actionableOnly: true });
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0].ref).toMatch(/^e\d+$/);
     expect(hits[0].href).toBe('/pricing');
+    expect(hits[0].field).toBe('name');
+    expect(hits[0].context).toContain('Pricing');
+  });
+
+  it('still reaches matches nested inside a non-actionable ancestor', () => {
+    // The traversal must not be pruned by filters: the actionable link lives
+    // below <nav>, which matches the query but has no element handle.
+    const hits = searched({ actionableOnly: true, role: 'link' });
+    expect(hits.map((h) => h.href)).toEqual(['/pricing']);
   });
 
   it('matches case-insensitively', () => {
@@ -213,9 +230,12 @@ describe('SnapshotManager: single-page search', () => {
     expect(hits.every((h) => h.role === 'link')).toBe(true);
   });
 
-  it('excludes non-actionable nodes by default', () => {
+  it('excludes non-actionable nodes when actionableOnly is set', () => {
     const hits = searched({ actionableOnly: true });
-    expect(hits.every((h) => h.role !== 'span')).toBe(true);
+    expect(hits.every((h) => h.role !== 'span' && h.role !== 'nav')).toBe(true);
+    // ...and includes them when it is not, so the flag is what does the work.
+    const all = searched({ actionableOnly: false });
+    expect(all.length).toBeGreaterThanOrEqual(hits.length);
   });
 
   it('returns nothing for a miss rather than inventing results', () => {
