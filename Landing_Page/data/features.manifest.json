@@ -5,7 +5,7 @@
     "commit": "63baa5ee",
     "branch": "feat/agent-page-tools",
     "note": "Re-verified twice after the repository advanced under this pass. Rows are derived by reading source, and the four gate suites (Genmoji, shortcuts, deep links, platform integration) re-derive their facts from source on every run, so they were never stale. First re-read (865fce5e, 8033d541): http-api.native-bridge was the one row whose evidence had genuinely moved — the token gate changed from per-route checkLocalRequest calls (of which there are now zero) to a single bridgeApp.use middleware at main.js:1297. The claim still holds and the row was corrected. keyboard.global-hotkeys changed line numbers only. Second re-read (cbb6e8e4): main.js and preload.js moved again, and the whole committed diff is two additions — ipcMain.handle('research-run'), and the runResearch/onResearchProgress bridge pair. Neither is a windows: or linux: channel, a deep-link command, nor bridge auth, so all 22 flagged rows stand unchanged. No windows: or linux: IPC channel has been added or removed across any of the four advances, so the duplicate-registration finding and both bridge tables stand.",
-    "verifiedAgainst": "cbb6e8e4"
+    "verifiedAgainst": "4faf8be6"
   },
   "statusValues": {
     "works": "A real entry point exists and behaves as documented. Still requires a passing test before docs may call it available.",
