@@ -294,6 +294,87 @@ describe('"Allow Always" no longer generalises across arguments', () => {
   });
 });
 
+describe('fail-open defaults found in the same audit', () => {
+  /**
+   * The MCP bridge built its auto-approval policy separately from
+   * PermissionStore, and its fallbacks were the permissive ones. With no store
+   * at all it reported autoApproveLowRisk: true; with a store, the stored value
+   * also defaulted to true. PermissionStore's own setting defaults to false, so
+   * the two disagreed about what the default is.
+   */
+  function autoApprovalConfig(store) {
+    const { BrowserMcpServer } = require('../src/lib/mcp-browser-server');
+    const server = Object.create(BrowserMcpServer.prototype);
+    server.store = store;
+    return server._getAutoApprovalConfig();
+  }
+
+  test('no store means no auto-approval, not permissive defaults', () => {
+    const config = autoApprovalConfig(null);
+    expect(config.autoApproveLowRisk).toBe(false);
+    expect(config.autoApproveMidRisk).toBe(false);
+  });
+
+  test('a store with nothing set does not auto-approve low-risk tools', () => {
+    const stub = { get: (_key, fallback) => fallback };
+    const config = autoApprovalConfig(stub);
+    expect(config.autoApproveLowRisk).toBe(false);
+  });
+
+  test('the store fallback agrees with PermissionStore’s own default', () => {
+    const stub = { get: (_key, fallback) => fallback };
+    const config = autoApprovalConfig(stub);
+    const store = new PermissionStore();
+    // Both paths have to say the same thing, or a reader of the docs cannot be
+    // told which one is true.
+    expect(config.autoApproveLowRisk).toBe(store.settings.autoApproveLowRisk);
+  });
+
+  test('an explicitly enabled setting is still honoured', () => {
+    const stub = { get: (key, fallback) => (key === 'security_autoApproveLowRisk' ? true : fallback) };
+    expect(autoApprovalConfig(stub).autoApproveLowRisk).toBe(true);
+  });
+
+  test('an unlisted MCP tool is treated as medium, not low', async () => {
+    const { BrowserMcpServer } = require('../src/lib/mcp-browser-server');
+    const server = Object.create(BrowserMcpServer.prototype);
+    // Nothing auto-approves, so every call reaches the approval prompt, and the
+    // prompt is where the risk label is decided.
+    server.store = { get: (_key, fallback) => fallback };
+    server._pairingConfirmed = true;
+    let seenRisk = null;
+    server._requestApproval = async (_tool, _args, risk) => {
+      seenRisk = risk;
+      return { allowed: false, reason: 'denied for the test' };
+    };
+
+    const verdict = await server._checkPermission('a_tool_nobody_listed', {});
+
+    expect(verdict.allowed).toBe(false);
+    expect(seenRisk).toBe('medium');
+  });
+
+  test('the MCP path classifies shell commands with the same classifier', async () => {
+    const { BrowserMcpServer } = require('../src/lib/mcp-browser-server');
+    const server = Object.create(BrowserMcpServer.prototype);
+    server.store = { get: (_key, fallback) => fallback };
+    server._pairingConfirmed = true;
+    const risks = [];
+    server._requestApproval = async (_tool, _args, risk) => {
+      risks.push(risk);
+      return { allowed: false, reason: 'denied for the test' };
+    };
+
+    // The MCP tool path must reach the same tier the shell path does, or the
+    // table the docs describe would not be the one in force for MCP callers.
+    await server._checkPermission('execute_shell_command', { command: 'mkdir new-dir' });
+    await server._checkPermission('execute_shell_command', { command: 'chmod 777 file' });
+    await server._checkPermission('execute_shell_command', { command: 'ls -la' });
+
+    expect(risks).toEqual(['medium', 'high', 'low']);
+  });
+});
+
 describe('migration of stored first-word Always entries', () => {
   test('a legacy entry for a read-only binary is kept', () => {
     const store = new PermissionStore();

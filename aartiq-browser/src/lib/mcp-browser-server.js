@@ -413,9 +413,25 @@ class BrowserMcpServer {
   }
 
   _getAutoApprovalConfig() {
-    if (!this.store) return { autoApproveLowRisk: true, autoApproveMidRisk: false, requireBiometricPerSession: false };
+    // Every default here is the restrictive one.
+    //
+    // With no store this used to return autoApproveLowRisk: true, and the
+    // stored value also defaulted to true. That contradicted
+    // PermissionStore.settings.autoApproveLowRisk, which defaults to false, and
+    // it meant the absence of a store read as permission rather than as an
+    // inability to tell. An MCP tool call for a low-risk action could therefore
+    // auto-approve with no policy in effect at all.
+    if (!this.store) {
+      return {
+        autoApproveLowRisk: false,
+        autoApproveMidRisk: false,
+        requireBiometricPerSession: false,
+        requireBiometricEveryAction: false,
+        requireDeviceUnlockForManualApproval: true,
+      };
+    }
     return {
-      autoApproveLowRisk: this.store.get('security_autoApproveLowRisk', true),
+      autoApproveLowRisk: this.store.get('security_autoApproveLowRisk', false),
       autoApproveMidRisk: this.store.get('security_autoApproveMidRisk', false),
       requireBiometricPerSession: this.store.get('security_requireBiometricPerSession', false),
       requireBiometricEveryAction: this.store.get('security_requireBiometricEveryAction', false),
@@ -424,7 +440,10 @@ class BrowserMcpServer {
   }
 
   async _checkPermission(toolName, args) {
-    let risk = TOOL_RISK_MAP[toolName] || 'low';
+    // An unlisted tool is medium, not low. Falling back to 'low' meant a tool added
+    // to getToolDefinitions() without a risk entry was presented to the user as
+    // the least sensitive class of action.
+    let risk = TOOL_RISK_MAP[toolName] || 'medium';
     
     if (toolName === 'execute_shell_command' && args.command) {
       risk = getShellRisk(args.command);
