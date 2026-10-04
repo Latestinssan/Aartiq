@@ -1,5 +1,6 @@
 const { exec, spawn } = require('child_process');
 const { validateCommand: securityValidate, getShellRisk } = require('../lib/SecurityValidator');
+const { normalizeCommandPattern, alwaysApprovalEligibility } = require('../lib/shell-command-tiers');
 
 // PermissionStore is injected at init time via setPermissionStore().
 // This replaces the old electron-store-based approach which was not wired
@@ -88,11 +89,14 @@ function checkShellPermission(command, reason, riskLevel = 'medium') {
     return false;
   }
 
-  const firstWord = (command || '').trim().split(/\s+/)[0].toLowerCase();
-
-  // Check command-specific grant first
-  const cmdKey = `SHELL_CMD:${firstWord}`;
-  if (permissionStore.isGranted(cmdKey)) {
+  // Command-specific grant.
+  //
+  // Keyed on the full normalised command line, not the first word. The previous
+  // key was `SHELL_CMD:<firstWord>`, so answering "Always" to one `curl` covered
+  // every later `curl` regardless of where it pointed — see
+  // docs-audit/issues/allow-always-granularity.md for the residual gap.
+  const cmdKey = buildShellCommandKey(command);
+  if (cmdKey && permissionStore.isGranted(cmdKey)) {
     // Verify the grant's level is sufficient for the risk level
     const level = permissionStore.getLevel(cmdKey);
     if (isLevelSufficient(level, normalizedRisk)) {
@@ -133,6 +137,28 @@ function checkShellPermission(command, reason, riskLevel = 'medium') {
 }
 
 /**
+ * The PermissionStore key for a per-command "Allow Always" grant.
+ *
+ * Exported so the approval dialog and the grant-recording path build the same
+ * key this function looks up. Two builders that disagree is exactly how an
+ * "Always" answer silently stops working.
+ */
+function buildShellCommandKey(command) {
+  const pattern = normalizeCommandPattern(command);
+  return pattern ? `SHELL_CMD:${pattern}` : '';
+}
+
+/**
+ * Whether "Allow Always" should be offered for a command.
+ *
+ * False for network-capable and script-capable binaries and for anything with a
+ * URL in its arguments. The user still gets Allow Once or Deny.
+ */
+function isAlwaysApprovalAllowed(command) {
+  return alwaysApprovalEligibility(command).eligible;
+}
+
+/**
  * Map a PermissionStore level string to a numeric score so we can compare
  * whether a grant is sufficient for the requested risk level.
  */
@@ -149,5 +175,7 @@ module.exports = {
   analyzeCommandRisk,
   explainCommand,
   checkShellPermission,
+  buildShellCommandKey,
+  isAlwaysApprovalAllowed,
   setPermissionStore,
 };

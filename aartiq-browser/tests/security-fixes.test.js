@@ -85,10 +85,22 @@ describe('Fix 1: checkShellPermission() — real permission gate', () => {
 
   it('should grant when command-specific grant exists at sufficient level', () => {
     const store = new MockPermissionStore();
-    store.grant('SHELL_CMD:ls', 'execute', 'allow ls');
+    // Command-specific grants are keyed on the full normalised command line.
+    // This used to be `SHELL_CMD:ls`, which meant a grant for a bare `ls` also
+    // covered `ls -la /tmp`, `ls ~/.ssh` and anything else starting with `ls`.
+    store.grant('SHELL_CMD:ls -la /tmp', 'execute', 'allow this exact ls');
     setPermissionStore(store);
     const result = checkShellPermission('ls -la /tmp', 'test', 'medium');
     assert.strictEqual(result, true, 'Should grant with sufficient level');
+  });
+
+  it('should NOT grant from a bare-binary key, which is the first-word defect', () => {
+    const store = new MockPermissionStore();
+    store.grant('SHELL_CMD:ls', 'execute', 'allow ls');
+    setPermissionStore(store);
+    // Same store as the test above, different key. This must not authorise a
+    // command the user never approved.
+    assert.strictEqual(checkShellPermission('ls -la /tmp', 'test', 'medium'), false);
   });
 
   it('should deny when grant level is insufficient for risk', () => {

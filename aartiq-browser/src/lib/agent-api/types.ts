@@ -23,8 +23,18 @@ export interface AgentApiConfig {
   host: string;
   enableHttp: boolean;
   enableMcp: boolean;
-  /** Bind to 0.0.0.0 to expose over Tailscale / LAN. */
+  /** Bind to 0.0.0.0 to expose over Tailscale / LAN. Off by default. */
   remote: boolean;
+  /**
+   * Token required on every HTTP route. Generated per process when absent.
+   *
+   * Supply one only to give a caller outside this process a stable credential;
+   * an unset token still means every request is authenticated, not that requests
+   * are open.
+   */
+  token?: string;
+  /** Hostnames accepted in the Host header when `remote` is on. */
+  remoteHosts?: string[];
   lmStudio: { enabled: boolean; baseUrl: string; model: string };
   ollama: { enabled: boolean; baseUrl: string; model: string };
   openclaw: { enabled: boolean; baseUrl: string };

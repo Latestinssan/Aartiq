@@ -228,14 +228,29 @@ exports.execShellCommand = async function(rawCommand, preApproved, reason, riskL
         return { success: false, error: 'Shell command execution denied by user.' };
       }
       if (remember) {
-        try {
-          const { PermissionStore } = require('../../lib/permission-store');
-          const store = new PermissionStore();
-          await store.load();
-          const cmdBinary = command.trim().split(/\s+/)[0].toLowerCase();
-          store.setAutoCommand(cmdBinary, true);
-        } catch (e) {
-          console.warn('[execShellCommand] Failed to save auto-approved command:', e.message);
+        // Only persist a grant when the command is eligible for one. The dialog
+        // already hides "Allow Always" for these, but this is the enforcement
+        // point: a renderer that sends remember:true anyway must not create a
+        // grant the UI would not have offered.
+        const { alwaysApprovalEligibility } = require('../../lib/shell-command-tiers');
+        const verdict = alwaysApprovalEligibility(command);
+        if (!verdict.eligible) {
+          console.warn(
+            `[execShellCommand] Ignoring "Always" for this command (${verdict.reason}); ` +
+            'allowing it once, but not storing a grant.',
+          );
+        } else {
+          try {
+            const { PermissionStore } = require('../../lib/permission-store');
+            const { normalizeCommandPattern } = require('../../lib/shell-command-tiers');
+            const store = new PermissionStore();
+            await store.load();
+            // Full normalised command line, not the first word. A grant for
+            // `grep pattern notes.md` no longer covers `grep pattern ~/.ssh/id_rsa`.
+            store.setAutoCommand(normalizeCommandPattern(command), true);
+          } catch (e) {
+            console.warn('[execShellCommand] Failed to save auto-approved command:', e.message);
+          }
         }
       }
     }

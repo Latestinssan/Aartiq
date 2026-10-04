@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Server, Plus, Trash2, Globe, Activity, Shield, Link as LinkIcon, Terminal, Key, Zap, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store/useAppStore';
+import { buildMcpSseUrl } from '@/lib/mcp-bridge-url';
 
 interface ServerPreset {
     name: string;
@@ -106,6 +107,15 @@ const McpSettings = () => {
     const [isAdding, setIsAdding] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState<ServerPreset | null>(null);
     const [statusMsg, setStatusMsg] = useState<string | null>(null);
+    /**
+     * Per-process bridge token, returned over IPC by autoConfigureClaudeMcp.
+     *
+     * The manual-config snippets below have to carry it, because the bridge now
+     * requires it on every route including /sse. A config without it still names
+     * the right port but is answered with 401, which the client reports as a
+     * bare connection failure.
+     */
+    const [mcpBridgeToken, setMcpBridgeToken] = useState<string | null>(null);
     const [newServer, setNewServer] = useState({
         name: '',
         type: 'sse' as 'sse' | 'stdio',
@@ -216,24 +226,40 @@ const McpSettings = () => {
                         <span className="text-[10px] font-bold uppercase tracking-widest">Claude Desktop Setup</span>
                     </div>
                     <p className="text-[11px] text-white/40 leading-relaxed">
-                        Add this to your Claude Desktop config to control Aartiq from Claude:
+                        Add this to your Claude Desktop config to control Aartiq from Claude.
                     </p>
+                    {!mcpBridgeToken && (
+                        <p className="text-[10px] leading-relaxed text-amber-300/80">
+                            The URL needs the session token shown below it. Click
+                            Auto-Configure first — the token is generated per Aartiq
+                            start, so the snippet is only valid for the current session.
+                            A config without it is answered with 401.
+                        </p>
+                    )}
                     <pre className="p-3 rounded-xl bg-black/40 border border-white/5 text-[10px] font-mono text-white/60 leading-relaxed overflow-x-auto">
 {`{
   "mcpServers": {
     "aartiq-browser": {
       "command": "npx",
-      "args": ["-y", "mcp-remote@0.1.17", "http://127.0.0.1:3001/sse"]
+      "args": ["-y", "mcp-remote@0.1.17", "${buildMcpSseUrl(3001, mcpBridgeToken)}"]
     }
   }
 }`}
                     </pre>
+                    {mcpBridgeToken && (
+                        <p className="text-[10px] leading-relaxed text-white/40">
+                            The token changes every time Aartiq restarts. Re-run
+                            Auto-Configure after a restart, or the client will be
+                            rejected with 401.
+                        </p>
+                    )}
                     <div className="flex gap-2">
                         <button
                             onClick={async () => {
                                 if (window.electronAPI) {
                                     const res = await window.electronAPI.autoConfigureClaudeMcp();
                                     if (res.success) {
+                                        setMcpBridgeToken((res as any).token || null);
                                         setStatusMsg('Claude Desktop config updated successfully');
                                     } else {
                                         setStatusMsg('Failed: ' + (res.error || 'unknown error'));
@@ -251,7 +277,7 @@ const McpSettings = () => {
                                     mcpServers: {
                                         "aartiq-browser": {
                                             command: "npx",
-                                            args: ["-y", "mcp-remote@0.1.17", "http://127.0.0.1:3001/sse"]
+                                            args: ["-y", "mcp-remote@0.1.17", buildMcpSseUrl(3001, mcpBridgeToken)]
                                         }
                                     }
                                 }, null, 2);

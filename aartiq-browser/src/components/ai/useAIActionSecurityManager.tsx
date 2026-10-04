@@ -11,6 +11,9 @@ import {
   normalizeRiskLevel,
   type ActionRiskLevel,
 } from '@/lib/ai-action-security';
+// The eligibility rule lives in the same module the main-process classifier
+// reads, so the dialog cannot offer a grant the store would refuse to record.
+import { alwaysApprovalEligibility } from '@/lib/shell-command-tiers';
 
 interface PermissionContext {
   actionType: string;
@@ -81,6 +84,16 @@ export function useAIActionSecurityManager() {
   const [dirPermissionLoading, setDirPermissionLoading] = useState(false);
   const [shellPermissionRequest, setShellPermissionRequest] = useState<ShellPermissionRequest | null>(null);
   const [shellPermissionLoading, setShellPermissionLoading] = useState(false);
+
+  // Whether "Always Allow" is offered for the command awaiting a decision.
+  // A grant is withheld for network-capable, script-capable and destructive
+  // commands, and for anything with a URL in its arguments.
+  const shellAlwaysVerdict = useMemo(
+    () => alwaysApprovalEligibility(shellPermissionRequest?.command ?? ''),
+    [shellPermissionRequest?.command],
+  );
+  const shellAlwaysAllowed = Boolean(shellPermissionRequest) && shellAlwaysVerdict.eligible;
+  const shellAlwaysReason = shellAlwaysVerdict.reason;
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -676,19 +689,31 @@ export function useAIActionSecurityManager() {
           >
             Allow Once
           </button>
-          <button
-            type="button"
-            disabled={shellPermissionLoading}
-            onClick={() => {
-              setShellPermissionLoading(true);
-              window.electronAPI?.respondShellPermission?.(shellPermissionRequest.requestId, true, true);
-              setShellPermissionRequest(null);
-              setShellPermissionLoading(false);
-            }}
-            className="flex-1 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            ✓ Always Allow
-          </button>
+          {shellAlwaysAllowed ? (
+            <button
+              type="button"
+              disabled={shellPermissionLoading}
+              onClick={() => {
+                setShellPermissionLoading(true);
+                window.electronAPI?.respondShellPermission?.(shellPermissionRequest.requestId, true, true);
+                setShellPermissionRequest(null);
+                setShellPermissionLoading(false);
+              }}
+              className="flex-1 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ✓ Always Allow
+            </button>
+          ) : (
+            <div
+              className="flex-1 rounded-lg border border-[color-mix(in_srgb,var(--border-color)_65%,transparent)] px-4 py-2.5 text-center text-[11px] leading-tight text-secondary-text/70"
+              title="A permanent grant is not offered for this command. Commands that reach the network, run other applications, or change permissions would carry that authority into every later invocation you did not see."
+            >
+              Always Allow unavailable
+              <span className="block text-[10px] opacity-70">
+                {shellAlwaysReason === 'url-argument' ? 'the command takes a URL' : 'network- or script-capable command'}
+              </span>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

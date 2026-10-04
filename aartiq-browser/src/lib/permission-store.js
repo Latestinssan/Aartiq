@@ -2,6 +2,11 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { app } = require('electron');
+const {
+  normalizeCommandPattern,
+  alwaysApprovalEligibility,
+  isAutoApproveEligibleTier,
+} = require('./shell-command-tiers');
 
 const PERM_LEVELS = ['read', 'interact', 'write', 'execute', 'send'];
 
@@ -22,7 +27,16 @@ class PermissionStore {
     this.storePath = null;
     this.loaded = false;
     this.settings = {
+      // Shell auto-approval is opt-in and off.
+      //
+      // `autoApproveLowRiskShell` is the only setting that can let a shell
+      // command run without the approval dialog, and only for the `low` tier.
+      // `autoApproveLowRisk` is kept as an alias because stored settings files
+      // and other callers still set it; `canAutoExecute` honours either.
+      autoApproveLowRiskShell: false,
       autoApproveLowRisk: false,
+      // Applies to MCP tool actions, not to shell commands. Kept so the action
+      // path is unchanged; it deliberately no longer reaches `canAutoExecute`.
       autoApproveMidRisk: false,
       requireDeviceUnlockForManualApproval: true,
       requireDeviceUnlockForVaultAccess: true,
@@ -54,6 +68,7 @@ class PermissionStore {
         const settings = JSON.parse(fs.readFileSync(this.settingsPath, 'utf-8'));
         this.settings = { ...this.settings, ...settings };
         this._syncAutoApprovedCommands();
+        this._migrateLegacyAutoApprovedCommands();
         this._syncAutoApprovedActions();
       }
     } catch (e) {
@@ -72,6 +87,51 @@ class PermissionStore {
         ? this.settings.autoApprovedCommands.map(cmd => (cmd || '').toLowerCase())
         : []
     );
+    this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
+  }
+
+  /**
+   * One-time migration of the first-word "Allow Always" entries.
+   *
+   * The old key format could not be translated faithfully: `curl` in the stored
+   * set might have come from any of an unbounded number of `curl` invocations,
+   * and the original command line was not kept. Reconstructing one would invent
+   * history.
+   *
+   * So each legacy entry is judged on its own terms:
+   *   - a binary that is still eligible for a persistent grant is kept. The new
+   *     key is an exact match, so a kept entry now covers only the bare
+   *     invocation — narrower than before, never wider.
+   *   - a network-capable, script-capable or destructive binary is dropped, and
+   *     the drop is written to the audit log. This is the entry that used to
+   *     carry the most authority for the least visibility.
+   *
+   * Nothing is dropped silently: every removal produces an audit line, and the
+   * behaviour change is recorded in the release note.
+   */
+  _migrateLegacyAutoApprovedCommands() {
+    const legacy = [];
+    const current = [];
+    for (const entry of this.autoApprovedCommands) {
+      const normalized = normalizeCommandPattern(entry);
+      const isLegacyFirstWord = typeof entry === 'string' && !/\s/.test(String(entry).trim());
+      if (!isLegacyFirstWord) {
+        current.push(normalized);
+        continue;
+      }
+      const verdict = alwaysApprovalEligibility(entry);
+      if (verdict.eligible) {
+        legacy.push(normalized);
+      } else {
+        this.logAudit(`settings.dropLegacyAutoApprovedCommand: ${normalized} (${verdict.reason})`);
+        console.warn(
+          `[PermissionStore] Dropped a stored "Always" grant for "${normalized}" — ${verdict.reason}. ` +
+          'A permanent grant is no longer offered for this command; answer Allow Once, or ' +
+          're-approve it if the exact command should be allowed to repeat.',
+        );
+      }
+    }
+    this.autoApprovedCommands = new Set([...current, ...legacy]);
     this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
   }
 
@@ -243,15 +303,30 @@ class PermissionStore {
   }
 
   isAutoExecutable(riskLevel) {
-    if (riskLevel === 'low' && this.settings.autoApproveLowRisk) return true;
+    if (riskLevel === 'low' && (this.settings.autoApproveLowRiskShell || this.settings.autoApproveLowRisk)) return true;
     if (riskLevel === 'medium' && this.settings.autoApproveMidRisk) return true;
     return false;
+  }
+
+  /**
+   * Shell-command auto-approval, kept separate from isAutoExecutable().
+   *
+   * `low` is the only tier that can be auto-approved, and only behind
+   * `autoApproveLowRiskShell` (default off). `medium` and `high` never are:
+   * `medium` covers cp, mv, mkdir, npm, git, curl and osascript, and
+   * auto-running those would hand over the authority the approval dialog exists
+   * to check. `autoApproveMidRisk` still applies to MCP tool actions through
+   * canAutoExecuteAction, which is a different question.
+   */
+  isShellAutoExecutable(riskLevel) {
+    if (!isAutoApproveEligibleTier(riskLevel)) return false;
+    return this.settings.autoApproveLowRiskShell === true || this.settings.autoApproveLowRisk === true;
   }
 
   canAutoExecute(command, riskLevel) {
     const key = this._normalizeCommand(command);
     if (this.autoApprovedCommands.has(key)) return true;
-    return this.isAutoExecutable(riskLevel);
+    return this.isShellAutoExecutable(riskLevel);
   }
 
   canAutoExecuteAction(actionType, riskLevel) {
@@ -263,9 +338,20 @@ class PermissionStore {
     return this.isAutoExecutable(normalizedRisk);
   }
 
+  /**
+   * Key for the persisted "Allow Always" command set.
+   *
+   * Was `command.trim().split(/\s+/)[0].toLowerCase()` — the first word alone, so
+   * one answer covered every later invocation of that binary. It is now the full
+   * normalised command line, which means a grant matches one specific command.
+   *
+   * Legacy entries that hold a bare binary with no arguments are migrated by
+   * `_migrateLegacyAutoApprovedCommands` on load: kept where the binary is still
+   * eligible for a persistent grant, dropped with an audit entry where it is
+   * not.
+   */
   _normalizeCommand(command) {
-    if (!command) return '';
-    return command.trim().split(/\s+/)[0].toLowerCase();
+    return normalizeCommandPattern(command);
   }
 
   _normalizeActionType(actionType) {
