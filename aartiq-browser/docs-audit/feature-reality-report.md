@@ -289,47 +289,53 @@ fails. If the manifest claims coverage that does not exist, `docs:check` fails.
 
 ---
 
-## 7. Found in passing, not fixed: a capability ticket can be redeemed twice
+## 7. A capability ticket could be redeemed twice — fixed, and the severity corrected
 
-Outside this pass's scope, in code this work never touched, and a security defect
-rather than a docs defect — so reported rather than fixed.
+**Correction first, because the first version of this section was wrong.** It
+reported this as a live security defect on `main`. It is not. `src/lib/approval-gate.js`
+has **zero callers** — nothing imports it, and it is not a documented feature. The
+approval path the app actually uses is `src/core/approval-ticket-manager.js`.
 
-**This is in `main`, not in some in-progress branch.** `src/lib/approval-gate.js` on
-`main` has a time-of-check-to-time-of-use race in `consumeTicket`:
+The defect is real, and it is fixed:
 
-| Line on `main` | Operation |
+| Line (before) | Operation |
 | --- | --- |
 | 117 | `if (consumedTickets.has(ticketId)) return invalid` — the check |
 | 134 | `const inputHash = await sha256(inputStr)` — **the await** |
 | 143 | `consumedTickets.add(ticketId)` — the mark |
 
-`consumeTicket` is `async`, and the only `await` sits between the check and the mark.
-Two concurrent calls both read the ticket, both pass the check, both suspend at line
-134, and both resume to mark and return `{ valid: true }`:
+`consumeTicket` is `async`, and the only `await` sat between the check and the mark,
+so simultaneous redemptions all passed the check and all reported success. Proven
+before the fix, in `docs-audit/red-evidence/approval-gate-concurrency.txt`:
 
-```js
-const [r1, r2] = await Promise.all([
-  gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 123 }),
-  gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 123 }),
-]);
-// Exactly one should succeed. Both do.
-```
+- two simultaneous redemptions -> **2** succeeded
+- eight simultaneous redemptions -> **8** succeeded
 
-`main` has **no test for `approval-gate` at all** — `tests/approval-gate.test.js` does
-not exist there, which is why this has gone unnoticed. A test doing exactly the above
-was written against this defect on an unpublished branch, where it fails; it is quoted
-here as the reproduction, not as a claim about `main`'s suite.
+**The fix** moves the claim above the first `await`. JavaScript runs synchronous
+statements without interleaving another async caller, so deleting the ticket there is
+the atomic claim; a concurrent caller now finds no ticket and fails. The hash check
+still runs afterwards — the ticket is already claimed by then, and a mismatch still
+fails closed leaving nothing redeemable. `consumedTickets` is still only written on
+success, and every error code is unchanged.
 
-An approval ticket is the mechanism that makes a privileged action happen exactly once
-per human approval. Redeeming one twice defeats that, which is the opposite of the
-project's "human-in-the-loop, always" principle. The same interleaving would also let
-a ticket be validated and then expire between check and use.
+### The live path is sound, and now has a guard
 
-**Fix shape:** mark consumed synchronously, before the first `await` — or hold a
-per-ticket lock, or delete-and-return the ticket atomically at the top and treat
-absence as already consumed. The hash verification can still run afterwards, because
-the ticket has already been claimed by then.
+`approval-ticket-manager.redeemTicket` is **fully synchronous** — no `await`
+anywhere between `_validateApproved` and `ticket.status = 'redeemed'`, so there is no
+interleaving point. `tests/approval-gate-concurrency.test.js` asserts that eight
+simultaneous redemptions of one approved ticket yield exactly one success, so if an
+`await` is ever introduced into that path the defect cannot reappear unnoticed in the
+one that matters.
 
-Not attempted here. This pass's mandate was to make the docs honest and close triage
-item 3, and changing the semantics of a security gate is a decision for whoever owns
-it, not a drive-by fix inside a docs PR.
+### A second defect, in the same module, reported not fixed
+
+Ticket ids are `ticket-${perInstanceCounter}-${Date.now()}`, where the counter is
+**per instance**, while `tickets` and `consumedTickets` are **module-level**. Two
+`ApprovalGate` instances constructed in the same millisecond therefore mint identical
+ids, and the first redemption invalidates the second unrelated ticket. The suite works
+around this with one shared gate so the concurrency assertions do not measure it by
+accident; the id scheme itself is unchanged, because changing it is a behavioural
+change for a module with no callers, and not one to smuggle into a security fix.
+
+Neither defect is reachable today, because the module is not called. Both are traps
+for whoever wires it up.
