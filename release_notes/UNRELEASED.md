@@ -26,3 +26,25 @@ also keeps 46203: its BridgeClient calls only the native bridge's
 
 Both changes are pinned by `tests/network-listener-hardening.test.js`, with
 the mutation record in `aartiq-browser/docs-audit/mutation-check-network-hardening.txt`.
+
+## Licensing
+
+### The browser ships Apache-2.0 everywhere
+
+The repository root, the README badge and GitHub's API all reported
+Apache-2.0 while `aartiq-browser/LICENSE.txt` was a restrictive EULA — the
+file the Windows installer displayed. The EULA is replaced with the same
+Apache-2.0 text the root carries, and `package.json` now declares
+`"license": "Apache-2.0"`, so installer, manifest and repository agree. The
+decision and the full EULA it replaced are recorded in
+`aartiq-browser/docs-audit/licence-decision.md`; `docs:check` rule (j) fails
+if the copies ever diverge again.
+
+## Changed
+
+### Comet → Aartiq file names
+
+The permission audit trail is `aartiq-audit.jsonl` now; a legacy
+`comet-audit.jsonl` is renamed on first load, and an existing
+`aartiq-audit.jsonl` is never overwritten. Chat export dialogs default to
+`aartiq-chat-<timestamp>.txt` / `.pdf` instead of `comet-chat-*`.

@@ -37,9 +37,11 @@
 # Behaviour gates from the mismatch audit: bind defaults, the env override,
 # the removed CORS headers, and the 46203/46204 port split.
 /aartiq-browser/tests/network-listener-hardening.test.js  @Latestinssan
+/aartiq-browser/tests/licence-audit-rename.test.js        @Latestinssan
 
 # The checker and the manifest harness that keep the manifest honest.
 /scripts/check-docs.ts                      @Latestinssan
+/scripts/test-check-docs.ts                 @Latestinssan
 /scripts/mutation-check-manifest.js         @Latestinssan
 
 # Mutation harnesses. A gate nobody has seen fail is a gate nobody can rely on,

@@ -193,7 +193,7 @@ Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/
 
 **4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1003 passed / 26 skipped / 0 failed of 1029 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1009 passed / 26 skipped / 0 failed of 1035 declared** (generated 2026-10-04).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
@@ -477,19 +477,13 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 <!-- SSOT:START license -->
 | Component | Licence | Licence file | Status |
 | --- | --- | --- | --- |
-| Aartiq Browser — desktop, mobile, and core code | Apache-2.0 | `LICENSE` | conflicted |
+| Aartiq Browser — desktop, mobile, and core code | Apache-2.0 | `LICENSE + aartiq-browser/LICENSE.txt` | verified |
 | Aartiq MCP Server — aartiq-mcp/ | MIT | `aartiq-mcp/LICENSE` | verified |
 | Landing page / documentation site | Unlicensed (private repository) | `none` | verified |
 
-> [!WARNING]
-> **Licence conflict — unresolved, and it needs a human decision.**
-> The repository root is Apache-2.0 (LICENSE), but `aartiq-browser/LICENSE.txt` is a restrictive EULA that forbids modification, derivative works, and redistribution, and it is the licence the Windows installer displays.
-> - aartiq-browser/package.json:190 sets nsis.license = LICENSE.txt, so Windows installers show the EULA.
-> - The EULA's own line 4 asserts 'This Is Open Source Software' while sections 2 forbids modification and redistribution.
-> - The README trademark section says the licence 'permits the use, modification, and redistribution of the source code', contradicting the EULA.
-> - gh api reports license: Apache-2.0 because it detects the root LICENSE only.
->
-> This file does not pick a side. Until the conflict is settled, treat the Apache-2.0 label on this component as unconfirmed.
+> [!NOTE]
+> **Licence conflict resolved (2026-10-04).** `aartiq-browser/LICENSE.txt` now carries the same Apache-2.0 text as the repository root, the package manifest declares `Apache-2.0`, and the Windows installer points at that same file — so installer, manifest and repository agree.
+> The decision, including the EULA it replaced, is recorded in `aartiq-browser/docs-audit/licence-decision.md`. `docs:check` rule (j) fails if the copies ever disagree again.
 
 The MCP server is MIT-licensed for compatibility with Claude Desktop and other MCP clients.
 

@@ -1,0 +1,35 @@
+Mutation checks for tests/licence-audit-rename.test.js (PR4)
+Recorded 2026-10-04 17:11
+
+Two fixes are pinned by this file: M14 (aartiq-browser ships Apache-2.0 —
+LICENSE.txt, the package license field, and the recorded decision) and M16
+(Comet -> Aartiq persisted names, with the audit-trail migration).
+
+Runs
+----
+- Baseline green (6 tests) before mutation; 6/6 again after revert.
+- The check-docs side of the same change (rule (j)) was verified separately
+  with `npm run docs:test`: 26/26 checks behaved as expected, including four
+  negative cases — EULA restored in LICENSE.txt, license field dropped,
+  installer pointed at a missing file, SSOT flag flipped back to unresolved.
+
+Mutations
+---------
+baseline: 6/6 tests pass (tests/licence-audit-rename.test.js)
+KILLED    EULA text put back in aartiq-browser/LICENSE.txt
+          -> 1 test(s) failed: M14 — the browser ships Apache-2.0, not the EULA › LICENSE.txt is the Apache-2.0 text the root LICENSE carries
+KILLED    package.json loses the "license": "Apache-2.0" field
+          -> 1 test(s) failed: M14 — the browser ships Apache-2.0, not the EULA › the manifest declares the licence the Windows installer also displays
+KILLED    licence-decision.md removed
+          -> 1 test(s) failed: M14 — the browser ships Apache-2.0, not the EULA › the decision is recorded in docs-audit/licence-decision.md
+KILLED    migration rename disabled (renameSync commented out)
+          -> 1 test(s) failed: M16 — Comet → Aartiq persisted names › first load migrates a legacy comet-audit.jsonl to aartiq-audit.jsonl
+KILLED    existence guard dropped (unconditional rename clobbers)
+          -> 1 test(s) failed: M16 — Comet → Aartiq persisted names › an existing aartiq-audit.jsonl is never clobbered by the legacy file
+KILLED    chat txt default back to comet-chat-
+          -> 1 test(s) failed: M16 — Comet → Aartiq persisted names › chat export dialogs default to aartiq-chat-*, not comet-chat-*
+KILLED    chat pdf default back to comet-chat-
+          -> 1 test(s) failed: M16 — Comet → Aartiq persisted names › chat export dialogs default to aartiq-chat-*, not comet-chat-*
+KILLED    session export back to comet-chat-session-
+          -> 1 test(s) failed: M16 — Comet → Aartiq persisted names › chat export dialogs default to aartiq-chat-*, not comet-chat-*
+post-revert: 6/6 tests pass again
