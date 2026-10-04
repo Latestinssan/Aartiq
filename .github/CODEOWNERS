@@ -49,6 +49,13 @@
 # reach, so an edit to one must not silently drop a signed result.
 /aartiq-browser/docs-audit/manual-checks/   @Latestinssan
 
+# The docs/source mismatch inventory (the audit's findings, one row per claim,
+# each citing file:line) and the recorded licence decision behind the
+# Apache-2.0 unification. Both are inputs to docs:check rules, so neither may
+# drift without review.
+/aartiq-browser/docs-audit/mismatch-inventory.md   @Latestinssan
+/aartiq-browser/docs-audit/licence-decision.md     @Latestinssan
+
 # The triage table the manifest is the machine-readable form of, and the evidence
 # the gates produced.
 /aartiq-browser/docs-audit/feature-triage.md  @Latestinssan

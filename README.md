@@ -193,7 +193,7 @@ Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/
 
 **4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **980 passed / 26 skipped / 0 failed of 1006 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **993 passed / 26 skipped / 0 failed of 1019 declared** (generated 2026-10-04).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
@@ -275,7 +275,7 @@ Stored credentials and profiles are kept in an encrypted vault (AES-GCM, passphr
 
 ### Chrome extensions
 
-Extensions can be loaded from an on-disk unpacked directory or installed from the Chrome Web Store. Web Store packages are validated as CRX3: the signature is verified with the embedded public key.
+Extensions can be loaded from an on-disk unpacked directory or installed from the Chrome Web Store. Web Store packages are checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's own test suite is currently skipped because `verifyCrx` hangs on Node 24's OpenSSL (`src/tests/extensions.crx-verifier.test.ts:12-16`), so signature verification is not covered by CI and is not claimed here to be runtime-verified.
 
 ### UI themes and modes
 
@@ -439,11 +439,9 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 ---
 > [!IMPORTANT]
 >
-> ## 🚧 Project Status: AI-Assisted Maintenance
+> ## 🚧 Project Status
 >
-> Aartiq was built solo, from scratch, over the past several months — no team, no funding, just one developer learning as it went. It's now a working, tested, cross-platform AI browser with a real permission and sandboxing model behind it.
->
-> **Development has shifted to an AI-assisted maintenance model.** AI agents now handle a meaningful share of day-to-day work — reviewing issues, analyzing bugs, improving docs, and preparing fixes. This does **not** mean the project is unmaintained or unaccountable:
+> Aartiq is a solo project maintained in an AI-assisted rhythm: AI agents handle day-to-day issue triage, analysis, and fix preparation, and a human reviews and approves every change to security, permissions, user data, or releases before it ships. Development currently runs at a limited pace around academic commitments — feature work pauses and resumes in bursts rather than on a fixed schedule. The repository stays public, existing releases stay available, and bug reports go to GitHub issues, triaged in the order things break. In short:
 >
 > - Every change to security, permissions, user data, releases, or project direction is reviewed and approved by a human before it ships.
 > - CI must be green before any release goes out (see the Security section above for the current test numbers).
