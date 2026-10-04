@@ -1,0 +1,60 @@
+# Red evidence — approval-gate double redemption
+
+Captured: 2026-10-04T07:18:37Z
+Baseline: 57b70fc0 (unfixed source)
+Suite:    tests/approval-gate-concurrency.test.js
+
+The defect, before the fix: simultaneous redemptions of one ticket all succeed.
+
+  console.log
+    [ApprovalTicket] Issued ticket 6ee08c60-8f10-4e8c-a73b-25d58fc6b26c for "test.live-once"
+  console.log
+    [AUDIT] Ticket 6ee08c60-8f10-4e8c-a73b-25d58fc6b26c approved by user
+  console.log
+    [AUDIT] Ticket 6ee08c60-8f10-4e8c-a73b-25d58fc6b26c redeemed for execution
+  console.log
+    [ApprovalTicket] Issued ticket 054df8a6-a3fd-4857-b628-525f59a3aa67 for "test.sequential-once"
+  console.log
+    [AUDIT] Ticket 054df8a6-a3fd-4857-b628-525f59a3aa67 approved by user
+  console.log
+    [AUDIT] Ticket 054df8a6-a3fd-4857-b628-525f59a3aa67 redeemed for execution
+FAIL tests/approval-gate-concurrency.test.js
+  ● ApprovalGate.consumeTicket — one ticket, one redemption › lets exactly one of two simultaneous redemptions succeed
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"valid": true}, {"valid": true}]
+      40 |     ]);
+      41 |
+    > 42 |     expect([a, b].filter((r) => r.valid)).toHaveLength(1);
+         |                                           ^
+      43 |   });
+      44 |
+      45 |   it('lets exactly one of eight simultaneous redemptions succeed', async () => {
+  ● ApprovalGate.consumeTicket — one ticket, one redemption › lets exactly one of eight simultaneous redemptions succeed
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 8
+    Received array:  [{"valid": true}, {"valid": true}, {"valid": true}, {"valid": true}, {"valid": true}, {"valid": true}, {"valid": true}, {"valid": true}]
+      51 |     );
+      52 |
+    > 53 |     expect(results.filter((r) => r.valid)).toHaveLength(1);
+         |                                            ^
+      54 |     expect(results.filter((r) => !r.valid)).toHaveLength(7);
+      55 |   });
+      56 |
+  ● ApprovalGate.consumeTicket — one ticket, one redemption › reports the losers as APPROVAL_INVALID rather than failing silently
+    expect(received).toBeDefined()
+    Received: undefined
+      65 |
+      66 |     const loser = results.find((r) => !r.valid);
+    > 67 |     expect(loser).toBeDefined();
+         |                   ^
+      68 |     expect(loser.error).toBe(ERRORS.APPROVAL_INVALID);
+      69 |   });
+      70 | });
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 8 passed, 11 total
+Snapshots:   0 total
+Time:        0.093 s, estimated 1 s
+Ran all test suites matching tests/approval-gate-concurrency.test.js.

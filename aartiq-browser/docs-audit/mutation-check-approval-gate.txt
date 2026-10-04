@@ -1,0 +1,50 @@
+Mutation checks for tests/approval-gate-concurrency.test.js (PR3, fix B1)
+Recorded 2026-10-04 16:49
+
+What the fix is
+---------------
+src/lib/approval-gate.js consumeTicket claims the ticket synchronously —
+`tickets.delete(ticketId)` runs before the only await (the hash) — so exactly
+one of N simultaneous redemptions can pass the existence check.
+
+Runs
+----
+- Both suites green before mutation: approval-gate-concurrency (11 tests) and
+  linux-ipc-registration (6 tests), 17 total.
+- approval-gate-concurrency run 10x in a row after the test-only layout fix:
+  10/10 pass.
+- Observed flake BEFORE this PR (pre-existing, recorded here as found): full
+  suite runs on 2026-10-04 intermittently failed "reports a scope mismatch
+  when the action type differs" with APPROVAL_INVALID instead of
+  APPROVAL_SCOPE_MISMATCH. Mechanism: tickets/consumedTickets are module-level
+  but ids are `ticket-${perInstanceCounter}-${Date.now()}` with one gate
+  instance per describe — a restarted counter minted an id that an earlier
+  describe had already consumed, and consumeTicket rejects on
+  consumedTickets.has before it reaches the actionType check. The test file's
+  header already specified one shared gate; the code now matches it. That is
+  a test-layout change only — no source was touched to silence the flake.
+- The underlying id scheme (predictable counter + clock) is reported, not
+  changed: it is a source-behaviour decision for the maintainer.
+
+Mutations
+---------
+baseline B1: green (tests/approval-gate-concurrency.test.js)
+KILLED    B1: atomic claim removed (tickets.delete below the checks gone)
+          → 4 test(s) failed: ApprovalGate.consumeTicket — existing guarantees must survive the fix › burns the ticket when the input does not match the bound hash; ApprovalGate.consumeTicket — one ticket, one redemption › lets exactly one of eight simultaneous redemptions succeed
+KILLED    B1: claim moved below the await — the original check-then-act bug shape
+          → 3 test(s) failed: ApprovalGate.consumeTicket — one ticket, one redemption › lets exactly one of eight simultaneous redemptions succeed; ApprovalGate.consumeTicket — one ticket, one redemption › lets exactly one of two simultaneous redemptions succeed
+SURVIVED  B1: consumed mark dropped (consumedTickets.add gone)
+          → 0 test(s) failed: -
+post-revert B1: green again
+Note on the surviving mutation
+-------------------------------
+`consumedTickets.add(ticketId)` survived: no current assertion fails without
+it. The mark is defence-in-depth against an id being re-minted after it was
+consumed — createTicket would put the id back into `tickets`, and the
+consumed-mark is what rejects it. With the singleton gate the application
+uses (globalApprovalGate), the counter never restarts, so a re-mint cannot
+happen today; it becomes reachable again the moment a second ApprovalGate
+instance exists (the scenario that produced the observed flake in this very
+test file). Reported as a coverage gap: either a test that forces the
+re-mint, or a per-process random component in the id scheme, is the
+maintainer's call. Not papered over here.

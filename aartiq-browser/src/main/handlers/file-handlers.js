@@ -435,7 +435,7 @@ module.exports = function registerFileHandlers(ipcMain, handlers) {
     const downloadsPath = app.getPath('downloads');
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Chat History',
-      defaultPath: path.join(downloadsPath, `comet-chat-${Date.now()}.txt`),
+      defaultPath: path.join(downloadsPath, `aartiq-chat-${Date.now()}.txt`),
       filters: [{ name: 'Text Files', extensions: ['txt'] }]
     });
     if (!canceled && filePath) {
@@ -479,7 +479,7 @@ module.exports = function registerFileHandlers(ipcMain, handlers) {
       const downloadsPath = app.getPath('downloads');
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: 'Export Chat as PDF',
-        defaultPath: path.join(downloadsPath, `comet-chat-${Date.now()}.pdf`),
+        defaultPath: path.join(downloadsPath, `aartiq-chat-${Date.now()}.pdf`),
         filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
       });
 

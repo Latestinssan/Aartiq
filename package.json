@@ -6,8 +6,9 @@
   "scripts": {
     "docs:test-facts": "node scripts/gen-test-facts.ts",
     "docs:test-facts:from-ci": "node scripts/gen-test-facts.ts --ci-artifact 34769503518",
+    "docs:shell-tiers": "node scripts/gen-shell-tiers.ts",
     "docs:repo-facts": "node scripts/gen-repo-facts.ts",
-    "docs:facts": "npm run docs:repo-facts && npm run docs:test-facts",
+    "docs:facts": "npm run docs:repo-facts && npm run docs:test-facts && npm run docs:shell-tiers",
     "docs:sync": "node scripts/sync-docs.ts",
     "docs:check": "node scripts/check-docs.ts",
     "docs:test": "node scripts/test-check-docs.ts",

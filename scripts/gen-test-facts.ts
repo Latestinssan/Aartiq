@@ -25,7 +25,14 @@ import type { GeneratedTestFacts } from "../../Aartiq-Landing-Page/src/data/proj
 
 const REPO = join(import.meta.dirname, "..");
 const BROWSER = join(REPO, "aartiq-browser");
-const LANDING_DATA = join(REPO, "..", "Aartiq-Landing-Page", "src", "data");
+/**
+ * The landing page is a separate repository that normally sits beside this one.
+ * `AARTIQ_LANDING_DIR` overrides that, so a worktree writes its facts into the
+ * tree it was pointed at instead of into whatever sits beside the worktree.
+ * See the same note in scripts/gen-repo-facts.ts.
+ */
+const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
+const LANDING_DATA = join(LANDING, "src", "data");
 
 // ---------------------------------------------------------------------------
 // Skip-reason classification

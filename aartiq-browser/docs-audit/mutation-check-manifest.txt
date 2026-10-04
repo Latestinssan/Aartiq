@@ -1,3 +1,12 @@
+# Mutation check — the feature manifest gate
+
+Captured: 2026-10-04T07:06:04Z
+Baseline: 6e925001
+Harness:  scripts/mutation-check-manifest.js
+
+A mutation that leaves the gate green is a hole in the gate, not a pass.
+Problems and warnings both count as noticed.
+
 === mutation check: the feature manifest gate ===
 
   killed     a test id names a test file that does not exist

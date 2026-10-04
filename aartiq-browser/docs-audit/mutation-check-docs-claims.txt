@@ -1,0 +1,44 @@
+mutation-check-docs-claims.txt
+Gate under test: aartiq-browser/tests/docs-listener-claims-match-source.test.js
+Repo: Aartiq branch pr1/docs-mismatch-fixes (base origin/main 72085f01), landing branch pr1/docs-mismatch-fixes (base docs/honest-feature-docs b2ca958)
+Date: 2026-10-04
+Method: each corrected claim in the docs is reverted to its pre-fix wording (or a plausible wrong
+wording), the gate is run, and the expected result is a failure. The file is restored from memory
+after each run, and a final green run proves no mutation was left behind.
+Recorded by: automated mutation harness (see docs-audit/mutation-check-*.txt siblings)
+
+baseline (no mutation): exit=0 | Tests:       13 passed, 13 total
+[M1-mcp-settings-bind] src/app/mcp-settings/page.tsx: 'resolveBindHost() (mcp-browser-server.js:1678-1681) and list' -> 'mcp-browser-server.js:1620 calls listen(port) with no host a'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M1-search-index] src/lib/search-index.ts: 'the agent API, the native bridge and the MCP SSE bridge all ' -> 'the agent API and native bridge are loopback-only while the '
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M2-token-claim] src/app/docs/security/page.tsx: 'The WiFi sync and PDF sync listeners carry no token (README ' -> 'Every local listener requires a per-process token on each re'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M7-qr-two-things] src/app/docs/security/page.tsx: 'The QR flow is used for power actions, desktop AI-initiated ' -> 'The QR flow is used for two things only: power actions, and '
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M8-table-labels] src/app/docs/security/page.tsx: 'Approval — AI browser actions' -> 'Approval Tiers'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M9-critical-ticket] src/app/docs/security/page.tsx: 'and a human decision at that point is a plain Allow / Deny t' -> 'and anything that does proceed is Routed through the capabil'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M11-enforcement-card] src/app/docs/security/page.tsx: 'Enforcement Boundaries (OS-applied), of six layers' -> 'Enforcement Layers Beyond The Firewall'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M17-skill-counts] src/app/docs/skills/page.tsx: '28 tools across 9 categories, registered in ALL_TOOLS.' -> '36 tools across 11 categories, registered via registerAllToo'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M15-overview-status] src/app/docs/overview/page.tsx: 'feature work pauses and resumes in bursts rather than on a f' -> 'development is limited until exams are over'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[M21-readme-crx] README.md: "The verifier's own test suite is currently skipped" -> 'The signature is verified with the embedded public key befor'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+[X3-changelog-scope] CHANGELOG.md: 'Every route on the three tokened local listeners' -> 'Every route on the local listeners'
+    jest exit=1 | Tests:       1 failed, 12 passed, 13 total
+    => MUTATION KILLED (test failed, as required)
+after revert: exit=0 | Tests:       13 passed, 13 total

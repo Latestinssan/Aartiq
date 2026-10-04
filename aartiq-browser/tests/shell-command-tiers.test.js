@@ -289,6 +289,39 @@ describe('"Allow Always" eligibility', () => {
     expect(alwaysApprovalEligibility('NODE_ENV=x node app.js').eligible).toBe(false);
     expect(alwaysApprovalEligibility('').eligible).toBe(false);
   });
+
+  test('an unrecognised binary is ineligible, because it cannot be described', () => {
+    // The gap the deny-list alone left open: anything not named in
+    // NEVER_ALWAYS_ELIGIBLE passed, so a binary nobody had classified could take
+    // a permanent grant. It is `medium` precisely because nothing is known about
+    // it, and that same ignorance is why "Allow Once" is the strongest answer
+    // available for it.
+    const verdict = alwaysApprovalEligibility('some-tool --version');
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.reason).toBe('unrecognised-binary:some-tool');
+  });
+
+  test('a path-qualified binary is judged on its basename', () => {
+    // extractBaseBinary strips directories, so a path must not change the verdict
+    // in either direction: it cannot make an unknown binary look known, and it
+    // cannot make a known binary ineligible.
+    expect(alwaysApprovalEligibility('/opt/vendor/blobtool --dump').eligible).toBe(false);
+    expect(alwaysApprovalEligibility('/bin/ls -la').eligible).toBe(true);
+  });
+
+  test('a Windows executable suffix is stripped before the lookup', () => {
+    expect(alwaysApprovalEligibility('ls.exe -la').eligible).toBe(true);
+    expect(alwaysApprovalEligibility('blat.exe --version').eligible).toBe(false);
+  });
+
+  test('local file writes keep exact-match permanent grants', () => {
+    // Eligibility is not restricted to the low tier. `cp` and friends are medium
+    // and still grantable, because repeating them has effects the dialog text
+    // shows — unlike a network fetch or a script.
+    for (const command of ['cp a b', 'mv a b', 'mkdir new-dir', 'touch file']) {
+      expect(alwaysApprovalEligibility(command).eligible).toBe(true);
+    }
+  });
 });
 
 describe('isAutoApproveEligibleTier', () => {

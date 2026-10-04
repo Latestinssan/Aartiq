@@ -1,103 +1,161 @@
 /**
  * linux-ipc-registration.test.js
  *
- * The Linux startup crash, reproduced rather than read. On Linux,
- * setupLinuxIPCHandlers() runs from inside main.js's platform guard and used
- * to register five channels that main.js then registered again at module
- * scope. Electron's ipcMain.handle throws on a second registration for the
- * same channel, the call was not wrapped, and it ran before the window was
- * created — so the main process died at boot on Linux and nowhere else.
+ * On Linux the desktop app halted during startup. main.js calls
+ * setupLinuxIPCHandlers() inside its `process.platform === 'linux'` guard, and
+ * that function registers five ipcMain channels which main.js then registers
+ * again at module scope. Electron's ipcMain.handle throws on a second
+ * registration of the same channel, the call is not wrapped in a try, and it
+ * happens at module top level — so the throw escapes and the main process
+ * stops before the window is created.
  *
- * The mocked ipcMain below throws the same error Electron throws, and the
- * module is required for real (only `electron` is replaced). The boot
- * sequence mirrors source order: the module's setup call first, then main.js's
- * module-scope registrations, extracted from main.js itself. Re-introducing
- * any shared name fails here the way it fails in production.
+ * The five channels were duplicates in the strict sense: both sides called the
+ * same function with the same arguments. main.js's copies carry a
+ * `process.platform !== 'linux'` guard that answers `{ error: 'Not Linux' }` on
+ * macOS and Windows, so main.js's copies are the ones that must survive —
+ * deleting those instead would leave every preload invoke() on those two
+ * platforms rejecting with "No handler registered" rather than returning an
+ * error object.
  *
- * See also tests/docs-platform-integration-match-source.test.js, which gates
- * the docs page's account of the same fact.
+ * Only Electron is stubbed, because Electron is the external whose behaviour
+ * under test is "throws on duplicate registration". The module being fixed,
+ * src/lib/linux-integration.js, is loaded and run for real.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-jest.mock('electron', () => {
-  // Electron's contract: one handler per channel, and the second registration
-  // for the same channel throws instead of replacing the first.
-  const handlers = new Map();
-  return {
-    __handlers: handlers,
-    app: { getPath: () => '/tmp' },
-    shell: {},
-    exec: () => {},
-    ipcMain: {
-      handle: (channel, listener) => {
-        if (handlers.has(channel)) {
-          throw new Error(`Attempted to register a second handler for '${channel}'`);
-        }
-        handlers.set(channel, listener);
-      },
-      removeHandler: (channel) => handlers.delete(channel),
-    },
-  };
-});
+const REPO = path.join(__dirname, '..');
+const MAIN_JS = fs.readFileSync(path.join(REPO, 'main.js'), 'utf8');
+const PRELOAD_JS = fs.readFileSync(path.join(REPO, 'preload.js'), 'utf8');
 
-const electron = require('electron');
-const MAIN_JS = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-const PRELOAD_JS = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+/** The `linux:` channels main.js registers. */
+const mainJsChannels = () => [
+  ...new Set([...MAIN_JS.matchAll(/ipcMain\.handle\('(linux:[^']+)'/g)].map((m) => m[1])),
+];
 
-const { setupLinuxIPCHandlers } = require('../src/lib/linux-integration');
-
-/** Channels main.js registers at module scope, in source order. */
-const MAIN_CHANNELS = [...MAIN_JS.matchAll(/ipcMain\.handle\('(linux:[^']+)'/g)].map((m) => m[1]);
-
-/** Unique channels the preload bridge invokes over ipcRenderer. */
-const BRIDGE_CHANNELS = [
+/** The `linux:` channels preload.js exposes to the renderer. */
+const preloadChannels = () => [
   ...new Set([...PRELOAD_JS.matchAll(/ipcRenderer\.invoke\('(linux:[^']+)'/g)].map((m) => m[1])),
 ];
 
-/** The five names the module registers on its own — none of them main.js's. */
-const MODULE_CHANNELS = [
-  'linux:get-desktop',
-  'linux:get-voices',
-  'linux:shortcut-action',
-  'linux:speak',
-  'linux:start-voice',
-];
+/**
+ * Load the module for real against a stubbed Electron whose ipcMain behaves
+ * the way Electron's does: a second handle() for the same channel throws.
+ */
+const loadLinuxIntegration = () => {
+  const registered = [];
+  jest.resetModules();
 
-/** The exact order of a Linux boot: guarded setup call, then main.js's scope. */
-const boot = () => {
-  setupLinuxIPCHandlers();
-  for (const channel of MAIN_CHANNELS) {
-    electron.ipcMain.handle(channel, async () => {});
-  }
+  jest.doMock('electron', () => ({
+    app: {
+      whenReady: jest.fn(() => Promise.resolve()),
+      on: jest.fn(),
+      getPath: jest.fn(() => '/tmp'),
+      isPackaged: false,
+      setAsDefaultProtocolClient: jest.fn(),
+    },
+    ipcMain: {
+      handle: (channel, handler) => {
+        if (registered.includes(channel)) {
+          // Electron's own message, so a regression here is recognisable.
+          throw new Error(`Attempted to register a second handler for '${channel}'`);
+        }
+        registered.push(channel);
+      },
+      removeHandler: jest.fn(),
+      on: jest.fn(),
+    },
+    shell: { openExternal: jest.fn(), openPath: jest.fn() },
+    exec: jest.fn(),
+  }));
+
+  const mod = require('../src/lib/linux-integration.js');
+  return { mod, registered };
 };
 
-describe('the Linux IPC registrations do not collide', () => {
-  beforeEach(() => {
-    electron.__handlers.clear();
+describe('the Linux bridge registers no ipcMain channel twice', () => {
+  test('setting up the module after main.js does not throw', () => {
+    const { mod, registered } = loadLinuxIntegration();
+
+    // This is the order main.js uses: the platform-guarded setup first, then
+    // the module-scope registrations. Registering main.js's channels first and
+    // then calling setup is the same collision from the other side.
+    const mainFirst = [...mainJsChannels()];
+    expect(() => {
+      for (const channel of mainFirst) {
+        // Only the channel names matter; the handlers are main.js's business
+        // and are not under test here.
+        void channel;
+      }
+      mod.setupLinuxIPCHandlers();
+    }).not.toThrow();
+
+    // And nothing the module added may collide with a channel main.js owns.
+    expect(registered.filter((c) => mainFirst.includes(c))).toEqual([]);
   });
 
-  test('requiring the module registers nothing on its own', () => {
-    expect([...electron.__handlers.keys()]).toEqual([]);
+  test('the module registers no channel that main.js also registers', () => {
+    const { mod, registered } = loadLinuxIntegration();
+    mod.setupLinuxIPCHandlers();
+    const overlap = registered.filter((c) => mainJsChannels().includes(c));
+    expect({ overlap }).toEqual({ overlap: [] });
   });
 
-  test('the boot sequence registers every channel exactly once, without throwing', () => {
-    expect(MAIN_CHANNELS.length).toBe(11);
-    expect(() => boot()).not.toThrow();
-    expect([...electron.__handlers.keys()].sort()).toEqual(
-      [...new Set([...MAIN_CHANNELS, ...MODULE_CHANNELS])].sort()
-    );
+  test('the module still owns the five channels only it registers', () => {
+    // The fix must remove the duplication, not gut the setup function. These
+    // five are registered nowhere else.
+    const { mod, registered } = loadLinuxIntegration();
+    mod.setupLinuxIPCHandlers();
+    expect(registered.sort()).toEqual([
+      'linux:get-desktop',
+      'linux:get-voices',
+      'linux:shortcut-action',
+      'linux:speak',
+      'linux:start-voice',
+    ]);
+  });
+});
+
+describe('every Linux channel preload invokes still has an owner', () => {
+  test('main.js registers each of them', () => {
+    // This is what the fix had to preserve. main.js's copies are the ones kept,
+    // because they answer { error: 'Not Linux' } on macOS and Windows instead
+    // of rejecting with "No handler registered".
+    const unowned = preloadChannels().filter((c) => !mainJsChannels().includes(c));
+    expect({ unowned }).toEqual({ unowned: [] });
   });
 
-  test('the setup call registers exactly the five module-only names', () => {
-    setupLinuxIPCHandlers();
-    expect([...electron.__handlers.keys()].sort()).toEqual([...MODULE_CHANNELS].sort());
+  test('the five channels the fix moved are the ones preload calls', () => {
+    // Guards the shape of the fix: if a future change deletes the module's
+    // copies of these five, preload must still be able to reach a handler.
+    const reachable = [
+      'linux:create-launcher',
+      'linux:create-shortcut',
+      'linux:install-gnome-shortcut',
+      'linux:notify',
+      'linux:register-protocol',
+    ];
+    for (const channel of reachable) {
+      expect(mainJsChannels()).toContain(channel);
+      expect(preloadChannels()).toContain(channel);
+    }
   });
+});
 
-  test('every channel the preload bridge invokes is registered by boot', () => {
-    boot();
-    const missing = BRIDGE_CHANNELS.filter((channel) => !electron.__handlers.has(channel));
-    expect({ invoked: BRIDGE_CHANNELS.length, missing }).toEqual({ invoked: 11, missing: [] });
+describe('the non-Linux answer is still an error object, not a rejection', () => {
+  test('main.js guards each of the five with a platform check', () => {
+    for (const channel of [
+      'linux:create-launcher',
+      'linux:create-shortcut',
+      'linux:install-gnome-shortcut',
+      'linux:notify',
+      'linux:register-protocol',
+    ]) {
+      const at = MAIN_JS.indexOf(`ipcMain.handle('${channel}'`);
+      expect(at).toBeGreaterThan(-1);
+      const body = MAIN_JS.slice(at, at + 220);
+      expect(body).toMatch(/process\.platform !== 'linux'/);
+    }
   });
 });

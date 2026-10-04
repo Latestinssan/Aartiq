@@ -73,8 +73,8 @@ did not go stale when the repository advanced underneath them (see §5).
 | `tests/docs-deep-links-match-source.test.js` | 19 | The `open-url` handler's command map and branches |
 | `tests/docs-platform-integration-match-source.test.js` | 44 | 24 action handlers, their sends, and their listeners |
 
-Full suite at the time of writing: **1158 passed, 26 skipped, 1 failed**. The
-failure is not in this work — see §7.
+Full suite on `main` with this branch applied: **944 passed, 26 skipped, 0 failed**
+across 33 suites.
 
 ### Mutation-checked, because a gate nobody has seen fail is decoration
 
@@ -87,10 +87,11 @@ notice:
 | `mutation-check-genmoji.sh` | 7 | 7 |
 | `mutation-check-deeplinks.js` | 12 | 12 |
 | `mutation-check-platform-docs.js` | 15 | 15 |
-| `mutation-check-manifest.js` | 16 | 16 (2 by warning) |
+| `mutation-check-manifest.js` | 16 | 14 killed, 2 by warning |
 
-Output recorded under `docs-audit/`. Ten mutations survived a first attempt and
-each survivor was a real weakness in a test, not a bad mutation:
+**50 mutations, every one noticed.** Output recorded under `docs-audit/`, each file
+naming the baseline it was captured against. Ten mutations survived a first attempt
+and each survivor was a real weakness in a test, not a bad mutation:
 
 - The platform suite's `reachesApi` missed `executePowerShell`, so Windows volume
   derived as dead and the page's correct `works` failed. The derivation was wrong,
@@ -126,7 +127,7 @@ what is owned is the machinery that decides whether a page is telling the truth.
 
 ---
 
-## 3. Severe finding: five Linux IPC channels are registered twice
+## 3. Severe finding, now fixed: five Linux IPC channels were registered twice
 
 Not part of the original scope. Found while writing the Linux page's bridge
 table, when a claim I had written turned out to be wrong in the other direction.
@@ -137,26 +138,67 @@ and missed eleven registrations in `main.js`. There is no gap. Both pages and th
 gate were corrected, and the gate now asserts the opposite so the mistake cannot
 return silently.
 
-The real problem is worse than the one I had invented:
+The real problem was worse than the one I had invented:
 
-1. `setupLinuxIPCHandlers()` registers ten `linux:` channels, including
+1. `setupLinuxIPCHandlers()` registered ten `linux:` channels, including
    `linux:notify`, `linux:create-shortcut`, `linux:install-gnome-shortcut`,
    `linux:create-launcher` and `linux:register-protocol`.
 2. `main.js:752` calls it inside `if (process.platform === 'linux')`, then
-   registers the same five names again at lines 781–805.
+   registers the same five names again at module scope.
 3. Electron's `ipcMain.handle` throws
    `Attempted to register a second handler for '<channel>'` on a duplicate
    (verified against `ipc-main-impl.ts` at v43.1.0, the version in `package.json`).
-4. The call is not wrapped in a `try`, so **main.js stops executing at line 781**,
-   and the four registrations after it never happen either.
+4. The call was not wrapped in a `try`, so **main.js stopped executing at line 781**,
+   and the four registrations after it never happened either.
 
-**Not fixed here.** It is untriaged and outside this pass's mandate. It is
-documented on the Linux page, and `docs-platform-integration-match-source.test.js`
-pins the overlap, the ordering and the missing `try` so the claim cannot rot.
+**Fixed.** The five duplicates are removed from `setupLinuxIPCHandlers()`, which
+now registers only the five channels nothing else provides. Red evidence, before
+the fix, in `docs-audit/red-evidence/linux-ipc-registration.txt`: the module's
+registration overlapped `main.js` on exactly those five channels.
 
-Why nobody noticed: the guard is Linux-only, and nothing in the repository
-registers these channels on macOS or Windows, so both of those platforms are
-unaffected. **This needs a maintainer decision.**
+**main.js's copies are the ones kept, and that choice is load-bearing.** They
+carry a `process.platform !== 'linux'` check that answers `{ error: 'Not Linux' }`
+on macOS and Windows, where `setupLinuxIPCHandlers()` never runs. Deleting those
+instead would have removed the crash *and* left every `preload.js` invoke for
+those five channels rejecting with `No handler registered` instead of returning
+an error — trading a Linux-only crash for a silent breakage on two platforms. A
+test asserts both that `main.js` still owns them and that each is still guarded.
+
+### The crash was untestable, which is why it survived
+
+`linux-integration.js` could not be loaded by Jest at all. It named a parameter
+`interface` in `executeDBus`, and `interface` is a reserved word in strict mode,
+which is how Jest loads modules. So no test had ever been able to call
+`setupLinuxIPCHandlers()` and reach the crash. The parameter is now
+`dbusInterface`; the rename is the only behavioural change to that function.
+
+`tests/linux-ipc-registration.test.js` now calls the real setup function against
+an Electron stub whose `ipcMain.handle` throws on a duplicate, exactly as the
+real one does, and requires the registration not to throw. Two mutations were
+tried against it: restoring a single duplicate channel, and removing a channel
+only the module provides. Both were caught, so the fix cannot be satisfied by
+gutting the function instead.
+
+### The gate block was rewritten, not deleted
+
+Four tests in `docs-platform-integration-match-source.test.js` asserted that the
+duplication was *still present* — they existed so the docs page could report it
+honestly. They are now inverted to assert the fixed state. Two of them would
+otherwise have kept passing unchanged, because they only read the *order* of the
+two registrations and the absence of a `try`: both still textually true, both
+describing a crash that no longer happens. Leaving them green on stale reasoning
+would have been the worst outcome, so they were rewritten rather than left alone.
+
+### Still true, and not fixed by this
+
+The five channels the module registers *and* nothing invokes —
+`linux:get-desktop`, `linux:shortcut-action`, `linux:speak`, `linux:get-voices`,
+`linux:start-voice` — are registered once and still dead. Fixing the crash removed
+the duplication, not the orphans. The page and the gate both still report them.
+
+Nothing in this was verified by running the app on Linux. The claim is read off
+the two registration sites and Electron's implementation, and is now backed by a
+test that exercises the real registration path.
 
 ---
 
@@ -195,36 +237,41 @@ Listed as a standing warning so they stay visible.
 
 ## 5. One caveat about this report
 
-The repository advanced repeatedly while this pass was running (`63baa5ee` →
-`865fce5e` → `8033d541` → `21892c65` → `cbb6e8e4`). None of it invalidated a
-claim, because the four gates re-derive their facts from source on every run — but
-it is the reason the manifest now records `baseline.commit` (where the triage was
-taken) and `baseline.verifiedAgainst` (the commit the rows were last re-read
-against) separately.
+This work was originally built on a local feature branch, and the repository moved
+underneath it four times while it was in progress. That branch was never published,
+so this branch is based on `origin/main` and everything below was re-derived and
+re-verified there.
 
-The check earned its keep twice.
+Two consequences, both recorded rather than hidden.
 
-**First**, it reported that files cited as evidence had changed, and the re-read
-found that `http-api.native-bridge`'s evidence described an implementation that no
-longer exists. The **claim** still holds — the token gate is still on every route —
-but it moved from per-route calls to a single `bridgeApp.use` middleware at
-`main.js:1297`. The row now says so.
+**The manifest splits its baseline in two.** `baseline.commit` is where the triage
+was taken and never moves — `63baa5ee`, which reached `main` via PR #3.
+`baseline.verifiedAgainst` is the commit the rows were last re-read against, and it
+is what staleness is measured from — `0c2da24d`. Folding them into one field would
+mean either a permanently warning gate or a gate that cannot say when the manifest
+was last checked.
 
-**Second**, it reported `main.js` and `preload.js` moved again. The entire
-committed diff is two additions: `ipcMain.handle('research-run')` and the
-`runResearch` / `onResearchProgress` bridge pair. Neither is a `windows:` or
-`linux:` channel, a deep-link command, nor bridge auth — so all 22 flagged rows
-stand unchanged, now recorded against `cbb6e8e4`.
+**The staleness check found a real error, and it is fixed.** It reported that files
+cited as evidence had changed, and the re-read found that `http-api.native-bridge`'s
+evidence described an implementation that no longer exists. The **claim** still holds
+— the token gate is still on every route — but it moved from per-route
+`checkLocalRequest` calls, of which there are now **zero**, to a single
+`bridgeApp.use` middleware at `main.js:1259-1272`. The row now says so. Line-number
+pointers were re-pinned against `main` while doing it.
 
-Across all five advances, not one `windows:` or `linux:` IPC channel was added or
-removed. The duplicate-registration finding in §3 and both bridge tables are
-therefore unaffected.
+Re-running everything on `main` rather than trusting the earlier run is what caught
+the rest. Three pointers had drifted (`startNativeMacUiBridge` is at `1245`, not
+`9219`; `registerGlobalShortcuts` at `8865`, not `8937`) and the branch name in the
+manifest named a branch that no longer existed. All 23 files cited as evidence were
+confirmed to exist on `main`.
 
-**One thing the advance did cost.** All four gate suites were untracked when the
-work began. A concurrent commit swept them in under an unrelated message
-(`test(snapshot): cover ref binding and single-page search`). They are intact and
-byte-identical to HEAD, but their provenance in the history is now misleading. Worth
-noting in the PR rather than papering over with a no-op commit.
+The gate refuses to accept a `verifiedAgainst` that is not an ancestor of `HEAD`, and
+it caught exactly that on the first run here. That is the rule working.
+
+The four gate suites briefly picked up misleading provenance on the unpublished
+branch — a concurrent `git add -A` swept them into a commit titled for unrelated
+work. Because that branch never reached the remote, the mistake never left the
+machine: here they are added by the commit that is actually about them.
 
 ---
 
@@ -242,45 +289,53 @@ fails. If the manifest claims coverage that does not exist, `docs:check` fails.
 
 ---
 
-## 7. Found in passing, not fixed: a capability ticket can be redeemed twice
+## 7. A capability ticket could be redeemed twice — fixed, and the severity corrected
 
-Also outside this pass's scope, and in code this work never touched. Reported
-rather than fixed, because it belongs to concurrent work in
-`src/lib/approval-gate.js` (committed at `21892c65`, unmodified here) and because
-it is a security defect, not a docs defect.
+**Correction first, because the first version of this section was wrong.** It
+reported this as a live security defect on `main`. It is not. `src/lib/approval-gate.js`
+has **zero callers** — nothing imports it, and it is not a documented feature. The
+approval path the app actually uses is `src/core/approval-ticket-manager.js`.
 
-`tests/approval-gate.test.js` — committed, and failing — is correct:
+The defect is real, and it is fixed:
 
-```js
-const [result1, result2] = await Promise.all([
-  gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 123 }),
-  gate.consumeTicket(ticketId, 'TEST_ACTION', { value: 123 }),
-]);
-// Exactly one should succeed — both do.
-```
-
-The cause is a time-of-check-to-time-of-use race in `consumeTicket`:
-
-| Line | Operation |
+| Line (before) | Operation |
 | --- | --- |
 | 117 | `if (consumedTickets.has(ticketId)) return invalid` — the check |
-| 134 | `const inputHash = await sha256(inputHash)` — **the await** |
-| 145 | `consumedTickets.add(ticketId)` — the mark |
+| 134 | `const inputHash = await sha256(inputStr)` — **the await** |
+| 143 | `consumedTickets.add(ticketId)` — the mark |
 
-`consumeTicket` is `async`, and the only `await` sits between the check and the
-mark. Both concurrent calls read the ticket, both pass the check, both suspend at
-line 134, and both resume to add and return `{ valid: true }`.
+`consumeTicket` is `async`, and the only `await` sat between the check and the mark,
+so simultaneous redemptions all passed the check and all reported success. Proven
+before the fix, in `docs-audit/red-evidence/approval-gate-concurrency.txt`:
 
-An approval ticket is the mechanism that makes a privileged action happen exactly
-once per human approval. Redeeming one twice defeats that, which is the opposite
-of the project's "human-in-the-loop, always" principle. The same interleaving
-would also let a ticket be validated and then expire between check and use.
+- two simultaneous redemptions -> **2** succeeded
+- eight simultaneous redemptions -> **8** succeeded
 
-**Fix shape:** mark consumed synchronously, before the first `await` — or hold a
-per-ticket lock, or delete-and-return the ticket atomically at the top and treat
-absence as already consumed. The hash verification can still run afterwards,
-because the ticket has already been claimed by then.
+**The fix** moves the claim above the first `await`. JavaScript runs synchronous
+statements without interleaving another async caller, so deleting the ticket there is
+the atomic claim; a concurrent caller now finds no ticket and fails. The hash check
+still runs afterwards — the ticket is already claimed by then, and a mismatch still
+fails closed leaving nothing redeemable. `consumedTickets` is still only written on
+success, and every error code is unchanged.
 
-Not attempted here. This pass's mandate was to make the docs honest and close
-triage item 3, and touching a security gate that someone else is actively working
-on would be the wrong move even when the bug is that clear.
+### The live path is sound, and now has a guard
+
+`approval-ticket-manager.redeemTicket` is **fully synchronous** — no `await`
+anywhere between `_validateApproved` and `ticket.status = 'redeemed'`, so there is no
+interleaving point. `tests/approval-gate-concurrency.test.js` asserts that eight
+simultaneous redemptions of one approved ticket yield exactly one success, so if an
+`await` is ever introduced into that path the defect cannot reappear unnoticed in the
+one that matters.
+
+### A second defect, in the same module, reported not fixed
+
+Ticket ids are `ticket-${perInstanceCounter}-${Date.now()}`, where the counter is
+**per instance**, while `tickets` and `consumedTickets` are **module-level**. Two
+`ApprovalGate` instances constructed in the same millisecond therefore mint identical
+ids, and the first redemption invalidates the second unrelated ticket. The suite works
+around this with one shared gate so the concurrency assertions do not measure it by
+accident; the id scheme itself is unchanged, because changing it is a behavioural
+change for a module with no callers, and not one to smuggle into a security fix.
+
+Neither defect is reachable today, because the module is not called. Both are traps
+for whoever wires it up.

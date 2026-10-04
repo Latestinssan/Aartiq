@@ -20,6 +20,45 @@ const DEFAULT_ALLOWED_DIRECTORIES = [
   { path: '/System/Applications', recursive: true, access: 'read', grantedAt: 0, grantedVia: 'default' },
 ];
 
+/**
+ * System roots addAllowedDirectory must not grant (mismatch-inventory M12).
+ *
+ * The filesystem root and the directories the operating system itself lives
+ * in. A recursive grant over any of these is the whole machine, not a
+ * directory, so it is refused at the door and the refusal is written to the
+ * audit trail.
+ *
+ * The rule is exact match, not a prefix ban: `/etc/aartiq` is not `/etc`.
+ * That boundary is deliberate and pinned by
+ * tests/permission-store-system-root.test.js — widening it to a prefix ban is
+ * a one-line change to `isSystemRoot` plus the boundary test in that file,
+ * and is the maintainer's call.
+ *
+ * Seeded defaults never pass through this function (they are written into
+ * settings directly), so `/tmp` and the read-only /Applications entries are
+ * unaffected.
+ */
+const SYSTEM_ROOTS = new Set([
+  '/', '/bin', '/boot', '/dev', '/etc', '/lib', '/lib32', '/lib64', '/libx32',
+  '/proc', '/run', '/sbin', '/sys', '/usr', '/var',
+  '/library', '/system',
+]);
+
+const WINDOWS_SYSTEM_ROOTS = new Set([
+  'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
+]);
+
+/** @param {string} resolved path.resolve() output already. */
+function isSystemRoot(resolved) {
+  const noTrailing = resolved.replace(/[\\/]+$/, '');
+  if (noTrailing === '') return true; // '/', '//', 'C:\' with nothing after
+  const lower = noTrailing.toLowerCase();
+  if (SYSTEM_ROOTS.has(lower)) return true;
+  if (/^[a-z]:$/.test(lower)) return true; // bare drive root: 'C:'
+  if (WINDOWS_SYSTEM_ROOTS.has(lower)) return true;
+  return false;
+}
+
 class PermissionStore {
   constructor() {
     this.permissions = new Map();
@@ -54,7 +93,21 @@ class PermissionStore {
     const userDataPath = app.getPath('userData');
     this.storePath = path.join(userDataPath, 'comet-permissions.json');
     this.settingsPath = path.join(userDataPath, 'comet-security-settings.json');
-    this.auditPath = path.join(userDataPath, 'comet-audit.jsonl');
+    this.auditPath = path.join(userDataPath, 'aartiq-audit.jsonl');
+
+    // Migration: the audit trail was comet-audit.jsonl until the Comet → Aartiq
+    // rename (mismatch-inventory M16). Rename on first load so an existing
+    // trail keeps its history. If both names exist the new one wins and the
+    // legacy file is left untouched — merging two audit trails would invent
+    // order between entries nobody can re-verify.
+    const legacyAuditPath = path.join(userDataPath, 'comet-audit.jsonl');
+    if (!fs.existsSync(this.auditPath) && fs.existsSync(legacyAuditPath)) {
+      try {
+        fs.renameSync(legacyAuditPath, this.auditPath);
+      } catch (e) {
+        console.warn('[PermissionStore] Legacy comet-audit.jsonl not renamed:', e.message);
+      }
+    }
 
     try {
       if (fs.existsSync(this.storePath)) {
@@ -233,6 +286,10 @@ class PermissionStore {
   addAllowedDirectory(dirPath, options = {}) {
     if (!dirPath || typeof dirPath !== 'string') return false;
     const resolved = path.resolve(dirPath);
+    if (isSystemRoot(resolved)) {
+      this.logAudit(`directory-allowlist.add.rejected system-root: ${resolved}`);
+      return false;
+    }
     if (!Array.isArray(this.settings.allowedDirectories)) {
       this.settings.allowedDirectories = [...DEFAULT_ALLOWED_DIRECTORIES];
     }

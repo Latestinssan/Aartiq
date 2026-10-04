@@ -14,7 +14,9 @@ exports.resolveModelEndpoint = resolveModelEndpoint;
 exports.bindHost = bindHost;
 function defaultConfig(overrides = {}) {
     return {
-        port: 46203,
+        // 46204 since the port split: the native macOS bridge keeps 46203, so the
+        // two defaults no longer collide and one silently loses the bind.
+        port: 46204,
         host: '127.0.0.1',
         enableHttp: true,
         enableMcp: true,

@@ -1041,8 +1041,8 @@
       ],
       "status": "works",
       "evidence": [
-        "aartiq-browser/main.js:9219 startNativeMacUiBridge()",
-        "aartiq-browser/main.js:1297-1310 bridgeApp.use middleware calls checkLocalRequest with requireToken: true, so it runs for every route on the listener rather than per route",
+        "aartiq-browser/main.js:9392 startNativeMacUiBridge()",
+        "aartiq-browser/main.js:1314-1326 bridgeApp.use middleware calls checkLocalRequest with requireToken: true, so it runs for every route on the listener rather than per route",
         "aartiq-browser/src/lib/local-server-auth.js checkLocalRequest / extractToken / isHostAllowed / isOriginAllowed",
         "aartiq-browser/src/lib/agent-api/server.ts:74 resolveAgent, :82 callTool",
         "aartiq-browser/src/lib/agent-api/server.ts:98 the agent API authenticates each request the same way"
@@ -1373,7 +1373,8 @@
       ],
       "tests": [
         "tests/docs-platform-integration-match-source.test.js#every Linux channel the bridge invokes has a handler",
-        "tests/docs-platform-integration-match-source.test.js#the module and main.js register no channel in common"
+            "tests/docs-platform-integration-match-source.test.js#the module and main.js register no channel in common",
+            "tests/linux-ipc-registration.test.js#setting up the module after main.js does not throw"
       ],
       "plannedTestIds": [
         "tests/linux-integration.test.js#desktop-entry-is-valid"
@@ -1382,7 +1383,7 @@
       "riskTier": "low",
       "requiredApproval": "none",
       "notes": "The file generation and protocol registration are real. It installs a handler for a scheme the app never reads (see deeplink.dispatch.linux), so the shortcut launches the app and drops the link.",
-      "coverage": "Partial. The gate proves the eleven bridge channels are registered and that no channel is registered twice. It does not parse a generated .desktop file, so the file contents remain unproven and tests/linux-integration.test.js#desktop-entry-is-valid is still owed."
+      "coverage": "Partial. The gate proves the eleven bridge channels are registered, that no channel is registered twice (the Linux startup crash, now fixed), and that preload can still reach every linux: channel it invokes. It does not parse a generated .desktop file, so the file contents remain unproven and tests/linux-integration.test.js#desktop-entry-is-valid is still owed."
     },
     {
       "id": "keyboard.docs-table",
@@ -1451,8 +1452,8 @@
       "doc": [],
       "status": "works",
       "evidence": [
-        "aartiq-browser/main.js:8937 function registerGlobalShortcuts",
-        "aartiq-browser/main.js:8942 const defaultShortcuts",
+            "aartiq-browser/main.js:9110 function registerGlobalShortcuts",
+            "aartiq-browser/main.js:9115 const defaultShortcuts",
         "aartiq-browser/src/app/ClientOnlyPage.tsx:1360 window.electronAPI.onShortcut switch"
       ],
       "tests": [],

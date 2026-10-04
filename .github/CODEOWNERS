@@ -34,9 +34,15 @@
 # have not caught up with fails here rather than in a bug report.
 /aartiq-browser/tests/docs-*.test.js        @Latestinssan
 /aartiq-browser/tests/apple-intelligence-genmoji.test.js  @Latestinssan
+# Behaviour gates from the mismatch audit: bind defaults, the env override,
+# the removed CORS headers, and the 46203/46204 port split.
+/aartiq-browser/tests/network-listener-hardening.test.js  @Latestinssan
+/aartiq-browser/tests/licence-audit-rename.test.js        @Latestinssan
+/aartiq-browser/tests/permission-store-system-root.test.js @Latestinssan
 
 # The checker and the manifest harness that keep the manifest honest.
 /scripts/check-docs.ts                      @Latestinssan
+/scripts/test-check-docs.ts                 @Latestinssan
 /scripts/mutation-check-manifest.js         @Latestinssan
 
 # Mutation harnesses. A gate nobody has seen fail is a gate nobody can rely on,
@@ -48,6 +54,13 @@
 # Hand-check records. These are the only proof available for features CI cannot
 # reach, so an edit to one must not silently drop a signed result.
 /aartiq-browser/docs-audit/manual-checks/   @Latestinssan
+
+# The docs/source mismatch inventory (the audit's findings, one row per claim,
+# each citing file:line) and the recorded licence decision behind the
+# Apache-2.0 unification. Both are inputs to docs:check rules, so neither may
+# drift without review.
+/aartiq-browser/docs-audit/mismatch-inventory.md   @Latestinssan
+/aartiq-browser/docs-audit/licence-decision.md     @Latestinssan
 
 # The triage table the manifest is the machine-readable form of, and the evidence
 # the gates produced.

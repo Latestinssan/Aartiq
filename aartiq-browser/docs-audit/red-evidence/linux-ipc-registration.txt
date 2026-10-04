@@ -1,0 +1,108 @@
+# Red evidence — Linux desktop startup crash
+
+Captured: 2026-10-04T07:41:33Z
+Baseline: 57b70fc0 (duplication still present)
+Suite:    tests/linux-ipc-registration.test.js
+
+Electron ipcMain.handle throws on a second registration of a channel.
+setupLinuxIPCHandlers() registers five channels main.js registers again.
+
+  console.log
+    [Linux] IPC handlers registered
+
+
+  console.log
+    [Linux] IPC handlers registered
+
+
+  console.log
+    [Linux] IPC handlers registered
+
+
+FAIL tests/linux-ipc-registration.test.js
+  ● the Linux bridge registers no ipcMain channel twice › setting up the module after main.js does not throw
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 7
+
+    - Array []
+    + Array [
+    +   "linux:register-protocol",
+    +   "linux:create-shortcut",
+    +   "linux:install-gnome-shortcut",
+    +   "linux:create-launcher",
+    +   "linux:notify",
+    + ]
+
+      93 |
+      94 |     // And nothing the module added may collide with a channel main.js owns.
+    > 95 |     expect(registered.filter((c) => mainFirst.includes(c))).toEqual([]);
+         |                                                             ^
+      96 |   });
+      97 |
+      98 |   test('the module registers no channel that main.js also registers', () => {
+
+
+  ● the Linux bridge registers no ipcMain channel twice › the module registers no channel that main.js also registers
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 7
+
+      Object {
+    -   "overlap": Array [],
+    +   "overlap": Array [
+    +     "linux:register-protocol",
+    +     "linux:create-shortcut",
+    +     "linux:install-gnome-shortcut",
+    +     "linux:create-launcher",
+    +     "linux:notify",
+    +   ],
+      }
+
+      100 |     mod.setupLinuxIPCHandlers();
+      101 |     const overlap = registered.filter((c) => mainJsChannels().includes(c));
+    > 102 |     expect({ overlap }).toEqual({ overlap: [] });
+          |                         ^
+      103 |   });
+      104 |
+      105 |   test('the module still owns the five channels only it registers', () => {
+
+
+  ● the Linux bridge registers no ipcMain channel twice › the module still owns the five channels only it registers
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 5
+
+      Array [
+    +   "linux:create-launcher",
+    +   "linux:create-shortcut",
+        "linux:get-desktop",
+        "linux:get-voices",
+    +   "linux:install-gnome-shortcut",
+    +   "linux:notify",
+    +   "linux:register-protocol",
+        "linux:shortcut-action",
+        "linux:speak",
+        "linux:start-voice",
+      ]
+
+      108 |     const { mod, registered } = loadLinuxIntegration();
+      109 |     mod.setupLinuxIPCHandlers();
+    > 110 |     expect(registered.sort()).toEqual([
+          |                               ^
+      111 |       'linux:get-desktop',
+      112 |       'linux:get-voices',
+      113 |       'linux:shortcut-action',
+
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 3 passed, 6 total
+Snapshots:   0 total
+Time:        0.09 s, estimated 1 s
+Ran all test suites matching tests/linux-ipc-registration.test.js.

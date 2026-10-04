@@ -1,3 +1,11 @@
+# Mutation check — docs-platform-integration-match-source
+
+Captured: 2026-10-04T07:05:54Z
+Baseline: 6e925001
+Harness:  scripts/mutation-check-platform-docs.js
+
+A mutation that leaves the suite green is a hole in the tests, not a pass.
+
 === mutation check: docs-platform-integration-match-source ===
   killed     publish a dead Linux action as working (chat)
   killed     publish a working Linux action as dead (notify)

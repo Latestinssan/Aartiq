@@ -1,7 +1,7 @@
 # Mutation check — apple-intelligence-genmoji
 
-Captured: 2026-10-04T06:53:24Z
-Baseline: cbb6e8e4
+Captured: 2026-10-04T07:09:17Z
+Baseline: 6ad1b5a0
 Suite:    tests/apple-intelligence-genmoji.test.js
 
 A mutation that leaves the suite green is a hole in the tests, not a pass.

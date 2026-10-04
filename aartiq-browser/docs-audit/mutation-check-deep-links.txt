@@ -1,3 +1,11 @@
+# Mutation check — docs-deep-links-match-source
+
+Captured: 2026-10-04T07:05:46Z
+Baseline: 6e925001
+Harness:  scripts/mutation-check-deeplinks.js
+
+A mutation that leaves the suite green is a hole in the tests, not a pass.
+
 === mutation check: docs-deep-links-match-source ===
   killed     publish a dead command as working (index)
   killed     publish a prepares command as working (run-command)

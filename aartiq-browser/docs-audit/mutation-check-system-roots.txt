@@ -1,0 +1,27 @@
+Mutation checks for tests/permission-store-system-root.test.js (PR5, M12)
+Recorded 2026-10-04 17:29
+
+What the fix is
+---------------
+src/lib/permission-store.js addAllowedDirectory() now refuses system roots —
+the filesystem root and the directories the operating system lives in (POSIX
+set plus Windows drive roots / Windows system directories) — before touching
+settings, and writes the refusal to the audit trail. Exact match only: a path
+under a root is a different decision and stays allowed (pinned as the
+boundary case in the test file).
+
+Runs
+----
+- Baseline green (12 tests) before mutation; 12/12 again after revert.
+- Before the fix: 10 failed / 2 passed (failing test written first).
+
+Mutations
+---------
+baseline: 12/12 tests pass (tests/permission-store-system-root.test.js)
+KILLED    the isSystemRoot check in addAllowedDirectory is removed
+          -> 10 test(s) failed: M12 — addAllowedDirectory refuses system roots › a rejection is written to the audit trail; M12 — addAllowedDirectory refuses system roots › a trailing slash does not smuggle a root past the check
+KILLED    isSystemRoot always answers false (check neutered)
+          -> 10 test(s) failed: M12 — addAllowedDirectory refuses system roots › a rejection is written to the audit trail; M12 — addAllowedDirectory refuses system roots › a trailing slash does not smuggle a root past the check
+KILLED    isSystemRoot always answers true (every add refused)
+          -> 2 test(s) failed: M12 — addAllowedDirectory refuses system roots › a normal directory is still accepted; M12 — addAllowedDirectory refuses system roots › boundary: a path under a root is not a root (exact-match rule, see header)
+post-revert: 12/12 tests pass again
