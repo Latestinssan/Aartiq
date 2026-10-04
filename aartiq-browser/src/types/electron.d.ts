@@ -501,6 +501,8 @@ declare global {
             aiWebSearch: (query: string, engine?: string, count?: number) => Promise<{ results: Array<{ title: string; url: string; snippet: string; content: string }>; engine?: string; error?: string }>;
             webSearchYoutube: (query: string, count?: number) => Promise<{ success: boolean; results?: Array<{ title: string; url: string; snippet: string; videoId: string; channel: string; length: string; thumbnail: string }>; error?: string }>;
             fetchPageContent: (url: string, maxChars?: number) => Promise<{ success: boolean; content?: string; error?: string }>;
+            runResearch: (payload: { query: string; researchId?: string; queries?: string[]; budget?: Partial<{ maxQueries: number; resultsPerQuery: number; pagesToFetch: number; maxFollowUpRounds: number; days: number }> }) => Promise<{ success: boolean; error?: string; outcome?: any }>;
+            onResearchProgress: (callback: (event: any) => void) => () => void;
             domClickElement: (opts: { tabId?: string; selector?: string; text?: string; 'aria-label'?: string; retry?: number; verify?: boolean }) => Promise<{ success: boolean; error?: string; method?: string; tag?: string; text?: string; rect?: { x: number; y: number; w: number; h: number } }>;
             domFillForm: (opts: { tabId?: string; selector?: string; value: string; retry?: number; verify?: boolean; clearFirst?: boolean }) => Promise<{ success: boolean; error?: string; value?: string; verified?: boolean }>;
 

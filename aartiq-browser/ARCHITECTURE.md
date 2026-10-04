@@ -75,6 +75,10 @@ Cross-platform automation abstraction with native OS support:
 | `plugin-manager.js` | Plugin lifecycle management |
 | `SecurityValidator.js` | Command validation, shell sanitization |
 | `AICommandParser.js` | AI command extraction and parsing |
+| `agent-api/` | External agent tool registry, HTTP + MCP transports, verb gate |
+| `research-pipeline.ts` | Bounded search → fetch → claim cross-verification |
+| `researchState.ts` | Streaming research progress reducer for the chat sidebar |
+| `web-search-service.js` | Multi-provider web/news search, HTML scraping as fallback |
 
 #### Workers (`src/workers/`)
 | File | Purpose |

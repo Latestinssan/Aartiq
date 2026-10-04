@@ -89,6 +89,11 @@ aartiq-browser/
 | `content-tagging.ts` | XML tagging for anti-prompt-injection |
 | `structured-output.ts` | Dual-path JSON parser with repair fallback |
 | `sw-resilience.js` | Service worker lifecycle approval persistence |
+| `agent-api/` | Tool registry, transports and security pipeline for external agents |
+| `research-pipeline.ts` | Bounded search → fetch → claim cross-verification for Deep Research |
+| `researchState.ts` | Reducer for streaming research progress into the UI |
+| `web-search-service.js` | Multi-provider web/news search, with HTML scraping as fallback |
+| `web-extractor.js` | Page fetch + content extraction used by the research pipeline |
 
 ## Security
 
@@ -158,6 +163,99 @@ Centralized DOM interaction engine with cascading fallback strategies:
 - **Multi-field Forms**: `dom-multi-fill-form` for atomic form filling
 - **Click Hardening**: Default fallback strategies ensure buttons are found even with empty params
 - **110 Jest Tests**: covering engine v2, skill loading, and handler fallbacks (declared test blocks)
+
+## Agent API
+
+36 tools over two transports — HTTP (`POST /api/<method>`) and MCP over stdio —
+served from one registry, so MCP clients and HTTP callers cannot drift apart.
+The registry in `src/lib/agent-api/registry.ts` is the single enforcement point:
+
+```
+verb gate → tab lock → handler → untrusted-output injection scan
+```
+
+A rejected gate returns an error result and never the action.
+
+| Category | Tools |
+|----------|-------|
+| Security | `security_scan`, `security_audit`, `security_killswitch`, `trust_list` |
+| Agents | `agent_register`, `agent_list`, `agent_revoke`, `tab_handoff` |
+| Snapshots | `snapshot`, `click_ref`, `fill_ref`, `type_ref`, `element_action` |
+| Page | `page_find`, `dom_query`, `get_page_text` |
+| Search | `web_search`, `news_search`, `search_providers` |
+| Forms | `fill_form`, `form_submit`, `autofill_match`, `vault_list`, `vault_unlock` |
+| Extensions | `extension_list`, `extension_install_webstore`, `extension_import_chrome`, `extension_analyze` |
+| Theme | `theme_resolve`, `ui_mode_set` |
+| Navigation | `navigate` |
+| Tabs | `list_tabs`, `new_tab`, `close_tab` |
+| System | `browser_status`, `open_panel` |
+
+### Reading and searching one page
+
+`page_find` searches a page that is **already open** — no network request, no
+other tab touched. Use it instead of `web_search` when the answer is on screen,
+because a search sends the user's query to a third party to find somebody
+else's page. `mode="tree"` matches accessible names, values, hrefs and roles and
+returns refs you can act on; `mode="text"` scans rendered prose and returns
+context snippets. `get_page_text` returns the tab's text.
+
+The four search tools differ in what they give back, and the difference matters
+more than it looks:
+
+- `web_search` — links and snippets. No dependable publication dates.
+- `news_search` — real publication dates, which is the only thing that makes
+  "which source is most recent" answerable.
+- `search_providers` — reports which provider is configured, whether it scrapes,
+  and whether it has a news index.
+
+**Provider preference is API-first.** Tavily is the recommended single key
+(1,000 free credits/month, no card). SerpAPI and Brave also work. With no key at
+all, search still runs by scraping a search engine's HTML — rate-limited,
+slower, and broken without warning when the markup changes, and with no
+publication dates. See `.env.example` section 5.
+
+### Filling forms without submitting them
+
+`fill_form` and `form_submit` are deliberately separate tools rather than one
+tool with a `submit` flag. `fill_form` carries the `input` verb and never
+submits; `form_submit` is `sideEffecting` and goes through approval. A caller
+cannot reach the side effect by passing a parameter.
+
+Refs bind to elements by a `data-aartiq-ax` stamp the collector writes onto
+actionable nodes (with `backendNodeId` as first-priority identity), so a stale
+ref fails loudly instead of silently addressing a different element after the
+page shifts.
+
+## Deep Research Pipeline
+
+`src/lib/research-pipeline.ts` runs the bounded search → fetch → verify job
+behind Deep Research, with dependencies injected (search provider, page fetcher,
+progress emitter) so the whole thing is testable without network access.
+
+```
+plan → search → fetch pages → extract claims → cross-verify → rank → generate
+```
+
+- **Budget.** Per-run options with defaults; an absent option takes the default
+  rather than clamping to a minimum.
+- **Claim-level cross-verification.** Claims are keyed on `subject|verb`, so
+  "450 million dollars" and "450 million euros" stay one claim with two
+  conflicting figures instead of being matched away.
+- **Source diversity.** A claim needs corroboration from ≥2 distinct domains.
+  Domains are re-derived from each claim's URL, so `news.reuters.com` and
+  `uk.reuters.com` do not pass as two independent sources.
+- **Last-source tracking.** Only reported when publication timestamps are
+  reliable. Otherwise the answer is "unknown", with the reason attached, so
+  callers do not retry and guess anyway.
+
+Progress streams to the UI over the `research-progress` channel (`runResearch`
+in `preload.js` → `applyResearchProgress` in `researchState.ts`), and a
+"Sources disagree" panel renders the unresolved contradictions inline.
+
+Known limit, stated rather than hidden: claim extraction surfaces numeric claims
+with a named subject, so disputed *qualitative* findings never reach the
+contradictions panel. That is a false negative rather than a false positive, and
+the coverage figure reflects numeric agreement specifically.
 
 ## Build
 

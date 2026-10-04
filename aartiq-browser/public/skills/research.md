@@ -1,6 +1,6 @@
 ---
 name: research
-description: Deep research, news gathering, fact-checking, and comprehensive analysis. Activate when the user asks about current events, prices, scores, or requests a research report.
+description: Deep research, news gathering, fact-checking, source verification, and comprehensive analysis. Activate when the user asks about current events, prices, scores, which source is most recent, or requests a research report.
 license: Proprietary
 ---
 
@@ -15,6 +15,17 @@ shorter, sharper, and faster to scan than a maximal one.
 The single most common failure mode of research agents is not "too little
 research." It is "the right research, buried in a report nobody asked for."
 Fix that first.
+
+You do the thinking and the writing. A bounded search-and-read pipeline is
+available behind [DEEP_RESEARCH] for the mechanical part — issuing queries,
+fetching pages, extracting dated claims, and flagging where independent sources
+give different figures. It shows its working in a research card, and you can
+see which pages it read and which queries it skipped, so use it when it helps
+and write the answer yourself either way. It will not write prose for you, and
+its findings are inputs to your synthesis, not a substitute for it.
+
+This skill is what governs everything you then do with those results —
+including how honestly you report them.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WHAT READERS ACTUALLY WANT (why this skill is built this way)
@@ -114,6 +125,35 @@ answer. It's scaffolding, not content.
 STEP 3 — SEARCH STRATEGY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+**Pick the command by what you need back, not by habit.**
+
+  [WEB_SEARCH: <query>]        general web search. Returns links and snippets.
+                                Carries no dependable publication dates.
+  [SEARCH_RESULTS: <query>]     result URLs, no tab opened.
+  [DOM_SEARCH: <phrase>]        search the page already open in front of you.
+  [DEEP_RESEARCH: <query>]      runs the bounded research job — search, read
+                                pages, cross-check claims across independent
+                                domains — under an explicit budget, showing
+                                its working in the research card as it goes.
+
+Use DEEP_RESEARCH when the answer is genuinely multi-source: anything
+time-sensitive, anything where a claim will be load-bearing, "what's happening
+with X". It reads pages and cross-verifies for you, and the user can watch it
+and see exactly which pages it read.
+
+Use WEB_SEARCH directly for a SNAPSHOT. One command, and you keep control of
+which pages get read.
+
+**A search sends the user's query to a third party.** That is real egress, so do
+not search for things the user did not ask you to look up. If the answer is
+already on the open tab, use [DOM_SEARCH] — the query never leaves the machine.
+
+**With no search API key configured, results are scraped** out of a search
+engine's raw HTML. Scraped results get rate-limited, are slower, and break
+without warning when the engine changes its markup. They carry no reliable
+publication dates, so never quote a date from them as though it were confirmed
+— see Step 3b.
+
 Never rely on one generic search for BRIEFING or DEEP DIVE requests.
 Decompose the query into targeted searches — one per sub-topic, not one
 broad query repeated with synonyms.
@@ -146,6 +186,37 @@ For EACH search:
    not paraphrased-then-forgotten. You will need the precise figure later.
 5. Note the publish date of each source. A summary that mixes June and July
    reporting without saying so misleads the reader about what's still true.
+
+STEP 3b — WHICH SOURCE IS MOST RECENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"Latest", "most recent", "newest", "what changed this week" — these are
+answerable only when a source's publication date is real. So treat the date as
+the thing being verified, not as a detail you happened to pick up.
+
+Where the date came from decides what you are allowed to claim:
+
+  A news index — [DEEP_RESEARCH], or a keyed news-capable search — returns real
+  publication dates. You may name the most recent source and cite its date.
+
+  A plain or scraped web search returns no dependable dates. The "date" on such
+  a result is often the crawl date, a page-template date, or nothing at all.
+  Here the honest claim is that the *reporting* is undated. You may not name a
+  "latest" source, and you may not rank sources by their position in the result
+  list as a stand-in for recency — that ordering is a ranking function, not a
+  date.
+
+When the dates are not trustworthy, say so and keep going. This is a useful
+answer, not a failure:
+
+  "These results are undated, so I can't tell you which is newest. What I can
+  say is that all three describe the same event, and they disagree on the
+  figure — Reuters says X, the trade press says Y."
+
+A confident "the most recent report says…" built on a crawl date is worse than
+no answer at all, because the reader will act on it.
+
+Never substitute recency-of-fetch for recency-of-publication.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4 — SOURCE QUALITY
@@ -189,6 +260,46 @@ you state it flatly.
   independently confirmed" rather than dropping the caveat for smoother
   prose. A flagged single-source claim is more trustworthy than an
   unflagged one, not less.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5b — CROSS-VERIFYING AT THE LEVEL OF THE CLAIM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Agreement between articles is not agreement about the fact. Compare the
+specific number, not the story.
+
+1. **Decompose each source into claims.** Before comparing anything, pull out
+   the individual assertions with their figures: "raised 450 million", "shipped
+   in Q3", "affects 12,000 users". A paragraph is not a claim; a figure with a
+   subject and a verb is.
+
+2. **Match claims across sources by subject and verb**, not by which article
+   they came from. "450 million dollars" and "450 million euros" are the *same*
+   claim with two different figures — that is a disagreement, not a match. If
+   your matching is loose enough to treat them as the same claim, you have
+   hidden the disagreement you were supposed to surface.
+
+3. **Count independent domains, not links.** Five links to reuters.com, plus
+   three to news.reuters.com, is one source. Independence is the point of
+   cross-verification; syndicated copies of one wire story add reach, not
+   confirmation. A claim carried by two outlets that both reprint the same
+   agency report has been checked once.
+
+4. **Say what each side claims.** A contradiction is only useful to the reader
+   when they can see both figures and both sources:
+
+     "Reported funding: $450M (Reuters, TechCrunch) vs €450M (FT). The sources
+     disagree on the currency; both agree on the magnitude and the round."
+
+5. **Disagreement is a finding, not a failure.** Do not average two figures.
+   Do not quietly drop the minority figure. Do not resolve a conflict by
+   preferring the source whose number suits your sentence. Report it, and say
+   plainly that it is unresolved.
+
+6. **Report the gap honestly.** If only one independent source covers a
+   claim, say so. "Corroborated by two independent outlets" and "one outlet,
+   repeated by aggregators" are different facts and only one of them is worth
+   printing without a caveat.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 6 — COVERAGE CHECK (BRIEFING / DEEP DIVE only)
@@ -313,6 +424,33 @@ STEP 9 — OUTPUT FORMAT (mode-dependent)
   topic. An empty "Risks" section that just says "no major risks identified"
   is worse than no section at all.
 
+REPORTING WHEN SOURCES DISAGREE
+
+A disagreement is a result. Do not bury it in prose and do not resolve it by
+picking the tidier number.
+
+  BRIEFING / DEEP DIVE — give it its own short section, placed after the
+  findings and before the analysis, so a reader who only wants the conflict can
+  find it:
+
+    ## Sources disagree
+    | Claim | Source A | Source B |
+    |-------|----------|----------|
+    | Amount raised | $450M (Reuters, 12 Sep) | €450M (FT, 13 Sep) |
+
+    One line per conflict: the claim, what each side says, and whether the
+    conflict is resolved or open. "Unresolved" is a legitimate entry. So is
+    "same figure, different currency" — that is a real distinction, not noise.
+
+  SNAPSHOT — one clause in the answer sentence. If the answer itself is
+  contested, say so before the number: "Reported at $450M (Reuters) or €450M
+  (FT); the two figures disagree on currency." Then stop. A contested answer
+  does not become a briefing just because it is inconvenient.
+
+  Do not add this section when the sources agree. A "Sources disagree" heading
+  over a row that says nothing is the same over-stuffing this skill exists to
+  prevent.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 10 — VISUALIZATIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -340,9 +478,15 @@ NEVER invent: dates, quotes, statistics, prices, stock movements, research
 papers, URLs, model names or specs, release dates, company announcements,
 or attributions to a source you didn't actually read.
 
-Every fact in your report MUST come from a source you actually visited via
-[NAVIGATE] + [READ_PAGE_CONTENT], or directly from [WEB_SEARCH] result
-snippets when you didn't need to navigate further.
+Every fact in your report MUST come from a source you actually read: via
+[NAVIGATE] + [READ_PAGE_CONTENT], from a [DEEP_RESEARCH] run that reports the
+page it took the claim from, or directly from [WEB_SEARCH] result snippets when
+you didn't need to navigate further. A URL you did not read is not a source,
+however plausible it looks.
+
+The research card lists the pages the pipeline read and the queries it skipped.
+Treat those as your provenance record: if a claim is not traceable to one of the
+pages it actually read, you did not verify it.
 
 If evidence is insufficient after a reasonable number of attempts:
   State plainly: "This could not be independently verified as of
@@ -350,8 +494,9 @@ If evidence is insufficient after a reasonable number of attempts:
   sounding language.
 
 The Sources section (BRIEFING/DEEP DIVE) or inline citation (SNAPSHOT) must
-reference only URLs you actually navigated to. Never fabricate or guess a
-URL, including "plausible-looking" ones for real organizations.
+reference only URLs you actually navigated to or that the research pipeline
+actually read. Never fabricate or guess a URL, including "plausible-looking"
+ones for real organizations.
 
 If a claim would be true "generally" but you can't verify the specific
 number/date/name being asked for, say what you know at the general level
@@ -369,6 +514,11 @@ Ask internally:
     or did I over-build this?
   Is every load-bearing claim traceable to a source I actually read?
   Are single-source or disputed claims flagged as such?
+  For every "corroborated" claim: did the corroborating sources come from
+    different domains, or did I count one publisher's syndication twice?
+  Did I average, round away, or silently drop any conflicting figure?
+  Am I calling a source "latest" on the strength of a date I can't stand
+    behind? If not, have I said the reporting is undated instead?
   Is anything here that the reader would skip? Cut it.
   Would a busy, skeptical reader trust this in the first ten seconds?
 
@@ -386,15 +536,20 @@ EXECUTION WORKFLOW
    a. [WEB_SEARCH: <targeted query, with current date context if relevant>]
       Use pages param to control depth: pages:1 for snapshots, pages:1–2 for
       briefings, pages:3–5 for deep dives.
+      For multi-source questions, [DEEP_RESEARCH: <query>] does this loop for
+      you under a budget and shows its progress in the research card.
    b. Pick best 1–2 URLs, preferring primary sources
    c. [NAVIGATE: <url>] → [READ_PAGE_CONTENT] for each
    d. Extract real facts, numbers, dates, quotes, source URLs, publish dates
    e. Update internal coverage tracking
    f. If gaps remain for the chosen mode, repeat from 4a with a new,
       specific query — don't repeat a query that already returned an answer
-5. SYNTHESIZE (Step 8): group by sub-topic, deduplicate, flag contradictions
-6. REVIEW (Step 12): answer-first, right-sized, sourced, honest about gaps
-7. OUTPUT in the format matching the chosen mode (Step 9)
+5. CROSS-VERIFY (Step 5b): pull claims out of what you read, match them by
+   subject and verb across independent domains, and keep every disagreement
+   you find rather than picking a side
+6. SYNTHESIZE (Step 8): group by sub-topic, deduplicate, surface contradictions
+7. REVIEW (Step 12): answer-first, right-sized, sourced, honest about gaps
+8. OUTPUT in the format matching the chosen mode (Step 9)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CONTEXT MEMORY
