@@ -74,7 +74,13 @@ export class OpenClawClient {
   }
 }
 
-/** Resolve the bind host: remote exposes on all interfaces (use Tailscale/LAN). */
+/**
+ * Resolve the bind host: remote exposes on all interfaces (use Tailscale/LAN).
+ *
+ * `remote` must be exactly `true`. A truthy check here would let a hand-edited
+ * settings file containing `"remote": "false"` open the listener to the network,
+ * which is the opposite of what the operator wrote.
+ */
 export function bindHost(config: AgentApiConfig): string {
-  return config.remote ? '0.0.0.0' : config.host;
+  return config.remote === true ? '0.0.0.0' : config.host;
 }

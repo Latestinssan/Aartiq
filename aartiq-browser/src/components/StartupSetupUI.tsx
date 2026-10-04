@@ -210,17 +210,21 @@ export const StartupSetupUI = ({ onComplete }: { onComplete: () => void }) => {
 
   useEffect(() => {
     if (mcpPhase !== 'wait') return;
+    if (!mcpToken) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('http://127.0.0.1:3001/pairing/status');
+        // Every route on the bridge requires the token, including this one.
+        const res = await fetch('http://127.0.0.1:3001/pairing/status', {
+          headers: { 'X-Aartiq-Token': mcpToken },
+        });
+        if (!res.ok) return;
         const d = await res.json();
         if (d.paired) { setMcpPhase('done'); return clearInterval(interval); }
-        if (d.expired) setMcpPhase('idle');
       } catch (e) {}
     }, 2000);
     const timer = setTimeout(() => { clearInterval(interval); }, 600000);
     return () => { clearInterval(interval); clearTimeout(timer); };
-  }, [mcpPhase]);
+  }, [mcpPhase, mcpToken]);
 
   const testChatCompletion = async (
     url: string,
@@ -613,18 +617,14 @@ export const StartupSetupUI = ({ onComplete }: { onComplete: () => void }) => {
                                             if (res.success) {
                                               setMcpAutoStatus('done');
                                               setMcpAutoResult(res.path || 'Config written');
-                                              const token = 'aart' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
+                                              // The bridge generates its own per-process
+                                              // token and hands it back over IPC. The renderer
+                                              // never chooses it — POST /pairing/token is
+                                              // gone, so a reachable caller can no longer pick
+                                              // the credential it will be compared against.
+                                              const token = (res as any).token || '';
                                               setMcpToken(token);
                                               setMcpPhase('copy');
-                                              try {
-                                                await fetch('http://127.0.0.1:3001/pairing/token', {
-                                                  method: 'POST',
-                                                  headers: {'Content-Type': 'application/json'},
-                                                  body: JSON.stringify({ token })
-                                                });
-                                              } catch (e) {
-                                                console.warn('[MCP] Failed to send token to server');
-                                              }
                                             } else {
                                               setMcpAutoStatus('error');
                                               setMcpAutoResult(res.error || 'Unknown error');

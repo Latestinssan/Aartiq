@@ -17,6 +17,10 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { ToolRegistry } from './registry';
 import { registerAllTools } from './tools';
 import { defaultConfig, bindHost } from './providers';
+// Host / Origin / token checks shared with the MCP browser bridge and the native
+// macOS bridge. require() of a CJS module from TS is fine here because the file
+// is plain data and pure functions with no Node-only dependencies.
+import { generateSessionToken, checkLocalRequest } from '../local-server-auth';
 import type { AgentApiConfig, ToolContext, Bridge } from './types';
 import type { SecurityPipeline } from '../guardrails';
 import type { AgentRegistry } from '../agent/agent-registry';
@@ -38,6 +42,12 @@ export class AgentApiServer {
   readonly registry = new ToolRegistry();
   readonly config: AgentApiConfig;
   private httpServer?: http.Server;
+  /**
+   * Per-process token required on every HTTP route. Generated at start unless
+   * one was supplied in config, which is how a caller outside this process (a
+   * custom agent) can be given a credential it must present.
+   */
+  sessionToken?: string;
 
   constructor(private deps: AgentApiDeps) {
     this.config = defaultConfig(deps.config);
@@ -77,7 +87,26 @@ export class AgentApiServer {
 
   async startHttp(): Promise<void> {
     const host = bindHost(this.config);
+    // A token is required even in the default loopback configuration: any page
+    // open in any browser on this machine can reach 127.0.0.1. In remote mode it
+    // is required too — there is no configuration in which this listener is open.
+    this.sessionToken = this.config.token || generateSessionToken();
     this.httpServer = http.createServer((req, res) => {
+      const verdict = checkLocalRequest(req, {
+        port: this.config.port,
+        token: this.sessionToken as string,
+        requireToken: true,
+        allowRemote: this.config.remote === true,
+        remoteHosts: this.config.remoteHosts,
+        service: 'agent-api',
+      });
+      if (!verdict.ok) {
+        // verdict.log contains the reason, method and path only — never a token.
+        console.warn(`[agent-api] ${verdict.log}`);
+        res.writeHead(verdict.status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: verdict.code }));
+        return;
+      }
       if (req.method === 'GET' && req.url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, tools: this.registry.list().length, remote: this.config.remote }));
@@ -90,6 +119,9 @@ export class AgentApiServer {
         req.on('end', async () => {
           let args = {};
           try { args = body ? JSON.parse(body) : {}; } catch { /* ignore */ }
+          // x-agent-id stays an identifier only. Authentication is the token
+          // above; an unrecognised id is auto-registered, so it cannot be the
+          // thing that decides whether a request is trusted.
           const agentId = req.headers['x-agent-id'] as string | undefined;
           const out = await this.callTool(method, args, agentId);
           res.writeHead(out.isError ? 400 : 200, { 'content-type': 'application/json' });
@@ -100,7 +132,7 @@ export class AgentApiServer {
       res.writeHead(404); res.end();
     });
     await new Promise<void>((resolve) => this.httpServer!.listen(this.config.port, host, resolve));
-    console.error(`[agent-api] HTTP on ${host}:${this.config.port} (remote=${this.config.remote})`);
+    console.error(`[agent-api] HTTP on ${host}:${this.config.port} (remote=${this.config.remote}, token required)`);
   }
 
   async startMcp(): Promise<void> {

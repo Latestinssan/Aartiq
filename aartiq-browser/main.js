@@ -276,6 +276,8 @@ const { ScreenVisionService } = require('./src/lib/screen-vision-service.js');
 const { FlutterBridgeServer } = require('./src/lib/bridge-server.js');
 const { FileSystemMcpServer, NativeAppMcpServer } = require('./src/lib/mcp-desktop-server.js');
 const { BrowserMcpServer } = require('./src/lib/mcp-browser-server.js');
+const { checkLocalRequest } = require('./src/lib/local-server-auth.js');
+const { buildMcpSseUrl } = require('./src/lib/mcp-bridge-url.js');
 const { RagService } = require('./src/lib/rag-service.js');
 const { VoiceService } = require('./src/lib/voice-service.js');
 const { WorkflowRecorder } = require('./src/lib/workflow-recorder.js');
@@ -816,18 +818,27 @@ ipcMain.handle('get-app-icon', async (event, appPath) => {
 
 
 const permissionStore = new PermissionStore();
-// Load saved security settings and permissions from disk on startup
+// Load saved security settings and permissions from disk on startup.
+//
+// Nothing is granted here. Startup used to create SHELL_LOW and SHELL_MEDIUM
+// session grants (8h TTL) unconditionally, which meant every command the
+// classifier called "medium" ran with no prompt — including cp, mv, mkdir, npm,
+// git, curl and osascript. Approval is now opt-in behind the
+// `autoApproveLowRiskShell` setting, which defaults to off.
+//
+// Note that the old comment claimed these grants did not persist to disk.
+// They did: PermissionStore.grant() calls _save(), so the row was written with
+// an expires_at and filtered on read. Existing rows are left alone below so a
+// user who made an explicit choice does not silently lose it; only the implicit
+// startup grants stop being re-created.
 permissionStore.load().then(() => {
-  // Grant session-level permissions for low and medium risk shell commands so
-  // common AI commands (ls, mkdir, find, echo, mv, cp, etc.) execute without
-  // showing an approval dialog on every invocation.
-  // These are session-only grants (expire in 8h) and do NOT persist to disk.
-  // The user can promote them to permanent grants via Settings > Permissions.
-  if (!permissionStore.isGranted('SHELL_LOW')) {
-    permissionStore.grant('SHELL_LOW', 'execute', 'Default session grant for low-risk shell commands', true);
-  }
-  if (!permissionStore.isGranted('SHELL_MEDIUM')) {
-    permissionStore.grant('SHELL_MEDIUM', 'execute', 'Default session grant for medium-risk shell commands', true);
+  // Drop the two keys the startup path used to create, but only the rows that
+  // carry its own description, so a grant the user made by hand survives.
+  for (const key of ['SHELL_LOW', 'SHELL_MEDIUM']) {
+    const row = permissionStore.permissions && permissionStore.permissions.get(key);
+    if (row && typeof row.description === 'string' && row.description.startsWith('Default session grant for')) {
+      permissionStore.revoke(key);
+    }
   }
 }).catch(e => console.error('[Main] Failed to load PermissionStore:', e));
 // Wire PermissionStore into command-validator so checkShellPermission() uses the
@@ -1235,6 +1246,30 @@ const startNativeMacUiBridge = () => {
   try {
     const bridgeApp = express();
     bridgeApp.use(express.json());
+
+    // Authenticate every route on this listener.
+    //
+    // The bridge is loopback-bound, but loopback is reachable from any page in
+    // any browser on this machine, and these routes forward prompts into the AI
+    // with tool access. `nativeMacUiToken` already existed for the CLI and the
+    // Swift panel handshake (written to ~/.aartiq-token with mode 0600 and
+    // exposed via tokenProvider) — it was simply never checked here. Now it is.
+    //
+    // Accepted as Authorization: Bearer, X-Aartiq-Token, or ?token=.
+    bridgeApp.use((req, res, next) => {
+      const verdict = checkLocalRequest(req, {
+        port: nativeMacUiPort,
+        token: nativeMacUiToken,
+        requireToken: true,
+        service: 'native-bridge',
+      });
+      if (!verdict.ok) {
+        console.warn(`[NativeMacBridge] ${verdict.log}`);
+        res.status(verdict.status).json({ error: verdict.code });
+        return;
+      }
+      next();
+    });
 
     bridgeApp.post('/native-mac-ui/prompt', (req, res) => {
       const { prompt, source } = req.body || {};
@@ -8951,11 +8986,17 @@ ${tabData}`;
       const configPath = path.join(configDir, 'claude_desktop_config.json');
       // Claude Desktop only supports stdio servers in its config file.
       // Use mcp-remote as a stdio-to-SSE bridge.
+      //
+      // mcp-remote authenticates with headers only, and the only value it takes
+      // is a bare URL, so the session token has to travel as a query parameter.
+      // That is a real trade-off: a URL can end up in process arguments and in
+      // whatever the client logs. Tracked in docs-audit/issues/pairing-token-in-url.md.
+      const sseUrl = buildMcpSseUrl(mcpServerPort, mcpServer ? mcpServer.sessionToken : null);
       const aartiqConfig = {
         mcpServers: {
           "aartiq-browser": {
             command: "npx",
-            args: ["-y", "mcp-remote@0.1.17", "http://127.0.0.1:3001/sse"],
+            args: ["-y", "mcp-remote@0.1.17", sseUrl],
           }
         }
       };
@@ -8978,7 +9019,9 @@ ${tabData}`;
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf-8');
-      return { success: true, path: configPath };
+      // The token is returned over IPC rather than over HTTP so the renderer can
+      // display it without the listener needing an unauthenticated read route.
+      return { success: true, path: configPath, token: mcpServer ? mcpServer.sessionToken : null };
     } catch (error) {
       console.error('[Main] Auto-configure Claude MCP failed:', error);
       return { success: false, error: error.message };
@@ -9112,9 +9155,14 @@ ${tabData}`;
     tabViews._bounds = null;
     mcpServer = new BrowserMcpServer(tabViews, store, mainWindow);
     const mcpPort = typeof MCP_SERVER_PORT !== 'undefined' ? MCP_SERVER_PORT : 3001;
+    // Loopback unless the operator explicitly opts into LAN/Tailscale exposure.
+    // Remote mode still requires the session token on every request.
+    mcpServer.setListenOptions({
+      remote: store.get('security_mcpBridgeRemote', false) === true,
+      remoteHosts: store.get('security_mcpBridgeRemoteHosts', []),
+    });
     (async () => {
       await mcpServer.start(mcpPort);
-      console.log(`[MCP-Browser] Server running on http://localhost:${mcpPort}/sse`);
 
       // Reconnect persisted MCP servers now that the local host is up.
       const mcpServers = store.get('mcp_servers');
