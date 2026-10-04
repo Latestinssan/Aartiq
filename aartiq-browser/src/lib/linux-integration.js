@@ -43,7 +43,11 @@ async function executeCommand(command, args = []) {
   });
 }
 
-async function executeDBus(method, interface, object, params = []) {
+// `dbusInterface`, not `interface`: `interface` is a reserved word in strict
+// mode, and Jest loads modules as strict mode ES modules. Naming a parameter
+// `interface` made this file unloadable under Jest, which is why a module with
+// a startup-crashing bug in it had no test able to reach it.
+async function executeDBus(method, dbusInterface, object, params = []) {
   const desktop = await detectDesktop();
   if (desktop !== 'gnome' && desktop !== 'kde') {
     return { success: false, message: 'D-Bus not available' };
@@ -51,7 +55,7 @@ async function executeDBus(method, interface, object, params = []) {
 
   try {
     const paramStr = params.map(p => `"${p}"`).join(' ');
-    const cmd = `gdbus call --session --dest ${interface} --object-path ${object} --method ${interface}.${method} ${paramStr}`;
+    const cmd = `gdbus call --session --dest ${dbusInterface} --object-path ${object} --method ${dbusInterface}.${method} ${paramStr}`;
     const result = await executeCommand(cmd);
     return { success: true, result };
   } catch (error) {
@@ -402,48 +406,48 @@ MimeType=x-scheme-handler/aartiq;
   return { success: true, path: launcherPath };
 }
 
+/**
+ * Register the channels that only this module owns.
+ *
+ * The five channels main.js also registers - linux:register-protocol,
+ * linux:create-shortcut, linux:install-gnome-shortcut, linux:create-launcher
+ * and linux:notify - used to be registered here as well. main.js calls this
+ * function inside its `process.platform === 'linux'` guard and then registers
+ * its own copies at module scope, so on Linux ipcMain.handle was called twice
+ * for each of them. Electron throws on the second registration, the call was
+ * not wrapped, and it happened at module top level: the main process stopped
+ * before the window was created, and only on Linux.
+ *
+ * main.js's copies are the ones kept. They carry a
+ * `process.platform !== 'linux'` guard that answers { error: 'Not Linux' } on
+ * macOS and Windows, where this function never runs. Removing those instead
+ * would leave every preload invoke() on those platforms rejecting with "No
+ * handler registered" rather than returning an error object.
+ *
+ * The five registered below are the ones nothing else provides. preload.js
+ * invokes none of them - see the orphaned-channel finding in
+ * docs-audit/feature-reality-report.md.
+ */
 function setupLinuxIPCHandlers() {
   ipcMain.handle('linux:get-desktop', async () => {
     return await detectDesktop();
   });
-  
-  ipcMain.handle('linux:register-protocol', async () => {
-    return await registerLinuxProtocol();
-  });
-  
+
   ipcMain.handle('linux:shortcut-action', async (event, action, params) => {
     return await handleLinuxShortcutAction(action, params);
   });
-  
+
   ipcMain.handle('linux:speak', async (event, text, options) => {
     return await speakText(text, options);
   });
-  
+
   ipcMain.handle('linux:get-voices', async () => {
     return await getLinuxVoices();
   });
-  
+
   ipcMain.handle('linux:start-voice', async (event, options) => {
     return await startVoiceRecognition(options);
   });
-  
-  ipcMain.handle('linux:create-shortcut', async (event, name, action, params) => {
-    return await createLinuxShortcut(name, action, params);
-  });
-  
-  ipcMain.handle('linux:install-gnome-shortcut', async (event, name, action, params) => {
-    return await installGNOMEShortcut(name, action, params);
-  });
-  
-  ipcMain.handle('linux:create-launcher', async () => {
-    return await createDesktopLauncher();
-  });
-  
-  ipcMain.handle('linux:notify', async (event, title, body, options) => {
-    return await showDesktopNotification(title, body, options);
-  });
-  
-  console.log('[Linux] IPC handlers registered');
 }
 
 function handleLinuxURLScheme(url) {

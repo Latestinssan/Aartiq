@@ -127,7 +127,7 @@ what is owned is the machinery that decides whether a page is telling the truth.
 
 ---
 
-## 3. Severe finding: five Linux IPC channels are registered twice
+## 3. Severe finding, now fixed: five Linux IPC channels were registered twice
 
 Not part of the original scope. Found while writing the Linux page's bridge
 table, when a claim I had written turned out to be wrong in the other direction.
@@ -138,26 +138,67 @@ and missed eleven registrations in `main.js`. There is no gap. Both pages and th
 gate were corrected, and the gate now asserts the opposite so the mistake cannot
 return silently.
 
-The real problem is worse than the one I had invented:
+The real problem was worse than the one I had invented:
 
-1. `setupLinuxIPCHandlers()` registers ten `linux:` channels, including
+1. `setupLinuxIPCHandlers()` registered ten `linux:` channels, including
    `linux:notify`, `linux:create-shortcut`, `linux:install-gnome-shortcut`,
    `linux:create-launcher` and `linux:register-protocol`.
 2. `main.js:752` calls it inside `if (process.platform === 'linux')`, then
-   registers the same five names again at lines 781–805.
+   registers the same five names again at module scope.
 3. Electron's `ipcMain.handle` throws
    `Attempted to register a second handler for '<channel>'` on a duplicate
    (verified against `ipc-main-impl.ts` at v43.1.0, the version in `package.json`).
-4. The call is not wrapped in a `try`, so **main.js stops executing at line 781**,
-   and the four registrations after it never happen either.
+4. The call was not wrapped in a `try`, so **main.js stopped executing at line 781**,
+   and the four registrations after it never happened either.
 
-**Not fixed here.** It is untriaged and outside this pass's mandate. It is
-documented on the Linux page, and `docs-platform-integration-match-source.test.js`
-pins the overlap, the ordering and the missing `try` so the claim cannot rot.
+**Fixed.** The five duplicates are removed from `setupLinuxIPCHandlers()`, which
+now registers only the five channels nothing else provides. Red evidence, before
+the fix, in `docs-audit/red-evidence/linux-ipc-registration.txt`: the module's
+registration overlapped `main.js` on exactly those five channels.
 
-Why nobody noticed: the guard is Linux-only, and nothing in the repository
-registers these channels on macOS or Windows, so both of those platforms are
-unaffected. **This needs a maintainer decision.**
+**main.js's copies are the ones kept, and that choice is load-bearing.** They
+carry a `process.platform !== 'linux'` check that answers `{ error: 'Not Linux' }`
+on macOS and Windows, where `setupLinuxIPCHandlers()` never runs. Deleting those
+instead would have removed the crash *and* left every `preload.js` invoke for
+those five channels rejecting with `No handler registered` instead of returning
+an error — trading a Linux-only crash for a silent breakage on two platforms. A
+test asserts both that `main.js` still owns them and that each is still guarded.
+
+### The crash was untestable, which is why it survived
+
+`linux-integration.js` could not be loaded by Jest at all. It named a parameter
+`interface` in `executeDBus`, and `interface` is a reserved word in strict mode,
+which is how Jest loads modules. So no test had ever been able to call
+`setupLinuxIPCHandlers()` and reach the crash. The parameter is now
+`dbusInterface`; the rename is the only behavioural change to that function.
+
+`tests/linux-ipc-registration.test.js` now calls the real setup function against
+an Electron stub whose `ipcMain.handle` throws on a duplicate, exactly as the
+real one does, and requires the registration not to throw. Two mutations were
+tried against it: restoring a single duplicate channel, and removing a channel
+only the module provides. Both were caught, so the fix cannot be satisfied by
+gutting the function instead.
+
+### The gate block was rewritten, not deleted
+
+Four tests in `docs-platform-integration-match-source.test.js` asserted that the
+duplication was *still present* — they existed so the docs page could report it
+honestly. They are now inverted to assert the fixed state. Two of them would
+otherwise have kept passing unchanged, because they only read the *order* of the
+two registrations and the absence of a `try`: both still textually true, both
+describing a crash that no longer happens. Leaving them green on stale reasoning
+would have been the worst outcome, so they were rewritten rather than left alone.
+
+### Still true, and not fixed by this
+
+The five channels the module registers *and* nothing invokes —
+`linux:get-desktop`, `linux:shortcut-action`, `linux:speak`, `linux:get-voices`,
+`linux:start-voice` — are registered once and still dead. Fixing the crash removed
+the duplication, not the orphans. The page and the gate both still report them.
+
+Nothing in this was verified by running the app on Linux. The claim is read off
+the two registration sites and Electron's implementation, and is now backed by a
+test that exercises the real registration path.
 
 ---
 

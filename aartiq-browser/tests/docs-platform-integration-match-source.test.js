@@ -437,24 +437,77 @@ const docsOrphanList = (source) => {
   ].map((m) => m[1]);
 };
 
-describe('five Linux bridge channels are registered twice', () => {
+describe('the Linux bridge registers each ipcMain channel exactly once', () => {
   const handledIn = (source) =>
     new Set([...source.matchAll(/ipcMain\.handle\('(linux:[^']+)'/g)].map((m) => m[1]));
 
   const duplicates = [...handledIn(LINUX_JS)].filter((c) => handledIn(MAIN_JS).has(c)).sort();
   const orphans = [...handledIn(LINUX_JS)].filter((c) => !handledIn(MAIN_JS).has(c)).sort();
 
-  test('the overlap is exactly the five channels the page lists', () => {
-    expect(duplicates).toEqual([
-      'linux:create-launcher',
-      'linux:create-shortcut',
-      'linux:install-gnome-shortcut',
-      'linux:notify',
-      'linux:register-protocol',
-    ]);
+  // The five channels the module used to register a second time. main.js's
+  // copies are the ones kept, because they carry the platform guard that
+  // answers { error: 'Not Linux' } on macOS and Windows, where the module's
+  // setup function never runs at all.
+  const FORMERLY_DUPLICATED = [
+    'linux:create-launcher',
+    'linux:create-shortcut',
+    'linux:install-gnome-shortcut',
+    'linux:notify',
+    'linux:register-protocol',
+  ];
+
+  // Every test in this block previously asserted that the duplication was
+  // still present, so that the docs page could report it honestly. The
+  // duplication is fixed, so the block now asserts the opposite. An earlier
+  // version of two of these tests kept passing after the fix because they only
+  // read the *order* of the two registrations and the absence of a try/catch —
+  // both still textually true, both describing a crash that no longer happens.
+  // They are rewritten to assert the fixed state rather than left to go green
+  // on stale reasoning.
+
+  test('no channel is registered by both the module and main.js', () => {
+    // Electron's ipcMain.handle throws on a second registration of a channel.
+    // That throw was unguarded and at module top level, so on Linux the main
+    // process stopped before the window was created.
+    expect(duplicates).toEqual([]);
   });
 
-  test('the module also registers five channels nothing invokes', () => {
+  test('the module registers nothing main.js also registers', () => {
+    const moduleChannels = [...handledIn(LINUX_JS)].sort();
+    expect({ moduleChannels, overlapWithMain: moduleChannels.filter((c) => duplicates.includes(c)) }).toEqual({
+      moduleChannels,
+      overlapWithMain: [],
+    });
+  });
+
+  test('main.js still owns the five channels that used to be registered twice', () => {
+    // The fix removed the module's copies, not main.js's. If it had removed
+    // these, every preload invoke() for them on macOS and Windows would reject
+    // with "No handler registered" instead of returning { error: 'Not Linux' }.
+    const main = [...handledIn(MAIN_JS)];
+    for (const channel of FORMERLY_DUPLICATED) {
+      expect(main).toContain(channel);
+    }
+  });
+
+  test('each of those five is still guarded by a platform check', () => {
+    for (const channel of FORMERLY_DUPLICATED) {
+      const at = MAIN_JS.indexOf(`ipcMain.handle('${channel}'`);
+      expect({ channel, registered: at > -1 }).toEqual({ channel, registered: true });
+      expect(MAIN_JS.slice(at, at + 220)).toMatch(/process\.platform !== 'linux'/);
+    }
+  });
+
+  test('preload can still reach every linux: channel it invokes', () => {
+    const preload = new Set(
+      [...PRELOAD_JS.matchAll(/ipcRenderer\.invoke\('(linux:[^']+)'/g)].map((m) => m[1])
+    );
+    const main = [...handledIn(MAIN_JS)];
+    const unowned = [...preload].filter((c) => !main.includes(c));
+    expect({ unowned }).toEqual({ unowned: [] });
+  });
+
+  test('the module still registers the five channels nothing else provides', () => {
     expect(orphans).toEqual([
       'linux:get-desktop',
       'linux:get-voices',
@@ -464,42 +517,20 @@ describe('five Linux bridge channels are registered twice', () => {
     ]);
   });
 
-  test('the module is set up before main.js registers its own, so the second call throws', () => {
-    const moduleSetup = MAIN_JS.indexOf('setupLinuxIPCHandlers()');
-    const mainRegistration = MAIN_JS.indexOf("ipcMain.handle('linux:notify'");
-    expect({ moduleSetup, mainRegistration, moduleFirst: moduleSetup < mainRegistration }).toEqual({
-      moduleSetup,
-      mainRegistration,
-      moduleFirst: true,
-    });
-    // The module call is inside the Linux-only guard, which is why the defect is
-    // invisible on the other two platforms.
-    expect(MAIN_JS.slice(Math.max(0, moduleSetup - 120), moduleSetup)).toMatch(
-      /platform === 'linux'/
-    );
-  });
-
-  test('the duplicate registration is not wrapped in a try', () => {
-    const at = MAIN_JS.indexOf("ipcMain.handle('linux:notify'");
-    const before = MAIN_JS.slice(at - 200, at);
-    expect({ precedingTry: /\btry\s*\{/.test(before) }).toEqual({ precedingTry: false });
-  });
-
-  test('the Linux page reports all of it', () => {
+  test('the Linux page reports the fix and keeps the orphan finding', () => {
     const text = live(LINUX_DOCS);
-    expect(text).toMatch(/registers five channels a second time/);
+    // The crash narrative must be gone from the rendered page.
+    expect(text).not.toMatch(/registers five channels a second time/);
+    expect(text).not.toMatch(/Attempted to register a second handler/);
+    expect(text).not.toMatch(/main\.js:781/);
+    // And it must say the crash is fixed rather than merely going quiet.
+    expect(text).toMatch(/fixed/i);
+    // The orphan finding is unaffected by the fix and is still true.
     expect(text).toMatch(/never invoked/);
-    expect(text).toMatch(/Attempted to register a second handler/);
   });
 
-  test("the page's duplicate list is the derived set, not a subset of it", () => {
-    // An earlier version of this test only required the page to *contain* each
-    // derived name. That passed even with a channel deleted from the list,
-    // because every duplicated channel is also named in the bridge table. The
-    // lists are now compared as sets.
-    expect({ published: docsDuplicateList(LINUX_DOCS).sort() }).toEqual({
-      published: duplicates,
-    });
+  test("the page's duplicate list is empty, because nothing is duplicated", () => {
+    expect({ published: docsDuplicateList(LINUX_DOCS) }).toEqual({ published: [] });
   });
 
   test("the page's orphan list is the derived set", () => {
