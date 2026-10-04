@@ -193,7 +193,7 @@ Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/
 
 **4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **993 passed / 26 skipped / 0 failed of 1019 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1003 passed / 26 skipped / 0 failed of 1029 declared** (generated 2026-10-04).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
@@ -226,11 +226,11 @@ Every socket the application opens, and what actually protects it:
 | MCP browser bridge | 3001 | `127.0.0.1` | the security_mcpBridgeRemote setting is exactly true (defaults to false; no UI control sets it) | A per-process token, required on every route including SSE. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
 | WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | **always** — there is no switch to restrict it | Handshake pairing code only. The command and desktop-control message types are not re-checked against it, and no token, Host or Origin check is applied. |
 | Native macOS / CLI bridge | 46203 | `127.0.0.1` | never — the host is a literal in the source, not a switch anyone can flip | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
-| Agent API tool server | 46203 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | A token, required on every HTTP route, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
-| Background task service (separate Electron app) | 3999 | `0.0.0.0` | **always** — there is no switch to restrict it | None. Serves ~/Documents/Aartiq/public with Access-Control-Allow-Origin: *. |
+| Agent API tool server | 46204 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | A token, required on every HTTP route, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
+| Background task service (separate Electron app) | 3999 | `127.0.0.1` | AARTIQ_SERVICE_HOST is set to a routable address (defaults to 127.0.0.1; no switch in the app) | None. Serves ~/Documents/Aartiq/public; no Access-Control-Allow-Origin header is sent, so a browser page on another origin cannot read its responses. |
 <!-- SSOT:END network -->
 
-Two of these bind all interfaces by default with no switch to restrict them. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
+One of these binds all interfaces by default with no switch to restrict it. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
 
 ### Known limits
 
@@ -242,12 +242,12 @@ Two of these bind all interfaces by default with no switch to restrict them. If 
 - Visual extraction reduces the DOM-based prompt-injection surface. It does not prevent prompt injection, and it cannot give semantic immunity against instructions rendered into the viewport.
 - Seatbelt profiles start from (allow default), so not every IPC class is denied by default; Mach IPC stays usable because node/python/shell require it.
 - Apple Events cannot be filtered by the current sandbox-exec — the operation is not exposed — so a sandboxed command could still ask another app to act on its behalf.
-- The WiFi sync server (3004) still binds every network interface by omission and has no token, Host or Origin check. The background task service (3999) still serves files on 0.0.0.0 with a wildcard CORS header. Neither was changed by the listener-authentication work. See network.servers.
+- The WiFi sync server (3004) still binds every network interface by omission and has no token, Host or Origin check; it was changed by neither the listener-authentication work nor the bind-default change. The background task service (3999) and the PDF sync server bound 0.0.0.0 with a wildcard CORS header until the bind default became 127.0.0.1, with AARTIQ_SERVICE_HOST as the explicit opt-in and no CORS allow-origin header sent at all. See network.servers.
 - The session token is per-process, so it changes on every restart. A client configured once — a phone, another machine, a scheduled job — has to be reconfigured, and remote mode is not a finished design because of it.
 - The token has to travel in the mcp-remote URL, because mcp-remote accepts a bare URL and nothing else. It can therefore appear in a process argument list and in a client's own logs. See aartiq-browser/docs-audit/issues/pairing-token-in-url.md.
 - "Allow Always" is keyed on the full normalised command line, which is narrower than before but is still text matching, and a permanent grant has no lifetime. See aartiq-browser/docs-audit/issues/allow-always-granularity.md.
 - A permanent grant requires a binary that appears in the classifier's table. One that does not — including anything we have never seen — is offered Allow Once only, because a grant that repeats a command nobody can describe is a promise about behaviour rather than about the text. Local writes such as cp, mv, mkdir and touch are in the table and keep exact-match permanent grants.
-- The native bridge and the Agent API are both configured for port 46203. If both start, one fails to bind and the error is logged and swallowed, so it is not visible which one is answering. TODO(verify) — inferred from call order, not observed at runtime.
+- The native bridge and the Agent API both defaulted to port 46203, so if both started one failed to bind and the error was logged and swallowed — not visible from outside. The Agent API now defaults to 46204 and the native bridge keeps 46203, so the two no longer collide.
 <!-- SSOT:END known-limits -->
 
 ---

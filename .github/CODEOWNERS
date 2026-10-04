@@ -34,6 +34,9 @@
 # have not caught up with fails here rather than in a bug report.
 /aartiq-browser/tests/docs-*.test.js        @Latestinssan
 /aartiq-browser/tests/apple-intelligence-genmoji.test.js  @Latestinssan
+# Behaviour gates from the mismatch audit: bind defaults, the env override,
+# the removed CORS headers, and the 46203/46204 port split.
+/aartiq-browser/tests/network-listener-hardening.test.js  @Latestinssan
 
 # The checker and the manifest harness that keep the manifest honest.
 /scripts/check-docs.ts                      @Latestinssan

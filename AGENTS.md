@@ -114,8 +114,8 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | MCP browser bridge | 3001 | mcp-bridge — binds `127.0.0.1` |
 | WiFi sync (desktop ↔ mobile) | 3004 | wifi-sync — binds `all interfaces (0.0.0.0 / ::)` |
 | Native macOS / CLI bridge | 46203 | native-bridge — binds `127.0.0.1` |
-| Agent API tool server | 46203 | agent-api — binds `127.0.0.1` |
-| Background task service (separate Electron app) | 3999 | background-service — binds `0.0.0.0` |
+| Agent API tool server | 46204 | agent-api — binds `127.0.0.1` |
+| Background task service (separate Electron app) | 3999 | background-service — binds `127.0.0.1` |
 | UDP discovery | 3005 | UDP broadcast destination, not a listener. The discovery socket binds an ephemeral port. |
 | Nexus bridge | 9922 | retired — Not present. A dead variable remains in main.js. |
 | Raycast HTTP API | 9877 | retired — Not present. Port constant is declared and never read. |
