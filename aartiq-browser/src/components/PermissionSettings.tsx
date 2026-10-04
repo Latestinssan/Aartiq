@@ -31,6 +31,7 @@ import {
   normalizeActionType,
   type AIActionSecurityDefinition,
 } from '@/lib/ai-action-security';
+import { normalizeCommandPattern } from '@/lib/shell-command-tiers';
 
 const SAFE_COMMANDS = [
   { cmd: 'ls', desc: 'Lists directory contents', category: 'Navigation' },
@@ -92,8 +93,16 @@ const DEFAULT_SETTINGS: SecuritySettings = {
   autoApprovedActions: [],
 };
 
+/**
+ * Key for a persisted "Allow Always" command entry.
+ *
+ * Was first-word-only, which meant a grant for one `grep` covered every later
+ * `grep`. It now delegates to the shared normaliser in shell-command-tiers.js —
+ * the same function PermissionStore and command-validator use — so the panel
+ * cannot disagree with the gate it is editing.
+ */
 function normalizeCommandKey(command: string) {
-  return `${command || ''}`.trim().split(/\s+/)[0]?.toLowerCase() || '';
+  return normalizeCommandPattern(command);
 }
 
 function actionIcon(actionType: string) {

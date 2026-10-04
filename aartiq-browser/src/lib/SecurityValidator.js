@@ -21,6 +21,21 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Per-command risk table, destructive-pattern floor, blocked-command set and
+// the "Allow Always" eligibility rule. Owned by shell-command-tiers.js so the
+// runtime classifier and the docs generator read one file; this module
+// re-exports what it used to declare so existing importers are unaffected.
+const {
+  BLOCKED_COMMANDS,
+  DESTRUCTIVE_COMMAND_PATTERNS,
+  SHELL_COMMAND_TIERS,
+  classifyShellCommand,
+  normalizeCommandPattern,
+  alwaysApprovalEligibility,
+  isAutoApproveEligibleTier,
+  extractBaseBinary,
+} = require('./shell-command-tiers');
+
 // Patterns that indicate genuinely dangerous/destructive commands.
 const DANGEROUS_PATTERNS = [
   /rm\s+-rf\s+\//i,           // rm -rf /
@@ -42,10 +57,7 @@ const DANGEROUS_PATTERNS = [
   /iptables|ufw|firewall/i,   // firewall changes
 ];
 
-const BLOCKED_COMMANDS = new Set([
-  'sudo', 'su', 'passwd', 'chgrp', 'rm',
-]);
-
+// Rejected before any tier is consulted. Declared in shell-command-tiers.js.
 const HIGH_RISK_FILE_COMMANDS = new Set([
   'rm', 'del', 'format', 'fdisk', 'dd', 'mkfs',
   'chmod', 'chown',
@@ -54,46 +66,8 @@ const HIGH_RISK_FILE_COMMANDS = new Set([
   'mount', 'umount', 'eject',
 ]);
 
-// Commands that are destructive enough to require explicit approval (from mcp-browser-server).
-const DESTRUCTIVE_COMMAND_PATTERNS = [
-  /\brm\s/i,
-  /\bdel\s/i,
-  /\bdel\//i,
-  /\brmdir/i,
-  /\brd\s\/[sfq]/i,
-  /\bformat\s/i,
-  /\bfdisk/i,
-  /\bmkfs/i,
-  /\bdd\s+if=/i,
-  /\bshred/i,
-  /\bwipe/i,
-  /\bfind\s.*-delete/i,
-  /\bfind\s.*-exec\s+rm/i,
-  /\bxargs\s+rm/i,
-  /\bxargs\s+del/i,
-  /\bunlk\b/i,
-  /\bunlink\s/i,
-  /\bsudo\s/i,
-  /\bsu\s/i,
-  /\bkill\s/i,
-  /\bkillall/i,
-  /\bpkill/i,
-  />\s*\/dev\//i,
-  /\bshutdown/i,
-  /\breboot/i,
-  /\bhalt\b/i,
-  /\bpoweroff/i,
-  /\binit\s/i,
-  /\bchmod\s/i,
-  /\bchown\s/i,
-  /\bchgrp\s/i,
-  /\bmount\s/i,
-  /\bumount/i,
-  /\beject/i,
-  /\biptables/i,
-  /\bufw\b/i,
-  /\bfirewall/i,
-];
+// Destructive-pattern floor: declared in shell-command-tiers.js and re-exported
+// below. Any match raises a command to at least `high`.
 
 const AUTO_EXEC_ALLOWED = new Set([
   'NAVIGATE', 'SHELL_COMMAND_LIGHT',
@@ -159,12 +133,13 @@ function validateCommand(command) {
   };
 }
 
-// --- Risk classification (replaces mcp-browser-server:detectShellCommandRisk) ---
+// --- Risk classification ---
+//
+// The per-command table lives in shell-command-tiers.js, which the docs
+// generator also reads. This function is only the entry point.
 
 function getShellRisk(command) {
-  if (!command || typeof command !== 'string') return 'medium';
-  if (containsDestructivePattern(command)) return 'high';
-  return 'medium';
+  return classifyShellCommand(command).tier;
 }
 
 // --- Sanitization ---
@@ -410,4 +385,13 @@ module.exports = {
   RISK_LEVELS,
   BLOCKED_COMMANDS,
   DANGEROUS_PATTERNS,
+  // Re-exported from shell-command-tiers.js. Callers that already import from
+  // SecurityValidator should not need a second import path.
+  SHELL_COMMAND_TIERS,
+  DESTRUCTIVE_COMMAND_PATTERNS,
+  classifyShellCommand,
+  normalizeCommandPattern,
+  alwaysApprovalEligibility,
+  isAutoApproveEligibleTier,
+  extractBaseBinary,
 };
