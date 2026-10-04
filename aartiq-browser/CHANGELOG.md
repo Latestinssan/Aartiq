@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Licensing
+
+- `aartiq-browser/LICENSE.txt` now carries Apache-2.0, byte-identical to the repository root `LICENSE`, so the Windows NSIS installer, the `package.json` `license` field, and the repository all present the same licence. The restrictive EULA it replaced is preserved verbatim in `docs-audit/licence-decision.md`. `docs:check` rule (j) and `tests/licence-audit-rename.test.js` keep the copies in agreement.
+
+### Changed
+
+- User-visible files named after Comet are Aartiq now: the permission audit trail migrates `comet-audit.jsonl` → `aartiq-audit.jsonl` on first load (an existing new file is never overwritten), and chat exports default to `aartiq-chat-<timestamp>.txt` / `.pdf`, with the session export using `aartiq-chat-session-<timestamp>.txt`.
+
 ### Security
 
 - The background task service (3999) and the PDF sync server now bind `127.0.0.1` by default instead of `0.0.0.0`. `AARTIQ_SERVICE_HOST` is the explicit opt-in for phone/laptop file access. Neither listener sends an `Access-Control-Allow-Origin` header any more — the wildcard is gone. WiFi sync (3004) is untouched and still binds every interface; that stays open (docs-audit/issues/wifi-sync-bind-address.md).

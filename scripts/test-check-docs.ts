@@ -194,6 +194,33 @@ const cases = [
     (s) => s.replace("version || APP_VERSION.version", "version || '0.3.0'"),
     "falls back to the literal version",
   ],
+  // (j) The three licence copies and the SSOT's resolved-flag must agree.
+  [
+    "(j) EULA put back in the installer's licence file",
+    join(REPO, "aartiq-browser", "LICENSE.txt"),
+    // All four occurrences — killing only the title still leaves the phrase
+    // elsewhere in the Apache text, and the rule reads the whole file.
+    (s) => s.split("Apache License").join("END USER LICENSE AGREEMENT"),
+    "[lic] aartiq-browser/LICENSE.txt is not the Apache-2.0 text",
+  ],
+  [
+    "(j) package manifest drops the Apache-2.0 field",
+    join(REPO, "aartiq-browser", "package.json"),
+    (s) => s.replace('"license": "Apache-2.0"', '"license": "Proprietary"'),
+    "[lic] aartiq-browser/package.json must declare",
+  ],
+  [
+    "(j) installer pointed at a licence file that does not exist",
+    join(REPO, "aartiq-browser", "package.json"),
+    (s) => s.replace('"license": "LICENSE.txt"', '"license": "LICENSE.eula"'),
+    "points at LICENSE.eula, which does not exist",
+  ],
+  [
+    "(j) SSOT still claims the licence conflict is open",
+    FSOT,
+    (s) => s.replace("resolved: true,", "resolved: false,"),
+    "resolved is false but the licence files agree",
+  ],
 ];
 
 let pass = 0;

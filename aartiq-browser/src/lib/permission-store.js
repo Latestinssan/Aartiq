@@ -54,7 +54,21 @@ class PermissionStore {
     const userDataPath = app.getPath('userData');
     this.storePath = path.join(userDataPath, 'comet-permissions.json');
     this.settingsPath = path.join(userDataPath, 'comet-security-settings.json');
-    this.auditPath = path.join(userDataPath, 'comet-audit.jsonl');
+    this.auditPath = path.join(userDataPath, 'aartiq-audit.jsonl');
+
+    // Migration: the audit trail was comet-audit.jsonl until the Comet → Aartiq
+    // rename (mismatch-inventory M16). Rename on first load so an existing
+    // trail keeps its history. If both names exist the new one wins and the
+    // legacy file is left untouched — merging two audit trails would invent
+    // order between entries nobody can re-verify.
+    const legacyAuditPath = path.join(userDataPath, 'comet-audit.jsonl');
+    if (!fs.existsSync(this.auditPath) && fs.existsSync(legacyAuditPath)) {
+      try {
+        fs.renameSync(legacyAuditPath, this.auditPath);
+      } catch (e) {
+        console.warn('[PermissionStore] Legacy comet-audit.jsonl not renamed:', e.message);
+      }
+    }
 
     try {
       if (fs.existsSync(this.storePath)) {

@@ -6799,7 +6799,7 @@ if (isPackaged && process.platform === 'darwin') {
   ipcMain.handle('export-chat-txt', async (event, content) => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Chat History',
-      defaultPath: path.join(app.getPath('downloads'), `comet-chat-session-${Date.now()}.txt`),
+      defaultPath: path.join(app.getPath('downloads'), `aartiq-chat-session-${Date.now()}.txt`),
       filters: [{ name: 'Text Files', extensions: ['txt'] }]
     });
 
