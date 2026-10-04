@@ -20,7 +20,7 @@ failing test first, flagged for maintainer review), `both` (claim + behavior), `
 | **Claim B (true)** | `Aartiq/README.md:226`, `Aartiq-Landing-Page/src/app/docs/security/page.tsx:968` — loopback by default. |
 | **Source** | `aartiq-browser/src/lib/mcp-browser-server.js:1678,1681` — `const host = resolveBindHost(...); httpServer.listen(port, host)`. `resolveBindHost` returns `127.0.0.1` unless `security_mcpBridgeRemote` is true (`aartiq-browser/src/main.js:9161`, default false; `src/lib/local-server-auth.js:179-182` is the gate for the remote override). |
 | **Verdict** | **docs wrong** (Claim A). Claim B matches source. |
-| **Disposition** | PR1: rewrite `mcp-settings/page.tsx:195-199` and `search-index.ts:75` to the true statement (loopback default, `security_mcpBridgeRemote` opt-in). PR2: add a real bind-address test. |
+| **Disposition** | PR1: rewrite `mcp-settings/page.tsx:195-199` and `search-index.ts:75` to the true statement (loopback default, `security_mcpBridgeRemote` opt-in). PR2: add a real bind-address test. **→ Done:** PR1 rewrote the pages; PR2 added the M1 block of `tests/network-listener-hardening.test.js` (call-site assertion + a real socket bound through `resolveBindHost`). |
 
 ## M2 — WiFi sync listener: "every local listener requires a token"
 
@@ -39,7 +39,7 @@ failing test first, flagged for maintainer review), `both` (claim + behavior), `
 | **Claim** | `Aartiq/README.md:230`, `src/data/project-facts.ts:469-473` (landing), `Aartiq/AGENTS.md:125` — "binds to `0.0.0.0` for Phone/Laptop File Sync … no authentication, CORS allows `*`". |
 | **Source** | `aartiq-browser/src/service/service-main.js:255` (`listen(port, '0.0.0.0')`), `:209` (`Access-Control-Allow-Origin: *`); `src/service/pdf-sync.js:51,59` same. |
 | **Verdict** | **docs match code, but code is the defect** (`code wrong`). |
-| **Disposition** | PR2 (own security-behavior PR): default bind `127.0.0.1` (env override `AARTIQ_SERVICE_HOST`), drop wildcard CORS; failing test first. Docs updated in same PR. |
+| **Disposition** | PR2 (own security-behavior PR): default bind `127.0.0.1` (env override `AARTIQ_SERVICE_HOST`), drop wildcard CORS; failing test first. Docs updated in same PR. **→ Done in PR2:** `src/service/service-bind.js`, both listeners patched, `tests/network-listener-hardening.test.js` written failing-first (5 failed / 4 passed before the fix, 9 then 10 green after), 11 mutations all killed — `mutation-check-network-hardening.txt`. |
 
 ## M4 — Port 46203 double-bind
 
@@ -48,7 +48,7 @@ failing test first, flagged for maintainer review), `both` (claim + behavior), `
 | **Claim** | `Aartiq/README.md:228-229,250` carries `TODO(verify)` on the collision; `project-facts.ts:450-464` (landing) claims "Native bridge `127.0.0.1:46203`" and "agent API … 46203" as if both answer. |
 | **Source** | `src/lib/agent-api/providers.ts:21` — `port: 46203`; `src/main.js:1090` — `nativeMacUiPort: 46203`. Startup order: agent API at `main.js:6100`, native bridge at `main.js:9147` (later) → the agent API wins, bridge gets EADDRINUSE; `providers.ts`/`server.ts` `listen` has no error handler and `main.js:1939` attaches its error listener to the `app`, not the server → failure swallowed. Swift hardcodes 46203 (`aartiq-browser/macos/Runner/Models.swift:73`), CLI reads `AARTIQ_BRIDGE_PORT` default 46203 (`bin/aartiq-cli.js:21`), `aartiq-mcp/server/index.js:12` default 46203. |
 | **Verdict** | **code wrong** (collision) + docs overclaim. Runtime consequence on this machine: **could not verify** which service answers (requires running app). |
-| **Disposition** | PR2: agent API moves to **46204**, native bridge keeps 46203 (Swift/CLI hardcode it), `aartiq-mcp` env default → 46204; failing test asserting distinct ports first; docs tables updated. |
+| **Disposition** | PR2: agent API moves to **46204**, native bridge keeps 46203 (Swift/CLI hardcode it), `aartiq-mcp` env default → 46204; failing test asserting distinct ports first; docs tables updated. **→ Done in PR2 with one deviation from the brief:** `aartiq-mcp` keeps **46203**. Source decides — `aartiq-mcp/server/bridge-client.js` calls only `/native-mac-ui/*` routes, which `bridgeApp` in `main.js` serves on the native-bridge port; pointing it at 46204 would break every MCP tool call. The pairing is pinned by test (index.js `AARTIQ_BRIDGE_PORT || '46203'` + `DEFAULT_PORT = 46203` + route shape) and mutation-checked both ways. |
 
 ## M5 — v0.3.4 release notes: loopback claim at time of tag
 
@@ -66,7 +66,7 @@ failing test first, flagged for maintainer review), `both` (claim + behavior), `
 | **Claim** | `Aartiq-Landing-Page/src/app/docs/overview/page.tsx:463-465` — derived from `project-facts.network.servers`: "127.0.0.1:3001, 127.0.0.1:3004, 127.0.0.1:46203, 127.0.0.1:3999" while its note field lists **five** service ids (both 46203 services). |
 | **Source** | `src/data/project-facts.ts:416-464` — five servers, two sharing 46203. |
 | **Verdict** | **both** — after M4 the ports become 3001/3004/46203/46204/3999 and the derived metric must list `port + service name` pairs, not a bare port list. |
-| **Disposition** | PR2: fix `project-facts.network.servers` values/notes; overview metric text auto-derives (re-synced with `npm run docs:sync`). |
+| **Disposition** | PR2: fix `project-facts.network.servers` values/notes; overview metric text auto-derives (re-synced with `npm run docs:sync`). **→ Done in PR2:** ports are now 3001 / 3004 / 46203 / 46204 / 3999 — five distinct entries, deduplicated from the same five ids the note field lists. |
 
 ## M7 — QR + PIN approval flow
 
@@ -209,7 +209,7 @@ failing test first, flagged for maintainer review), `both` (claim + behavior), `
 | **X1** | `sync-component-docs.yml` pushes to `Latestinssan/Aartiq-Landing-Page` — repo does not exist (real remote is `Latestinssan2/Aartiq-Landing-Page`). | `.github/workflows/sync-component-docs.yml` `repository:` field; `git remote -v` on landing clone. | PR1: workflow cannot work as written — flag for maintainer (changing the push target is a CI-behavior change). |
 | **X2** | Landing PR #4 (skills page) documents agent-API tools that are **not on `origin/main`** (36/11, `page_find`/`news_search` citing `tools.ts:416`). | `skills/page.tsx:109-125` vs `origin/main` `tools.ts` (198 lines). | PR1 corrects to main's 28/9; final report flags the unpushed-branch divergence prominently. |
 | **X3** | `CHANGELOG.md:9` — "Every route on the local listeners now requires a per-process token" — overclaims (3004/3999 have none). | `CHANGELOG.md:9` vs `WiFiSyncService.ts`. | PR1: scope the sentence to the three tokened listeners (3001, 46203 ×2), and keep the 3004 sentence below it which is already honest. |
-| **X4** | `mcp-settings/page.tsx:154` "both servers default to same port 46203" — states the defect as normal. | vs M4. | PR2 (after port split): state 46204 (agent API) / 46203 (native bridge). |
+| **X4** | `mcp-settings/page.tsx:154` "both servers default to same port 46203" — states the defect as normal. | vs M4. | PR2 (after port split): state 46204 (agent API) / 46203 (native bridge). **→ Done in PR2:** the sentence now says BridgeClient targets the native bridge and the agent API moved to `${net.agentApi.port}`. |
 | **X5** | `privacy/page.tsx:191` "all listen on 127.0.0.1 only … per-process token" — **true for the three bridges it lists** (3001, 46203 ×2); does not cover 3004/3999. | `local-server-auth.ts:110-135` wraps all three bridge routes; `mcp-browser-server.js:1666-1697`; `agent-api/server.ts:139-165`. | No change needed (already scoped correctly); recorded as verified. |
 
 ---

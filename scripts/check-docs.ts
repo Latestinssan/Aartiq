@@ -190,7 +190,8 @@ const LITERALS: Literal[] = [
   { label: "port 3001", pattern: /\b3001\b/, why: "MCP bridge port — from network.servers" },
   { label: "port 3003", pattern: /\b3003\b/, why: "Next.js dev port — from network.devRenderer" },
   { label: "port 3004", pattern: /\b3004\b/, why: "WiFi sync port — from network.servers" },
-  { label: "port 46203", pattern: /\b46203\b/, why: "native bridge / agent-api port — from network.servers" },
+  { label: "port 46203", pattern: /\b46203\b/, why: "native bridge port — from network.servers" },
+  { label: "port 46204", pattern: /\b46204\b/, why: "agent API port — from network.servers" },
   { label: "port 3999", pattern: /\b3999\b/, why: "background service port — from network.servers" },
   { label: "port 3005", pattern: /\b3005\b/, why: "UDP discovery destination — from network.servers" },
   // Bind address.

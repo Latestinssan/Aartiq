@@ -1,0 +1,19 @@
+Mutation checks for tests/network-listener-hardening.test.js (PR2)
+Each row: the shipped claim was broken on purpose, the jest run followed,
+then the file was restored byte-for-byte. A surviving mutation would mean
+the assertion does not actually pin the claim.
+Recorded 2026-10-04 16:36
+
+baseline: 10 tests pass (tests/network-listener-hardening.test.js)
+KILLED    service-main binds 0.0.0.0 again  →  1 test(s) failed, e.g. M3 — background service and PDF sync bind loopback by default › service-main listens on the resolved host with no wildcard literal left
+KILLED    service-main restores wildcard CORS  →  1 test(s) failed, e.g. M3 — background service and PDF sync bind loopback by default › service-main listens on the resolved host with no wildcard literal left
+KILLED    pdf-sync binds 0.0.0.0 again  →  1 test(s) failed, e.g. M3 — background service and PDF sync bind loopback by default › pdf-sync listens on the resolved host with no wildcard CORS header
+KILLED    pdf-sync restores wildcard CORS  →  1 test(s) failed, e.g. M3 — background service and PDF sync bind loopback by default › pdf-sync listens on the resolved host with no wildcard CORS header
+KILLED    service-bind drops the env override  →  1 test(s) failed, e.g. M3 — background service and PDF sync bind loopback by default › resolveServiceHost defaults to 127.0.0.1 and honours AARTIQ_SERVICE_HOST
+KILLED    providers.ts back to 46203  →  3 test(s) failed, e.g. M4 — the agent API and the native bridge no longer share a port › both the TS source and the committed JS copy say 46204
+KILLED    providers.js back to 46203  →  1 test(s) failed, e.g. M4 — the agent API and the native bridge no longer share a port › both the TS source and the committed JS copy say 46204
+KILLED    native bridge moved to 46204 (would break Swift/CLI/binaries)  →  2 test(s) failed, e.g. M4 — the agent API and the native bridge no longer share a port › the native bridge keeps 46203 (Swift, the CLI and the panel binaries hard-code it)
+KILLED    aartiq-mcp index.js follows the agent API to 46204  →  1 test(s) failed, e.g. M4 — the agent API and the native bridge no longer share a port › aartiq-mcp targets the native bridge: /native-mac-ui/* routes on 46203
+KILLED    bridge-client DEFAULT_PORT follows to 46204  →  1 test(s) failed, e.g. M4 — the agent API and the native bridge no longer share a port › aartiq-mcp targets the native bridge: /native-mac-ui/* routes on 46203
+KILLED    mcp-browser-server drops the host argument (M1)  →  1 test(s) failed, e.g. M1 — the MCP browser bridge binds loopback › the call site passes a resolved host into listen(), never a bare listen(port)
+post-revert: all 10 tests pass again
