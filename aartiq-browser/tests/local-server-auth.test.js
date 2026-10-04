@@ -114,6 +114,61 @@ describe('extractToken', () => {
     expect(extractToken(makeReq({ headers: { 'x-aartiq-token': 'tok-2' } }), url())).toBe('tok-2');
   });
 
+  test('reads X-Aartiq-Native-Token, which is what the shipped clients send', () => {
+    // scripts/aartiq-cli.js sets this header on every native-bridge call, and
+    // ViewModel.swift / AppIntents.swift set it on all eight requests they make.
+    // The first version of this gate did not accept it and answered 401 to the
+    // CLI and the macOS native panels.
+    expect(extractToken(makeReq({ headers: { 'x-aartiq-native-token': 'tok-native' } }), url())).toBe('tok-native');
+  });
+
+  test('the native-bridge header authenticates a native-bridge request', () => {
+    const token = 'aartiq-token-from-home-dir';
+    const verdict = checkLocalRequest(
+      { method: 'POST', url: '/native-mac-ui/prompt', headers: { host: '127.0.0.1:46203', 'x-aartiq-native-token': token } },
+      { port: 46203, token, requireToken: true, service: 'native-bridge' },
+    );
+    expect(verdict.ok).toBe(true);
+  });
+
+  test('every credential header a shipped client sends is accepted by the gate', () => {
+    // This test exists because the gate shipped without reading the header the
+    // CLI and the native panels actually use. Rather than trust that the list
+    // above is complete, read the shipped clients and check each header they set.
+    const fs = require('fs');
+    const path = require('path');
+    const repo = path.join(__dirname, '..');
+
+    const clientFiles = [
+      'scripts/aartiq-cli.js',
+      'src/lib/native-panels/ViewModel.swift',
+      'src/lib/native-panels/AppIntents.swift',
+      'src/components/StartupSetupUI.tsx',
+      'src/components/ai/AISetupGuide.tsx',
+    ];
+
+    const found = new Set();
+    for (const rel of clientFiles) {
+      const abs = path.join(repo, rel);
+      if (!fs.existsSync(abs)) continue;
+      const text = fs.readFileSync(abs, 'utf8');
+      // 'X-Aartiq-Token': t   |   "X-Aartiq-Token": t   |   forHTTPHeaderField: "X-Aartiq-Token"
+      for (const m of text.matchAll(/['"](X-Aartiq[A-Za-z-]*)['"]\s*:/g)) found.add(m[1].toLowerCase());
+      for (const m of text.matchAll(/forHTTPHeaderField:\s*"([A-Za-z-]+)"/g)) {
+        if (/^x-aartiq/i.test(m[1])) found.add(m[1].toLowerCase());
+      }
+    }
+
+    expect(found.size).toBeGreaterThan(0);
+    for (const header of found) {
+      const verdict = checkLocalRequest(
+        { method: 'GET', url: '/health', headers: { host: '127.0.0.1:3001', [header]: 'a-token' } },
+        { port: 3001, token: 'a-token', requireToken: true },
+      );
+      expect({ header, ok: verdict.ok }).toEqual({ header, ok: true });
+    }
+  });
+
   test('reads the query parameter, which is the only carrier mcp-remote supports', () => {
     expect(extractToken(makeReq(), url('?token=tok-3'))).toBe('tok-3');
   });

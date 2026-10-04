@@ -57,11 +57,23 @@ function tokensMatch(expected, provided) {
 }
 
 /**
- * Pull the token off a request. Three carriers, in priority order, so that both
- * fetch-style clients and the stdio bridge can authenticate:
+ * Header names a client may carry the token in, lowercased as Node delivers them.
+ *
+ * `x-aartiq-native-token` is not an alias anyone invented for this change: it is
+ * what the shipped clients already send. `scripts/aartiq-cli.js` sets it on every
+ * native-bridge call, and `src/lib/native-panels/ViewModel.swift` and
+ * `AppIntents.swift` set it on all eight requests they make. Those clients read
+ * the token from ~/.aartiq-token, which is the value this gate compares against,
+ * so omitting the header would have answered every CLI and native-panel request
+ * with 401.
+ */
+const TOKEN_HEADERS = ['x-aartiq-token', 'x-aartiq-native-token'];
+
+/**
+ * Pull the token off a request, in priority order:
  *
  *   Authorization: Bearer <token>
- *   X-Aartiq-Token: <token>
+ *   X-Aartiq-Token: <token>          /  X-Aartiq-Native-Token: <token>
  *   ?token=<token>            (needed by mcp-remote, which only accepts a URL)
  */
 function extractToken(req, url) {
@@ -70,8 +82,13 @@ function extractToken(req, url) {
     const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
     if (m) return m[1].trim();
   }
-  const header = req.headers && (req.headers['x-aartiq-token'] || req.headers['X-Aartiq-Token']);
-  if (typeof header === 'string' && header.length) return header.trim();
+  const headers = req.headers;
+  if (headers) {
+    for (const name of TOKEN_HEADERS) {
+      const value = headers[name];
+      if (typeof value === 'string' && value.length) return value.trim();
+    }
+  }
 
   const query = url && typeof url.searchParams === 'object' ? url.searchParams.get('token') : null;
   if (typeof query === 'string' && query.length) return query;
