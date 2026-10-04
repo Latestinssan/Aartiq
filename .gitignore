@@ -158,15 +158,34 @@ __tests__/
 
 # Project specific
 Aartiq_/
-/Landing_Page
+# …but the feature reality manifest is the SSOT for docs status generation and
+# for scripts/check-docs.ts, so Landing_Page/data/ has to be in version control.
+/Landing_Page/*
+!/Landing_Page/data/
 /Aartiq-Landing-Page/
 
 # Compiled native binaries
 aartiq-browser/bin/
 
 # Firebase config (generated per-environment, stored in GitHub Secrets)
+# NOTE: the plist sits at ios/, not ios/Runner/ — an earlier rule used the Runner
+# path, which silently matched nothing and left the real file tracked.
 flutter_browser_app/android/app/google-services.json
+flutter_browser_app/ios/GoogleService-Info.plist
 flutter_browser_app/ios/Runner/GoogleService-Info.plist
+flutter_browser_app/macos/GoogleService-Info.plist
+
+# Android signing material (stored in GitHub Secrets, never in the repo).
+# The release keystore was committed here as keystore-base64.txt; see the
+# rotation notes in docs before re-adding anything in this block.
+flutter_browser_app/android/key.properties
+flutter_browser_app/android/app/upload-keystore.jks
+flutter_browser_app/android/app/keystore-base64.txt
+*keystore-base64*.txt
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pem
 
 # Legacy / stale directories (tracked files removed, kept locally only)
 /update/

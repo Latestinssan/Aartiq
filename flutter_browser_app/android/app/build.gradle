@@ -73,6 +73,18 @@ android {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig signingConfigs.debug
+                logger.lifecycle("""
+=========================================================================
+ WARNING: No android/key.properties found — falling back to the DEBUG
+ signing key. This APK will NOT match the GitHub Actions release
+ signature, so Google Sign-In (OAuth SHA-1) and Play App uploads will
+ fail or behave differently than CI.
+
+ Production fingerprints (must match a Google OAuth client):
+   SHA-1   8D:00:42:6B:FE:D6:B0:7F:68:A7:79:E8:A4:3F:92:7A:98:45:6F:B5
+   SHA-256 DE:4D:C0:61:3C:56:28:A2:4D:26:96:20:69:20:65:D7:93:38:2B:10:2F:E7:1D:64:2E:6F:1E:ED:22:AA:A5:66
+=========================================================================
+""")
             }
             ndk {
                 debugSymbolLevel 'FULL'
