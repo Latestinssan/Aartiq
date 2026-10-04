@@ -3,7 +3,7 @@
 **Status:** Unreleased. The version number is the maintainer's to choose; nothing
 here has been tagged and no version has been bumped.
 
-Two independent bodies of work are unreleased. They are unrelated and neither
+Three independent bodies of work are unreleased. They are unrelated and neither
 depends on the other:
 
 1. **Agent page tools and claim-level research verification** — what an external
@@ -11,6 +11,9 @@ depends on the other:
    sources actually agree.
 2. **Local listener authentication and shell approval defaults** — two
    defaults that were unconditional before.
+3. **Unified Desktop Control, Master PIN, and Mobile Dual-Gate Permissions** —
+   Native OS Keychain Master PIN, permanent sync authentication, Android Screen Lock verification,
+   unified session tracking, and real hardware detection.
 
 ---
 
@@ -258,6 +261,41 @@ Grants you made deliberately in **Settings → Permissions** are untouched.
   invariants directly against the table.
 - `tests/shell-approval-defaults.test.js` — 55 cases covering no startup grants,
   medium prompting, the opt-in setting, grant scoping and the migration.
+
+---
+
+# Unified Desktop Control, Master PIN, and Mobile Dual-Gate Permissions
+
+## What was added
+
+A complete unification of the Aartiq Flutter companion app with Aartiq Desktop:
+
+1. **Master PIN (Stored in Native OS Keychain):**
+   - 6-digit Master PIN hashed using PBKDF2-SHA256 (100,000 iterations).
+   - Saved and encrypted directly in the Native OS Keychain (Apple Keychain on macOS, DPAPI on Windows, Secret Service on Linux) via Electron's `safeStorage` and `native-keychain.js`.
+   - Stored in Android Keystore / iOS Keychain on mobile via `flutter_secure_storage`.
+   - Raw PIN never leaves device; only salt and hash travel during pairing.
+   - Enforces a 10-minute lockout after 5 consecutive failed attempts.
+
+2. **Dual-Gate Verification on Mobile:**
+   - Automation plans with risk categorization (`CRITICAL` 🔴, `HIGH` 🟠, `MEDIUM` 🟡, `LOW` 🟢), step-by-step shell command code blocks, risk factors, and security mitigations mirror Aartiq Desktop's execution plan.
+   - Authorizing execution requires both:
+     1. Master PIN verification.
+     2. Android Native Device Screen Lock verification (`local_auth` prompt for fingerprint/face or system PIN/pattern).
+
+3. **Permanent Local & Remote Sync Authentication:**
+   - Cryptographic permanent token exchanged upon pairing.
+   - Reconnecting mobile devices automatically authenticate without repeated pairing codes.
+   - Seamless dual connectivity: Local LAN WebSocket (`:3004`) and Remote Cloud via Firebase Realtime Database.
+
+4. **Unified Session Manager:**
+   - Live session streaming: open tabs, automation tasks, browsing history, and permission decision audits.
+   - Past session archives browsable on mobile with tab counts and task execution details.
+
+5. **Real Hardware Detection & Device Image UI:**
+   - Native OS friendly computer name detection (e.g. *"Sandip’s MacBook Pro"*).
+   - Mobile hardware model detection (e.g. *"Google Pixel 8 Pro"*).
+   - Visual device illustrations (MacBook, iMac, Android Phone, iPhone) with live status and permanent sync badges in both desktop and mobile UIs.
 
 ---
 

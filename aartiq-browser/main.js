@@ -6675,7 +6675,7 @@ if (isPackaged && process.platform === 'darwin') {
 
       let searchResults = [];
       try {
-        const results = await webSearchProvider.search(query, 'googlescrape', 6);
+        const results = await webSearchProvider.search(query, 'googlescrape', 10);
         searchResults = results.map(r => ({
           title: r.title || 'Untitled result',
           url: r.url || '',
@@ -6724,13 +6724,20 @@ if (isPackaged && process.platform === 'darwin') {
   });
 
   // AI Sidebar web search — uses MCP BrowserMcpServer._browserSearch() (offscreen, DuckDuckGo default)
-  ipcMain.handle('ai-web-search', async (_event, query, engine, count) => {
+  ipcMain.handle('ai-web-search', async (_event, query, engine, count, readCount) => {
     try {
       if (!mcpServer) throw new Error('MCP server not initialized');
+      // `count` = how many results to keep (capped at 10); `readCount` = how many
+      // of them to open and read (still capped at 5, as before, so reading pages
+      // does not get slower). The two used to be the same number, so a search
+      // without a `pages` parameter kept exactly one result.
+      const resultCount = Math.min(count || 3, 10);
+      const pagesToRead = Math.min(readCount ?? resultCount, resultCount, 5);
       const result = await mcpServer._browserSearch(
         query,
         engine || 'duckduckgo',
-        Math.min(count || 3, 5)
+        resultCount,
+        pagesToRead
       );
       return result;
     } catch (e) {
@@ -7892,6 +7899,111 @@ if (isPackaged && process.platform === 'darwin') {
       shellApprovalResolvers.delete(requestId);
       resolver({ allowed: !!allowed, deviceUnlockValidated: !!deviceUnlockValidated });
     }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // MASTER PIN IPC HANDLERS
+  // ──────────────────────────────────────────────────────────────────────
+  ipcMain.handle('master-pin-has', async () => {
+    try { return { hasPIN: masterPinService.hasPIN() }; }
+    catch (e) { return { hasPIN: false, error: e.message }; }
+  });
+
+  ipcMain.handle('master-pin-setup', async (_event, pin) => {
+    try { return masterPinService.setupPIN(pin); }
+    catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('master-pin-verify', async (_event, pin) => {
+    try { return masterPinService.verifyPIN(pin); }
+    catch (e) { return { verified: false, error: e.message }; }
+  });
+
+  ipcMain.handle('master-pin-change', async (_event, { oldPin, newPin }) => {
+    try { return masterPinService.changePIN(oldPin, newPin); }
+    catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // UNIFIED SESSION IPC HANDLERS
+  // ──────────────────────────────────────────────────────────────────────
+  ipcMain.handle('session-get-current', async () => {
+    try { return { session: unifiedSessionManager.getCurrentSession() }; }
+    catch (e) { return { session: null, error: e.message }; }
+  });
+
+  ipcMain.handle('session-list', async (_event, limit) => {
+    try { return { sessions: unifiedSessionManager.listSessions(limit || 50) }; }
+    catch (e) { return { sessions: [], error: e.message }; }
+  });
+
+  ipcMain.handle('session-get-by-id', async (_event, sessionId) => {
+    try { return { session: unifiedSessionManager.getSessionById(sessionId) }; }
+    catch (e) { return { session: null, error: e.message }; }
+  });
+
+  ipcMain.handle('session-log-permission', async (_event, log) => {
+    try {
+      unifiedSessionManager.logPermission(log);
+      return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // Auto-push session deltas to mobile when session is updated
+  unifiedSessionManager.on('session-updated', (session) => {
+    if (wifiSyncService) {
+      wifiSyncService.sendSessionDelta('tabs', {
+        tabs: session.tabs,
+        history: session.history.slice(0, 10),
+        tasks: session.automationTasks.slice(0, 5),
+        permissions: session.permissions.slice(0, 5),
+        sessionId: session.id,
+        isActive: session.isActive,
+      });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // PERMISSION RELAY IPC HANDLERS (Mobile → Desktop approval flow)
+  // ──────────────────────────────────────────────────────────────────────
+  ipcMain.handle('permission-relay-request-mobile', async (_event, params) => {
+    try {
+      const { request, promise } = permissionRelayService.createApprovalRequest({
+        ...params,
+        originDeviceId: wifiSyncService ? wifiSyncService.getDeviceId() : 'desktop',
+        originDeviceName: wifiSyncService ? wifiSyncService.getDeviceName() : 'Aartiq Desktop',
+      });
+      // Send request to all connected mobile devices
+      if (wifiSyncService) {
+        wifiSyncService.sendPermissionRequest(request);
+      }
+      // Wait for mobile response
+      const response = await promise;
+      return response;
+    } catch (e) {
+      return { approved: false, pinVerified: false, screenLockVerified: false, reason: e.message };
+    }
+  });
+
+  ipcMain.handle('permission-relay-list-pending', async () => {
+    try { return { pending: permissionRelayService.listPendingRequests() }; }
+    catch (e) { return { pending: [] }; }
+  });
+
+  ipcMain.handle('permission-relay-cancel', async (_event, requestId) => {
+    try { return { success: permissionRelayService.cancelRequest(requestId) }; }
+    catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // Wire permissionRelayService emits to renderer so the desktop UI can show "Waiting for mobile..." overlay
+  permissionRelayService.on('new-approval-request', (request) => {
+    if (mainWindow) mainWindow.webContents.send('permission-relay-new-request', request);
+  });
+  permissionRelayService.on('approval-resolved', (response) => {
+    if (mainWindow) mainWindow.webContents.send('permission-relay-resolved', response);
+  });
+  permissionRelayService.on('request-expired', (requestId) => {
+    if (mainWindow) mainWindow.webContents.send('permission-relay-expired', { requestId });
   });
 
   // --- Robot Service ---

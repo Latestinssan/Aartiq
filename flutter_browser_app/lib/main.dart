@@ -38,6 +38,9 @@ import 'pages/remote_settings_page.dart';
 import 'pages/pdf_viewer_page.dart';
 import 'pages/auth_page.dart';
 import 'pages/action_approval_page.dart';
+import 'pages/permission_approval_page.dart';
+import 'pages/session_viewer_page.dart';
+import 'models/permission_model.dart';
 
 // ignore: non_constant_identifier_names
 late final String WEB_ARCHIVE_DIR;
@@ -415,6 +418,14 @@ class _AartiqAppState extends State<AartiqApp> with WindowListener {
             pin: args?['pin'],
             command: args?['command'] ?? '',
             fromQR: args?['fromQR'] ?? false,
+          );
+        },
+        '/session-viewer': (context) => const SessionViewerPage(),
+        '/permission-approval': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>?;
+          return PermissionApprovalPage(
+            request: PermissionRelayRequest.fromJson(args ?? {}),
           );
         },
       },
