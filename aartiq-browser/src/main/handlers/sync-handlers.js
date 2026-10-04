@@ -258,43 +258,117 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
           else if (riskLevel === 'medium') riskLevel = 'high';
           else riskLevel = 'critical'; // already high → critical
 
-          // 3. Route through capability controller
-          if (capabilityController) {
-            const capResult = await capabilityController.executeAction('execute-shell-command', {
-              rawCommand: shellCmd,
-              reason: `Remote shell command from paired mobile device`,
-              riskLevel,
-            });
+          const ticketId = actionArgs.ticketId || args.ticketId || actionArgs.token || args.token;
+          const pin = actionArgs.pin || args.pin;
 
-            if (!capResult.approved) {
-              if (capResult.needsApproval) {
-                // 4. Require QR/PIN approval (same as shutdown/restart/sleep/lock)
-                const { qrImage, pin, token } = await generateShellApprovalQR(shellCmd);
+          // 3. If no ticket / PIN provided, request approval via capabilityController (origin: remote)
+          if (!ticketId || !pin) {
+            if (capabilityController) {
+              const capResult = await capabilityController.executeAction('execute-shell-command', {
+                rawCommand: shellCmd,
+                command: shellCmd,
+                origin: 'remote',
+                riskLevel,
+                reason: `Remote shell command from paired mobile device`,
+                waitForApproval: false,
+              });
+
+              if (capResult.needsApproval && capResult.ticketId) {
+                // 4. Require QR/PIN approval (dual-gate mobile approval flow)
+                const { randomBytes } = require('crypto');
+                const generatedPin = String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
+                const ticket = capabilityController.ticketManager?.tickets?.get(capResult.ticketId);
+                if (ticket) {
+                  ticket.metadata = { ...(ticket.metadata || {}), pin: generatedPin, command: shellCmd };
+                }
+
+                const qrResult = await generateShellApprovalQR(shellCmd, capResult.ticketId, generatedPin);
                 wifiSyncService.sendToMobile({
                   action: 'shell-approval-qr',
-                  commandId: token,
-                  pin,
+                  commandId: capResult.ticketId,
+                  ticketId: capResult.ticketId,
+                  pin: generatedPin,
                   command: shellCmd,
-                  qrData: qrImage,
+                  qrData: qrResult ? qrResult.qrImage : null,
                 });
-                sendResponse({ success: true, awaiting_approval: true });
+                sendResponse({ success: true, awaiting_approval: true, ticketId: capResult.ticketId });
                 return;
               }
               sendResponse({ success: false, error: capResult.reason || 'Shell command denied by capability controller.' });
               return;
             }
+            sendResponse({ success: false, error: 'Approval required: capability controller not available.' });
+            return;
           }
 
-          // 5. Execute — use execFile with no shell interpretation
+          // 4. Ticket and PIN provided — verify ticket exists, matches command, and PIN is valid
+          if (!capabilityController || !capabilityController.ticketManager) {
+            sendResponse({ success: false, error: 'Capability controller ticket manager unavailable.' });
+            return;
+          }
+
+          const ticket = capabilityController.ticketManager.tickets.get(ticketId);
+          if (!ticket) {
+            sendResponse({ success: false, error: 'Invalid or expired ticket.' });
+            return;
+          }
+
+          if (ticket.action !== 'execute-shell-command') {
+            sendResponse({ success: false, error: 'Ticket action mismatch.' });
+            return;
+          }
+
+          const ticketCmd = ticket.params?.rawCommand || ticket.params?.command;
+          if (ticketCmd !== shellCmd) {
+            sendResponse({ success: false, error: 'Ticket parameter mismatch: command differs from approval.' });
+            return;
+          }
+
+          if (!ticket.metadata?.pin || String(ticket.metadata.pin) !== String(pin)) {
+            sendResponse({ success: false, error: 'Invalid PIN for approval ticket.' });
+            return;
+          }
+
+          // 5. Approve and Redeem single-use ticket (input-hash verification)
+          const approveRes = capabilityController.ticketManager.approveTicket(ticketId, 'mobile-qr-pin');
+          if (!approveRes.success) {
+            sendResponse({ success: false, error: `Ticket approval failed: ${approveRes.reason}` });
+            return;
+          }
+
+          const redeemRes = capabilityController.ticketManager.redeemTicket(ticketId);
+          if (!redeemRes.success) {
+            sendResponse({ success: false, error: `Ticket redemption failed: ${redeemRes.reason}` });
+            return;
+          }
+
+          // 6. Execute — sandboxed with direct execFile fallback
+          const { executeSandboxed } = require('../../core/sandbox-executor');
           const { execFile: execFileFn } = require('child_process');
           const cmdParts = shellCmd.trim().split(/\s+/);
           const cmdBinary = cmdParts[0];
           const cmdArgs = cmdParts.slice(1);
-          execFileFn(cmdBinary, cmdArgs, { timeout: 30000 }, (err, stdout, stderr) => {
-            sendResponse(err
-              ? { success: false, error: err.message }
-              : { success: true, output: stdout || stderr });
-          });
+
+          try {
+            const result = await executeSandboxed(cmdBinary, cmdArgs, { timeout: 30000 });
+            if (result && result.code === 0) {
+              sendResponse({ success: true, output: result.stdout || result.stderr || '' });
+            } else if (result && result.code !== undefined) {
+              sendResponse({ success: false, error: result.stderr || result.error || `Command exited with code ${result.code}` });
+            } else {
+              execFileFn(cmdBinary, cmdArgs, { timeout: 30000 }, (err, stdout, stderr) => {
+                sendResponse(err
+                  ? { success: false, error: err.message }
+                  : { success: true, output: stdout || stderr });
+              });
+            }
+          } catch (e) {
+            execFileFn(cmdBinary, cmdArgs, { timeout: 30000 }, (err, stdout, stderr) => {
+              sendResponse(err
+                ? { success: false, error: err.message }
+                : { success: true, output: stdout || stderr });
+            });
+          }
         } else if (action === 'high-risk-approve') {
           const win = liveWindow();
           if (win) {
