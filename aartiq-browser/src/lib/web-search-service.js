@@ -91,11 +91,26 @@ class WebSearchProvider {
 
     try {
       const results = await this.search(query, chosen, count);
+      const list = Array.isArray(results) ? results : [];
+      const scraped = SCRAPE_PROVIDERS.has(chosen);
+      const notes = usedFallback
+        ? [`${provider} is deprecated for new signups; used ${chosen} instead.`]
+        : [];
+      if (!list.length) {
+        // The scrape providers swallow their own errors and return [], so an empty
+        // list from one of them is indistinguishable from a genuinely empty
+        // result. Saying which it was is the difference between a caller retrying
+        // and a caller reporting "nothing found" when the search never ran.
+        notes.push(scraped
+          ? `${chosen} returned nothing. Scraped searches are rate-limited and break when the engine's markup changes, so an empty result from one may mean the fetch failed rather than that nothing exists.`
+          : `${chosen} returned no results for this query.`);
+      }
       return {
         provider: chosen,
-        scraped: SCRAPE_PROVIDERS.has(chosen),
-        ...(usedFallback ? { fallbackFrom: provider, reason: `${provider} is deprecated for new signups; used ${chosen} instead.` } : {}),
-        results: Array.isArray(results) ? results : [],
+        scraped,
+        ...(usedFallback ? { fallbackFrom: provider } : {}),
+        ...(notes.length ? { reason: notes.join(' ') } : {}),
+        results: list,
       };
     } catch (e) {
       // An API key that is present but rejected (expired quota, wrong plan) must
