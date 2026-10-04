@@ -1805,6 +1805,8 @@ export default function Home() {
         const token = typeof savedSession.token === 'string' ? savedSession.token : null;
         if (token && !isFirebaseIdToken(token) && !isJwtExpired(token)) {
           await firebaseService.signInWithCredential(GoogleAuthProvider.credential(token));
+          // Mirror the session into the main process (cloud sync / P2P live there).
+          window.electronAPI?.signInFirebaseMain?.({ provider: 'google', idToken: token })?.catch?.(() => {});
           console.log('[Auth] Restored Firebase session from secure token cache.');
         }
       } catch (error) {
@@ -1939,6 +1941,9 @@ export default function Home() {
                 console.log('[Auth] Received Firebase ID token from deep link; skipping Google credential sign-in.');
               } else {
                 await firebaseService.signInWithCredential(credential);
+                // Mirror the Google session into the main process so cloud
+                // sync / P2P share the same account uid.
+                window.electronAPI?.signInFirebaseMain?.({ provider: 'google', idToken: token })?.catch?.(() => {});
                 console.log("Firebase signed in successfully via deep link");
               }
             } catch (e) {

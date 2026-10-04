@@ -5,6 +5,20 @@ const os = require('os');
 module.exports = function registerSyncHandlers(ipcMain, handlers) {
   const { store, wifiSyncService, cloudSyncService, p2pSyncService, mainWindow } = handlers;
 
+  // Resolve the target window LIVE at send time. handlerDeps captures the
+  // startup window by value, so after that window is closed the captured
+  // reference is a destroyed BrowserWindow: `if (mainWindow)` still passes
+  // (the object is non-null) and `webContents.send` throws
+  // "Object has been destroyed". Every throw is counted by the main
+  // process uncaughtException guard, which force-quits after 5 — that is
+  // what disconnected mobile clients after the control window closed, and
+  // it also silently swallowed AI prompts (send-prompt reported success
+  // while the renderer never received 'remote-ai-prompt').
+  const liveWindow = () => {
+    const win = (typeof handlers.getMainWindow === 'function' && handlers.getMainWindow()) || mainWindow;
+    return win && !win.isDestroyed() ? win : null;
+  };
+
   ipcMain.handle('get-wifi-sync-uri', () => {
     return wifiSyncService ? wifiSyncService.getConnectUri() : null;
   });
@@ -170,8 +184,9 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
       const { command, args, sendResponse } = data;
 
       if (command === 'approve-high-risk') {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('mobile-approve-high-risk', {
+        const win = liveWindow();
+        if (win) {
+          win.webContents.send('mobile-approve-high-risk', {
             pin: args.pin,
             id: args.id || args.token,
           });
@@ -187,9 +202,17 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
         const actionArgs = restArgs;
 
         if (action === 'send-prompt') {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('remote-ai-prompt', { prompt, promptId, streamToMobile: true });
+          const win = liveWindow();
+          if (!win) {
+            // Fail honestly: reporting success here left the phone waiting
+            // forever for AI stream chunks that could never arrive.
+            sendResponse({
+              success: false,
+              error: 'Aartiq desktop window is closed. Open the desktop app window to run AI prompts.',
+            });
+            return;
           }
+          win.webContents.send('remote-ai-prompt', { prompt, promptId, streamToMobile: true });
           sendResponse({ success: true, promptId });
         } else if (action === 'get-status') {
           sendResponse({ success: true, desktopName: os.hostname(), platform: os.platform() });
@@ -273,8 +296,9 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
               : { success: true, output: stdout || stderr });
           });
         } else if (action === 'high-risk-approve') {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('mobile-approve-high-risk', {
+          const win = liveWindow();
+          if (win) {
+            win.webContents.send('mobile-approve-high-risk', {
               pin: actionArgs.pin || args.pin,
               id: actionArgs.id || actionArgs.token || args.id || args.token,
             });
@@ -301,25 +325,28 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
       }
     });
 
-    wifiSyncService.on('client-connected', () => { if (mainWindow) mainWindow.webContents.send('wifi-sync-status', { connected: true }); });
-    wifiSyncService.on('client-disconnected', () => { if (mainWindow) mainWindow.webContents.send('wifi-sync-status', { connected: false }); });
+    wifiSyncService.on('client-connected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: true }); });
+    wifiSyncService.on('client-disconnected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: false }); });
   }
 
   // Cloud Sync Event Listeners
   if (cloudSyncService) {
     cloudSyncService.on('cloud-prompt', async ({ prompt, promptId, fromDeviceId }) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('remote-ai-prompt', { prompt, promptId, fromDeviceId, streamToMobile: true });
+      const win = liveWindow();
+      if (win) {
+        win.webContents.send('remote-ai-prompt', { prompt, promptId, fromDeviceId, streamToMobile: true });
       }
     });
 
     cloudSyncService.on('cloud-file-sync', ({ files, fromDeviceId }) => {
-      if (mainWindow) mainWindow.webContents.send('cloud-files-received', { files, fromDeviceId });
+      const w = liveWindow();
+      if (w) w.webContents.send('cloud-files-received', { files, fromDeviceId });
     });
 
     cloudSyncService.on('cloud-message', (data) => {
-      if (data?.action === 'high-risk-approve' && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mobile-approve-high-risk', {
+      const win = liveWindow();
+      if (data?.action === 'high-risk-approve' && win) {
+        win.webContents.send('mobile-approve-high-risk', {
           pin: data.args?.pin,
           id: data.args?.id || data.args?.token,
         });

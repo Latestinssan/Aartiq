@@ -107,6 +107,28 @@ var dgram = __importStar(require("dgram"));
 var electron_1 = require("electron");
 var crypto_1 = require("crypto");
 var electron_store_1 = __importDefault(require("electron-store"));
+var DeviceIdentifier_1 = require("./DeviceIdentifier");
+// Late-require to avoid circular deps at module load time
+var _permissionRelayService = null;
+var _unifiedSessionManager = null;
+function getPermissionRelayService() {
+    if (!_permissionRelayService) {
+        try {
+            _permissionRelayService = require('./PermissionRelayService').permissionRelayService;
+        }
+        catch (_) { }
+    }
+    return _permissionRelayService;
+}
+function getUnifiedSessionManager() {
+    if (!_unifiedSessionManager) {
+        try {
+            _unifiedSessionManager = require('./UnifiedSessionManager').unifiedSessionManager;
+        }
+        catch (_) { }
+    }
+    return _unifiedSessionManager;
+}
 var WiFiSyncService = /** @class */ (function (_super) {
     __extends(WiFiSyncService, _super);
     function WiFiSyncService(port) {
@@ -123,12 +145,32 @@ var WiFiSyncService = /** @class */ (function (_super) {
         _this.knownDevices = new Map();
         _this.knownDevicesKey = 'knownWifiSyncDevices';
         _this.port = port;
-        _this.deviceId = "desktop-".concat(os.hostname().substring(0, 8));
-        _this.deviceName = os.hostname();
-        _this.pairingCode = String(100000 + (0, crypto_1.randomInt)(900000));
+        var meta = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
+        _this.deviceId = meta.deviceId;
+        _this.deviceName = meta.deviceName; // Real friendly device name (e.g. "Sandip's MacBook Pro")
+        // The pairing code must survive desktop restarts: a fresh random code
+        // per process made the code shown in the UI (or read from a saved
+        // device) invalid after every relaunch → "Invalid pairing code" on
+        // reconnect for a device that had already been paired.
+        var savedCode = _this.store.get('pairingCode');
+        if (typeof savedCode === 'string' && /^\d{6}$/.test(savedCode)) {
+            _this.pairingCode = savedCode;
+        }
+        else {
+            _this.pairingCode = String(100000 + (0, crypto_1.randomInt)(900000));
+            _this.store.set('pairingCode', _this.pairingCode);
+        }
         _this._loadKnownDevices();
         return _this;
     }
+    /**
+     * The device id format used before DeviceIdentifier existed
+     * (`desktop-<hostname:8>`). Phones that paired against an older build
+     * keyed their stored permanent token by it, so it must keep working.
+     */
+    WiFiSyncService.prototype.getLegacyDeviceId = function () {
+        return "desktop-".concat(os.hostname().substring(0, 8));
+    };
     WiFiSyncService.prototype.setDeviceId = function (deviceId, deviceName) {
         this.deviceId = deviceId;
         this.deviceName = deviceName;
@@ -190,11 +232,14 @@ var WiFiSyncService = /** @class */ (function (_super) {
             deviceId: device.deviceId,
             deviceName: device.deviceName || 'Unknown Mobile',
             deviceType: device.deviceType || 'mobile',
+            deviceModel: device.deviceModel || (device.platform === 'android' ? 'Android Device' : device.platform === 'ios' ? 'iPhone' : undefined),
+            deviceImage: device.deviceImage || (device.platform === 'ios' ? 'iphone' : 'android-phone'),
             ip: device.ip || '',
             port: device.port || this.port,
             platform: device.platform || 'unknown',
             trustLevel: device.trustLevel || 'ask_once',
-            autoConnect: (_a = device.autoConnect) !== null && _a !== void 0 ? _a : device.trustLevel === 'trusted',
+            permanentToken: device.permanentToken,
+            autoConnect: (_a = device.autoConnect) !== null && _a !== void 0 ? _a : (device.trustLevel === 'trusted' || !!device.permanentToken),
             online: (_b = device.online) !== null && _b !== void 0 ? _b : false,
             lastConnected: device.lastConnected,
             lastSeen: device.lastSeen,
@@ -233,10 +278,13 @@ var WiFiSyncService = /** @class */ (function (_super) {
         try {
             this.discoverySocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
             var discoveryPort_1 = 3005;
+            var meta_1 = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
             var beacon_1 = function () { return JSON.stringify({
                 type: 'aartiq-beacon',
                 deviceId: _this.deviceId,
-                deviceName: os.hostname(),
+                deviceName: _this.deviceName,
+                model: meta_1.model,
+                deviceImage: meta_1.deviceImage,
                 ip: _this.getLocalIp(),
                 port: _this.port,
             }); };
@@ -261,6 +309,7 @@ var WiFiSyncService = /** @class */ (function (_super) {
         }
     };
     WiFiSyncService.prototype._handleMessage = function (ws, data) {
+        var _this = this;
         var _a;
         try {
             var msg = JSON.parse(data.toString());
@@ -268,42 +317,69 @@ var WiFiSyncService = /** @class */ (function (_super) {
             switch (msg.type) {
                 case 'handshake': {
                     var deviceId = "".concat(msg.deviceId || "mobile-".concat(Date.now()));
-                    var knownDevice = this.knownDevices.get(deviceId);
+                    // Devices that paired before the id migration present a
+                    // new id (the phone's secure-storage id) while the desktop
+                    // trusted their legacy id. Fall back to the legacy id so an
+                    // already-paired phone is still recognized as trusted.
+                    var legacyId = typeof msg.legacyDeviceId === 'string' && msg.legacyDeviceId && msg.legacyDeviceId !== deviceId
+                        ? msg.legacyDeviceId
+                        : null;
+                    var knownDevice = this.knownDevices.get(deviceId) || (legacyId ? this.knownDevices.get(legacyId) : undefined) || undefined;
+                    var permanentTokenMatches = !!(msg.permanentToken && (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.permanentToken) && msg.permanentToken === knownDevice.permanentToken);
                     var isTrusted = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.trustLevel) === 'trusted';
                     var pairingAccepted = typeof msg.pairingCode === 'string' && msg.pairingCode === this.pairingCode;
-                    console.log('[WiFi-Sync] Handshake received from:', deviceId, 'trusted=', isTrusted);
-                    if (isTrusted || pairingAccepted) {
+                    console.log('[WiFi-Sync] Handshake received from:', deviceId, 'permanentMatch=', permanentTokenMatches, 'trusted=', isTrusted);
+                    if (permanentTokenMatches || isTrusted || pairingAccepted) {
+                        var permanentToken = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.permanentToken) || (0, crypto_1.randomBytes)(32).toString('hex');
                         var device = this._upsertKnownDevice({
                             deviceId: deviceId,
                             deviceName: msg.deviceName || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceName) || 'Aartiq Mobile',
-                            deviceType: 'mobile',
+                            deviceType: msg.deviceType || 'mobile',
+                            deviceModel: msg.deviceModel || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceModel),
+                            deviceImage: msg.deviceImage || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceImage) || (msg.platform === 'ios' ? 'iphone' : 'android-phone'),
                             ip: this._getSocketIp(ws),
                             port: Number(msg.port) || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.port) || this.port,
                             platform: msg.platform || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.platform) || 'mobile',
-                            trustLevel: isTrusted ? 'trusted' : ((knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.trustLevel) || 'ask_once'),
-                            autoConnect: (_a = knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.autoConnect) !== null && _a !== void 0 ? _a : isTrusted,
+                            trustLevel: 'trusted',
+                            permanentToken: permanentToken,
+                            autoConnect: true,
                             online: true,
                             lastConnected: Date.now(),
                             lastSeen: Date.now(),
                         });
+                        // Migrate the legacy record into the new id so future
+                        // lookups resolve directly (the merged trust/token above
+                        // already carries over).
+                        if (legacyId && legacyId !== deviceId && this.knownDevices.has(legacyId)) {
+                            this.knownDevices.delete(legacyId);
+                            this._persistKnownDevices();
+                        }
                         this.clientSockets.set(deviceId, ws);
                         this.socketDeviceIds.set(ws, deviceId);
+                        var meta = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
                         ws.send(JSON.stringify({
                             type: 'handshake-ack',
                             deviceId: this.deviceId,
+                            legacyDeviceId: this.getLegacyDeviceId(),
                             deviceName: this.deviceName,
                             hostname: os.hostname(),
                             platform: os.platform(),
+                            model: meta.model,
+                            deviceImage: meta.deviceImage,
                             authenticated: true,
-                            trusted: device.trustLevel === 'trusted',
-                            autoConnect: device.autoConnect,
+                            trusted: true,
+                            autoConnect: true,
+                            permanentToken: permanentToken,
+                            permanentSync: true,
                         }));
-                        console.log('[WiFi-Sync] Client authenticated successfully');
+                        console.log('[WiFi-Sync] Client permanently authenticated successfully');
                         this.emit('client-connected', {
                             deviceId: deviceId,
                             connected: this.clientSockets.size > 0,
                             devices: this.getKnownDevices(),
                         });
+                        // Push current session snapshot to newly connected mobile
+                        setTimeout(function () { return _this.sendSessionSnapshot(); }, 500);
                     }
                     else {
                         ws.send(JSON.stringify({
@@ -339,6 +415,55 @@ var WiFiSyncService = /** @class */ (function (_super) {
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
                     break;
+                // ── Permission relay response from mobile ──────────────────
+                case 'permission-relay-response': {
+                    var relay = getPermissionRelayService();
+                    if (relay && msg.payload) {
+                        var response = __assign(__assign({}, msg.payload), { respondedByDeviceId: this.socketDeviceIds.get(ws) || 'unknown-mobile' });
+                        var handled = relay.handleApprovalResponse(response);
+                        ws.send(JSON.stringify({
+                            type: 'permission-relay-ack',
+                            requestId: (_a = msg.payload) === null || _a === void 0 ? void 0 : _a.requestId,
+                            received: handled,
+                        }));
+                    }
+                    break;
+                }
+                // ── Mobile requests current + past sessions ────────────────
+                case 'session-sync-request': {
+                    var usm = getUnifiedSessionManager();
+                    if (usm) {
+                        var payload = usm.getSyncPayload();
+                        ws.send(JSON.stringify({
+                            type: 'session-sync-response',
+                            currentSession: payload.currentSession,
+                            pastSessions: payload.pastSessions,
+                            timestamp: Date.now(),
+                        }));
+                    }
+                    break;
+                }
+                // ── Mobile requests Master PIN sync payload (salt + hash) ──
+                case 'pin-sync-request': {
+                    try {
+                        var pinSvc = require('./MasterPINService').masterPinService;
+                        var pinPayload = pinSvc.getSyncPayload();
+                        ws.send(JSON.stringify(__assign({ type: 'pin-sync-response' }, pinPayload)));
+                    }
+                    catch (e) {
+                        ws.send(JSON.stringify({ type: 'pin-sync-response', hasPin: false }));
+                    }
+                    break;
+                }
+                // ── Mobile syncs an imported session back ──────────────────
+                case 'session-import': {
+                    var usm2 = getUnifiedSessionManager();
+                    if (usm2 && msg.session) {
+                        usm2.importSession(msg.session);
+                        ws.send(JSON.stringify({ type: 'session-import-ack', success: true, id: msg.session.id }));
+                    }
+                    break;
+                }
             }
         }
         catch (e) {
@@ -384,6 +509,50 @@ var WiFiSyncService = /** @class */ (function (_super) {
             args: args || {},
             timestamp: Date.now(),
         });
+    };
+    /**
+     * Send a permission relay request (HIGH/CRITICAL automation approval) to mobile.
+     * Replaces/extends the QR-based shell-approval-qr mechanism for rich, plan-aware approvals.
+     */
+    WiFiSyncService.prototype.sendPermissionRequest = function (request) {
+        this.broadcast({
+            type: 'permission-relay-request',
+            payload: request,
+            timestamp: Date.now(),
+        });
+        console.log("[WiFi-Sync] Sent permission-relay-request to mobile: ".concat(request.requestId, " (risk=").concat(request.riskLevel, ")"));
+    };
+    /**
+     * Push a session delta (tabs, history, or task update) to mobile in real time.
+     */
+    WiFiSyncService.prototype.sendSessionDelta = function (deltaType, data) {
+        this.broadcast({
+            type: 'session-delta',
+            deltaType: deltaType,
+            data: data,
+            timestamp: Date.now(),
+        });
+    };
+    /**
+     * Push full session snapshot to mobile on demand (called on initial connect or explicit refresh).
+     */
+    WiFiSyncService.prototype.sendSessionSnapshot = function () {
+        try {
+            var usm = getUnifiedSessionManager();
+            if (usm) {
+                var payload = usm.getSyncPayload();
+                this.broadcast({
+                    type: 'session-sync-response',
+                    currentSession: payload.currentSession,
+                    pastSessions: payload.pastSessions,
+                    timestamp: Date.now(),
+                });
+                console.log("[WiFi-Sync] Sent session snapshot to mobile, sessionId=".concat(payload.currentSession.id));
+            }
+        }
+        catch (e) {
+            console.error('[WiFi-Sync] Failed to send session snapshot:', e);
+        }
     };
     WiFiSyncService.prototype.sendFileToMobile = function (filename, fileBuffer, mimeType, metadata) {
         var base64Data = fileBuffer.toString('base64');

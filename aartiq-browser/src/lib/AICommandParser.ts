@@ -208,7 +208,12 @@ function extractCommandsFromStructuredPayload(payload: any, originalMatch: strin
     const appendCommand = (cmd: any) => {
         const rawType = (cmd?.type || cmd?.command || '').toUpperCase();
         const cmdType = COMMAND_ALIASES[rawType] || rawType;
-        const cmdValue = cmd?.value ?? cmd?.url ?? cmd?.query ?? cmd?.args ?? '';
+        // Per-command payload field names differ: PLAN documents { description },
+        // THINK documents { note }. Without those fallbacks the command parsed
+        // but `value` was empty, so the UI rendered "Executing plan: " with the
+        // plan text nowhere on screen.
+        const cmdValue = cmd?.value || cmd?.url || cmd?.query || cmd?.args
+            || cmd?.description || cmd?.note || cmd?.plan || '';
 
         if (!cmdType || !SUPPORTED_COMMANDS.includes(cmdType as any)) {
             return;

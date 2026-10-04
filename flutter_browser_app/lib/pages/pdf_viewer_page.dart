@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../sync_service.dart';
 
 class PDFViewerPage extends StatefulWidget {
@@ -182,14 +183,22 @@ class _PDFViewerPageState extends State<PDFViewerPage> {
       return;
     }
 
+    // Hand the file to whatever app the OS picks for it. On mobile the OS may
+    // refuse file:// intents, so fall back to telling the user where it is.
+    final savedMessage = 'Saved to $_localPath';
     try {
-      // Open file using system default
-      await Process.run('open', [_localPath!]);
-    } catch (e) {
+      final opened = await launchUrl(
+        Uri.file(_localPath!),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(savedMessage)));
+      }
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(savedMessage)));
       }
     }
   }

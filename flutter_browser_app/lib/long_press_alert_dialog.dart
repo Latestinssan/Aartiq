@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_browser/custom_image.dart';
+import 'package:flutter_browser/link_launcher.dart';
 import 'package:flutter_browser/webview_tab.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -75,6 +76,7 @@ class _LongPressAlertDialogState extends State<LongPressAlertDialog> {
         const Divider(),
         _buildOpenNewTab(),
         _buildOpenNewIncognitoTab(),
+        _buildOpenExternalBrowser(),
         _buildCopyAddressLink(),
         _buildShareLink(),
       ];
@@ -84,6 +86,7 @@ class _LongPressAlertDialogState extends State<LongPressAlertDialog> {
         _buildImageTile(),
         const Divider(),
         _buildOpenImageNewTab(),
+        _buildOpenExternalBrowser(fallbackUrl: _imageUri),
         _buildDownloadImage(),
         _buildSearchImageOnGoogle(),
         _buildShareImage(),
@@ -209,6 +212,51 @@ class _LongPressAlertDialogState extends State<LongPressAlertDialog> {
         Navigator.pop(context);
       },
     );
+  }
+
+  Widget _buildOpenExternalBrowser({Uri? fallbackUrl}) {
+    final linkUrl = widget.requestFocusNodeHrefResult?.url;
+    final url = (linkUrl != null && linkUrl.toString().isNotEmpty)
+        ? linkUrl
+        : fallbackUrl;
+
+    return ListTile(
+      title: const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Open in external browser"),
+            Padding(
+              padding: EdgeInsets.only(right: 12.5),
+              child: Icon(
+                Icons.open_in_browser,
+                color: Colors.black54,
+                size: 20.0,
+              ),
+            )
+          ]),
+      onTap: () async {
+        if (url != null) {
+          // Awaited so a "no app can open this" message still has a mounted
+          // context to show up in.
+          await LinkLauncher.openExternalUrl(url, context: context);
+        }
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      },
+    );
+  }
+
+  Uri? get _imageUri {
+    final extra = widget.hitTestResult.extra;
+    if (extra == null || extra.isEmpty) {
+      return null;
+    }
+    try {
+      return Uri.parse(extra);
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _buildCopyAddressLink() {

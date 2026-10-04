@@ -156,7 +156,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveGoogleConfig: (config) => ipcRenderer.send('save-google-config', config),
   getGoogleConfig: () => ipcRenderer.invoke('get-google-config'),
   webSearchRag: (query) => ipcRenderer.invoke('web-search-rag', query),
-  aiWebSearch: (query, engine, count) => ipcRenderer.invoke('ai-web-search', query, engine, count),
+  aiWebSearch: (query, engine, count, readCount) => ipcRenderer.invoke('ai-web-search', query, engine, count, readCount),
   webSearch: (query, provider, count) => ipcRenderer.invoke('web-search', query, provider, count),
   webSearchContext: (query, provider) => ipcRenderer.invoke('web-search-context', query, provider),
   webSearchProviders: () => ipcRenderer.invoke('web-search-providers'),
@@ -245,6 +245,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getAuthToken: () => ipcRenderer.invoke('get-auth-token'),
   getAuthSession: () => ipcRenderer.invoke('get-auth-session'),
+  // Sign the MAIN process into Firebase with a credential from the renderer
+  // so cloud sync / P2P share the renderer's Google account uid.
+  signInFirebaseMain: (payload) => ipcRenderer.invoke('sign-in-firebase-main', payload),
   getUserInfo: () => ipcRenderer.invoke('get-user-info'),
   clearAuth: () => ipcRenderer.send('clear-auth'),
 

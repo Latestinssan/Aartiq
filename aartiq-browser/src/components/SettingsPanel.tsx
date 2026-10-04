@@ -143,6 +143,8 @@ const SettingsPanel = ({ onClose, defaultSection = 'profile' }: { onClose: () =>
             const data = await res.json();
             if (data.customToken) {
                 await firebaseService.signInWithCustomToken(data.customToken);
+                // Mirror the session into the main process (cloud sync / P2P).
+                window.electronAPI?.signInFirebaseMain?.({ provider: 'custom', token: data.customToken })?.catch?.(() => {});
             } else {
                 alert(data.error || "Failed to verify license key.");
             }

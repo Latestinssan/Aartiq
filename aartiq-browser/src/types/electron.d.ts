@@ -372,6 +372,7 @@ declare global {
             saveAuthSession: (session: any) => void;
             getAuthToken: () => Promise<string | null>;
             getAuthSession: () => Promise<any>;
+            signInFirebaseMain: (payload: { provider: 'google' | 'custom'; idToken?: string; token?: string }) => Promise<{ success: boolean; uid?: string; error?: string }>;
             getUserInfo: () => Promise<any>;
             clearAuth: () => void;
             googleOAuthLogin: () => void;
@@ -498,7 +499,7 @@ declare global {
             webSearchProviders: () => Promise<{ success: boolean; providers?: string[] }>;
             webSearchConfigure: (keys: Record<string, string>) => Promise<{ success: boolean }>;
             webSearchRag: (query: string) => Promise<Array<{ title: string; url: string; snippet: string; pageContent?: string }>>;
-            aiWebSearch: (query: string, engine?: string, count?: number) => Promise<{ results: Array<{ title: string; url: string; snippet: string; content: string }>; engine?: string; error?: string }>;
+            aiWebSearch: (query: string, engine?: string, count?: number, readCount?: number) => Promise<{ results: Array<{ title: string; url: string; snippet: string; content: string }>; engine?: string; error?: string }>;
             webSearchYoutube: (query: string, count?: number) => Promise<{ success: boolean; results?: Array<{ title: string; url: string; snippet: string; videoId: string; channel: string; length: string; thumbnail: string }>; error?: string }>;
             fetchPageContent: (url: string, maxChars?: number) => Promise<{ success: boolean; content?: string; error?: string }>;
             runResearch: (payload: { query: string; researchId?: string; queries?: string[]; budget?: Partial<{ maxQueries: number; resultsPerQuery: number; pagesToFetch: number; maxFollowUpRounds: number; days: number }> }) => Promise<{ success: boolean; error?: string; outcome?: any }>;

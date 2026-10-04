@@ -187,7 +187,14 @@ function runJest(outFile: string) {
     ["jest", "--ci", "--runInBand", "--forceExit", "--json", `--outputFile=${outFile}`],
     {
       cwd: BROWSER,
-      env: { ...process.env, NODE_OPTIONS: "--experimental-vm-modules" },
+      // Deliberately no NODE_OPTIONS: --experimental-vm-modules changed how
+      // jest resolves react-markdown's ESM entry, so the default export arrived
+      // as a namespace object and the SSR tests in tests/markdown-render,
+      // tests/citation-links and tests/file-paths failed under this generator
+      // while CI — plain `npx jest` — passed them. Node 24.9+ require()s the
+      // ESM-only transitive deps synchronously (see the comment in
+      // .github/workflows/jest.yml), so keep this invocation identical to CI's.
+      env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",
     },

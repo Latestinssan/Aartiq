@@ -31,6 +31,7 @@ import 'package:flutter_browser/pages/connect_desktop_page.dart';
 import '../animated_flutter_browser_logo.dart';
 import '../custom_popup_dialog.dart';
 import '../custom_popup_menu_item.dart';
+import '../link_launcher.dart';
 import '../models/window_model.dart';
 import '../popup_menu_actions.dart';
 import '../project_info_popup.dart';
@@ -1043,6 +1044,19 @@ class _WebViewTabAppBarState extends State<WebViewTabAppBar>
                       ],
                     ),
                   );
+                case PopupMenuActions.OPEN_IN_BROWSER:
+                  return CustomPopupMenuItem<String>(
+                    enabled: windowModel.getCurrentTab() != null,
+                    value: choice,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(choice),
+                        const Icon(Icons.open_in_browser,
+                            color: Colors.black),
+                      ],
+                    ),
+                  );
                 case PopupMenuActions.SETTINGS:
                   return CustomPopupMenuItem<String>(
                     enabled: true,
@@ -1204,6 +1218,9 @@ class _WebViewTabAppBarState extends State<WebViewTabAppBar>
         break;
       case PopupMenuActions.SHARE:
         share();
+        break;
+      case PopupMenuActions.OPEN_IN_BROWSER:
+        openInExternalBrowser();
         break;
       case PopupMenuActions.ASK_AI:
         _showAIAssistant();
@@ -1736,6 +1753,23 @@ class _WebViewTabAppBarState extends State<WebViewTabAppBar>
     }
   }
 
+  /// Hands the current page to the system browser instead of the in-app view.
+  void openInExternalBrowser() {
+    final windowModel = Provider.of<WindowModel>(context, listen: false);
+    final webViewModel = windowModel.getCurrentTab()?.webViewModel;
+    final url = webViewModel?.url;
+    final raw = url != null ? LinkLauncher.rawValueOf(url) : "";
+
+    if (url == null || raw.isEmpty || LinkLauncher.schemeOf(url) == "about") {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text("There is no page to open yet")),
+      );
+      return;
+    }
+
+    LinkLauncher.openExternalUrl(url, context: context);
+  }
+
   void openNewWindow() {
     final browserModel = Provider.of<BrowserModel>(context, listen: false);
     browserModel.openWindow(null);
@@ -2210,19 +2244,13 @@ class _WebViewTabAppBarState extends State<WebViewTabAppBar>
     );
   }
 
-  void _onSubmitted(String value) {
+  void _onSubmitted(String value) async {
     if (value.isEmpty) return;
     final browserModel = Provider.of<BrowserModel>(context, listen: false);
     final settings = browserModel.getSettings();
     final webViewModel = Provider.of<WebViewModel>(context, listen: false);
 
-    var url = WebUri(value.trim());
-    if (Util.isLocalizedContent(url) ||
-        (url.isValidUri && url.toString().split(".").length > 1)) {
-      url = url.scheme.isEmpty ? WebUri("https://$url") : url;
-    } else {
-      url = WebUri(settings.searchEngine.searchUrl + value);
-    }
+    var url = Util.resolveAddressInput(value, settings.searchEngine.searchUrl);
 
     if (webViewModel.webViewController != null) {
       if (value.startsWith('>>')) {
@@ -2244,9 +2272,14 @@ class _WebViewTabAppBarState extends State<WebViewTabAppBar>
           ),
         );
       } else {
-        webViewModel.webViewController?.loadUrl(
-          urlRequest: URLRequest(url: url),
-        );
+        // tel:, mailto:, market:, … belong to other apps, not the WebView.
+        if (LinkLauncher.canLoadInWebView(url)) {
+          webViewModel.webViewController?.loadUrl(
+            urlRequest: URLRequest(url: url),
+          );
+        } else {
+          await LinkLauncher.openExternalUrl(url, context: context);
+        }
       }
     } else {
       addNewTab(url: url);

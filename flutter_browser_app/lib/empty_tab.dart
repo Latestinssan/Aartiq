@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_browser/link_launcher.dart';
 import 'package:flutter_browser/util.dart';
 import 'package:flutter_browser/webview_tab.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 
 import 'models/browser_model.dart';
@@ -74,12 +74,12 @@ class _EmptyTabState extends State<EmptyTab> {
     final browserModel = Provider.of<BrowserModel>(context, listen: false);
     final settings = browserModel.getSettings();
 
-    var url = WebUri(value.trim());
-    if (Util.isLocalizedContent(url) ||
-        (url.isValidUri && url.toString().split(".").length > 1)) {
-      url = url.scheme.isEmpty ? WebUri("https://$url") : url;
-    } else {
-      url = WebUri(settings.searchEngine.searchUrl + value);
+    var url = Util.resolveAddressInput(value, settings.searchEngine.searchUrl);
+
+    // tel:, mailto:, market:, … belong to other apps, not a new tab.
+    if (!LinkLauncher.canLoadInWebView(url)) {
+      LinkLauncher.openExternalUrl(url, context: context);
+      return;
     }
 
     windowModel.addTab(WebViewTab(

@@ -3,9 +3,9 @@
   "version": 1,
   "baseline": {
     "commit": "63baa5ee",
-    "branch": "docs/feature-reality-gate",
-    "note": "Rows are derived by reading source, and the four gate suites (Genmoji, shortcuts, deep links, platform integration) re-derive their facts from source on every run, so they cannot go stale silently. Verified against 0c2da24d: all 94 gate tests pass against main's code and npm run docs:check is clean apart from three standing warnings. One row's evidence had genuinely moved and was corrected - http-api.native-bridge cites a single bridgeApp.use middleware calling checkLocalRequest with requireToken: true (main.js:1259-1272), because there are zero per-route call sites; the claim itself always held. Line-number pointers were re-pinned against main. The Linux duplicate-registration finding and both bridge tables are asserted by tests/docs-platform-integration-match-source.test.js, which passes against main unchanged.",
-    "verifiedAgainst": "0c2da24d"
+    "branch": "feat/agent-page-tools",
+    "note": "Re-verified twice after the repository advanced under this pass. Rows are derived by reading source, and the four gate suites (Genmoji, shortcuts, deep links, platform integration) re-derive their facts from source on every run, so they were never stale. First re-read (865fce5e, 8033d541): http-api.native-bridge was the one row whose evidence had genuinely moved — the token gate changed from per-route checkLocalRequest calls (of which there are now zero) to a single bridgeApp.use middleware at main.js:1297. The claim still holds and the row was corrected. keyboard.global-hotkeys changed line numbers only. Second re-read (cbb6e8e4): main.js and preload.js moved again, and the whole committed diff is two additions — ipcMain.handle('research-run'), and the runResearch/onResearchProgress bridge pair. Neither is a windows: or linux: channel, a deep-link command, nor bridge auth, so all 22 flagged rows stand unchanged. No windows: or linux: IPC channel has been added or removed across any of the four advances, so the duplicate-registration finding and both bridge tables stand.",
+    "verifiedAgainst": "cbb6e8e4"
   },
   "statusValues": {
     "works": "A real entry point exists and behaves as documented. Still requires a passing test before docs may call it available.",
@@ -1041,8 +1041,8 @@
       ],
       "status": "works",
       "evidence": [
-        "aartiq-browser/main.js:1245 startNativeMacUiBridge()",
-        "aartiq-browser/main.js:1259-1272 bridgeApp.use middleware calls checkLocalRequest with requireToken: true, so it runs for every route on the listener rather than per route",
+        "aartiq-browser/main.js:9392 startNativeMacUiBridge()",
+        "aartiq-browser/main.js:1314-1326 bridgeApp.use middleware calls checkLocalRequest with requireToken: true, so it runs for every route on the listener rather than per route",
         "aartiq-browser/src/lib/local-server-auth.js checkLocalRequest / extractToken / isHostAllowed / isOriginAllowed",
         "aartiq-browser/src/lib/agent-api/server.ts:74 resolveAgent, :82 callTool",
         "aartiq-browser/src/lib/agent-api/server.ts:98 the agent API authenticates each request the same way"
@@ -1373,8 +1373,8 @@
       ],
       "tests": [
         "tests/docs-platform-integration-match-source.test.js#every Linux channel the bridge invokes has a handler",
-        "tests/docs-platform-integration-match-source.test.js#no channel is registered by both the module and main.js",
-        "tests/linux-ipc-registration.test.js#setting up the module after main.js does not throw"
+            "tests/docs-platform-integration-match-source.test.js#the module and main.js register no channel in common",
+            "tests/linux-ipc-registration.test.js#setting up the module after main.js does not throw"
       ],
       "plannedTestIds": [
         "tests/linux-integration.test.js#desktop-entry-is-valid"
@@ -1452,8 +1452,8 @@
       "doc": [],
       "status": "works",
       "evidence": [
-        "aartiq-browser/main.js:8865 function registerGlobalShortcuts",
-        "aartiq-browser/main.js:8942 const savedShortcuts",
+            "aartiq-browser/main.js:9110 function registerGlobalShortcuts",
+            "aartiq-browser/main.js:9115 const defaultShortcuts",
         "aartiq-browser/src/app/ClientOnlyPage.tsx:1360 window.electronAPI.onShortcut switch"
       ],
       "tests": [],

@@ -70,6 +70,7 @@ var events_1 = require("events");
 var database_1 = require("firebase/database");
 var auth_1 = require("firebase/auth");
 var storage_1 = require("firebase/storage");
+var crypto_1 = require("crypto");
 var FirebaseService_1 = __importDefault(require("./FirebaseService"));
 var Security_1 = require("./Security");
 var CloudSyncService = /** @class */ (function (_super) {
@@ -93,6 +94,7 @@ var CloudSyncService = /** @class */ (function (_super) {
         _this.pendingQueue = [];
         _this.isP2PMode = true;
         _this.autoCleanupInterval = null;
+        _this.pairingMasterKey = null;
         return _this;
     }
     CloudSyncService.getInstance = function () {
@@ -130,7 +132,7 @@ var CloudSyncService = /** @class */ (function (_super) {
                     return __generator(this, function (_a) {
                         switch (_a.label) {
                             case 0:
-                                if (!user) return [3 /*break*/, 2];
+                                if (!user) return [3 /*break*/, 3];
                                 this.user = user;
                                 this.userId = user.uid;
                                 this.connected = true;
@@ -138,19 +140,27 @@ var CloudSyncService = /** @class */ (function (_super) {
                                 return [4 /*yield*/, this._registerDevice()];
                             case 1:
                                 _a.sent();
+                                // Both devices on this Google account must hold the same
+                                // pairing master key before any P2P traffic is allowed.
+                                return [4 /*yield*/, this.ensurePairingMasterKey()];
+                            case 2:
+                                // Both devices on this Google account must hold the same
+                                // pairing master key before any P2P traffic is allowed.
+                                _a.sent();
                                 this._startListeningForDevices();
                                 this._startPromptListener();
                                 this._startAIResponseListener();
                                 this.emit('connected', user.uid);
-                                return [3 /*break*/, 3];
-                            case 2:
+                                return [3 /*break*/, 4];
+                            case 3:
                                 this.user = null;
                                 this.userId = null;
                                 this.connected = false;
+                                this.pairingMasterKey = null;
                                 console.log('[CloudSync] User logged out');
                                 this.emit('disconnected');
-                                _a.label = 3;
-                            case 3: return [2 /*return*/];
+                                _a.label = 4;
+                            case 4: return [2 /*return*/];
                         }
                     });
                 }); });
@@ -494,6 +504,9 @@ var CloudSyncService = /** @class */ (function (_super) {
                         deviceRef = (0, database_1.ref)(this.db, "devices/".concat(this.userId, "/").concat(this.deviceId));
                         deviceData = {
                             deviceId: this.deviceId,
+                            // P2P inbox id — both devices read this from the registry to find
+                            // each other's Firebase signal inbox (p2p_signals/{uid}/{p2pId}).
+                            p2pId: this.deviceId,
                             deviceName: this.deviceName,
                             deviceType: this.deviceType,
                             platform: process.platform,
@@ -507,6 +520,85 @@ var CloudSyncService = /** @class */ (function (_super) {
                         (0, database_1.onDisconnect)(deviceRef).update({ online: false, lastSeen: Date.now() });
                         console.log('[CloudSync] Device registered:', this.deviceId);
                         return [2 /*return*/];
+                }
+            });
+        });
+    };
+    CloudSyncService.prototype.getPairingMasterKey = function () {
+        return this.pairingMasterKey;
+    };
+    /**
+     * Create-or-read the account-scoped master key that both devices need to
+     * connect. The first device to sign in generates it; every other device
+     * on the same Google account reads the identical value. A transaction
+     * guarantees a single winner if both sign in simultaneously.
+     */
+    CloudSyncService.prototype.ensurePairingMasterKey = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            var keyRef, result, key, error_3;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        if (this.pairingMasterKey)
+                            return [2 /*return*/, this.pairingMasterKey];
+                        if (!this.db || !this.userId)
+                            return [2 /*return*/, null];
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        keyRef = (0, database_1.ref)(this.db, "pairing/".concat(this.userId, "/masterKey"));
+                        return [4 /*yield*/, (0, database_1.runTransaction)(keyRef, function (current) {
+                                if (typeof current === 'string' && current.length > 0)
+                                    return current;
+                                return (0, crypto_1.randomBytes)(32).toString('hex');
+                            })];
+                    case 2:
+                        result = _a.sent();
+                        key = result.snapshot.val();
+                        if (typeof key === 'string' && key.length > 0) {
+                            this.pairingMasterKey = key;
+                            console.log('[CloudSync] Pairing master key ready (shared by both devices)');
+                            return [2 /*return*/, key];
+                        }
+                        return [3 /*break*/, 4];
+                    case 3:
+                        error_3 = _a.sent();
+                        console.error('[CloudSync] Failed to ensure pairing master key:', error_3);
+                        return [3 /*break*/, 4];
+                    case 4: return [2 /*return*/, null];
+                }
+            });
+        });
+    };
+    /**
+     * Resolve a device's P2P inbox id from the Firebase registry
+     * (devices/{uid}/{deviceId}/p2pId), falling back to the device id itself
+     * for peers registered before the bridge existed.
+     */
+    CloudSyncService.prototype.resolveP2pId = function (deviceId) {
+        return __awaiter(this, void 0, void 0, function () {
+            var snapshot, p2pId, error_4;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        if (!this.db || !this.userId || !deviceId)
+                            return [2 /*return*/, deviceId];
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, (0, database_1.get)((0, database_1.ref)(this.db, "devices/".concat(this.userId, "/").concat(deviceId, "/p2pId")))];
+                    case 2:
+                        snapshot = _a.sent();
+                        p2pId = snapshot.val();
+                        if (typeof p2pId === 'string' && p2pId.length > 0 && p2pId !== deviceId) {
+                            return [2 /*return*/, p2pId];
+                        }
+                        return [3 /*break*/, 4];
+                    case 3:
+                        error_4 = _a.sent();
+                        console.warn('[CloudSync] p2pId lookup failed for', deviceId, error_4);
+                        return [3 /*break*/, 4];
+                    case 4: return [2 /*return*/, deviceId];
                 }
             });
         });
@@ -534,7 +626,7 @@ var CloudSyncService = /** @class */ (function (_super) {
     };
     CloudSyncService.prototype.connectToDevice = function (targetDeviceId) {
         return __awaiter(this, void 0, void 0, function () {
-            var device, connectionRef, error_3;
+            var device, connectionRef, error_5;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
@@ -577,8 +669,8 @@ var CloudSyncService = /** @class */ (function (_super) {
                                 });
                             })];
                     case 3:
-                        error_3 = _a.sent();
-                        console.error('[CloudSync] Connection failed:', error_3);
+                        error_5 = _a.sent();
+                        console.error('[CloudSync] Connection failed:', error_5);
                         return [2 /*return*/, false];
                     case 4: return [2 /*return*/];
                 }
@@ -591,7 +683,7 @@ var CloudSyncService = /** @class */ (function (_super) {
     };
     CloudSyncService.prototype.syncClipboard = function (text) {
         return __awaiter(this, void 0, void 0, function () {
-            var encrypted, clipboardRef, error_4;
+            var encrypted, clipboardRef, error_6;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -613,8 +705,8 @@ var CloudSyncService = /** @class */ (function (_super) {
                         _a.sent();
                         return [3 /*break*/, 5];
                     case 4:
-                        error_4 = _a.sent();
-                        console.error('[CloudSync] Clipboard sync failed:', error_4);
+                        error_6 = _a.sent();
+                        console.error('[CloudSync] Clipboard sync failed:', error_6);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
@@ -623,7 +715,7 @@ var CloudSyncService = /** @class */ (function (_super) {
     };
     CloudSyncService.prototype.syncHistory = function (history) {
         return __awaiter(this, void 0, void 0, function () {
-            var encrypted, historyRef, error_5;
+            var encrypted, historyRef, error_7;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
@@ -645,8 +737,8 @@ var CloudSyncService = /** @class */ (function (_super) {
                         _a.sent();
                         return [3 /*break*/, 5];
                     case 4:
-                        error_5 = _a.sent();
-                        console.error('[CloudSync] History sync failed:', error_5);
+                        error_7 = _a.sent();
+                        console.error('[CloudSync] History sync failed:', error_7);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
@@ -655,7 +747,7 @@ var CloudSyncService = /** @class */ (function (_super) {
     };
     CloudSyncService.prototype.syncFiles = function (files) {
         return __awaiter(this, void 0, void 0, function () {
-            var encryptedFiles, filesRef, error_6;
+            var encryptedFiles, filesRef, error_8;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
@@ -689,8 +781,8 @@ var CloudSyncService = /** @class */ (function (_super) {
                         _a.sent();
                         return [3 /*break*/, 5];
                     case 4:
-                        error_6 = _a.sent();
-                        console.error('[CloudSync] File sync failed:', error_6);
+                        error_8 = _a.sent();
+                        console.error('[CloudSync] File sync failed:', error_8);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
