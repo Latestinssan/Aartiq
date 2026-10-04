@@ -193,7 +193,7 @@ Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/
 
 **4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1009 passed / 26 skipped / 0 failed of 1035 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1021 passed / 26 skipped / 0 failed of 1047 declared** (generated 2026-10-04).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
