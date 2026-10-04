@@ -71,6 +71,15 @@ const PRELUDE = `
     var type = (el.getAttribute('type') || '').toLowerCase();
     return type === 'checkbox' || type === 'radio';
   }
+  // \`isContentEditable\` is absent in some hosts and false on a container whose
+  // child carries the attribute, so the attribute is the reliable signal.
+  function isContentEditable(el){
+    if(el.isContentEditable) return true;
+    try { return (el.getAttribute && el.getAttribute('contenteditable') === 'true'); } catch(_) { return false; }
+  }
+  function scrollTo(el){
+    try { if(el.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch(_) {}
+  }
   function truthy(v){
     if(v === true) return true;
     if(v === false || v == null) return false;
@@ -80,7 +89,7 @@ const PRELUDE = `
   function readBack(el){
     try {
       if(isCheckable(el)) return { value: undefined, checked: !!el.checked };
-      if(el.isContentEditable) return { value: (el.textContent || '').slice(0, 200) };
+      if(isContentEditable(el)) return { value: (el.textContent || '').slice(0, 200) };
       var v = el.value;
       return { value: v == null ? undefined : String(v).slice(0, 200) };
     } catch(_) { return {}; }
@@ -117,9 +126,13 @@ const PRELUDE = `
       fire(el, 'input'); fire(el, 'change');
       return { ok: true, reason: null };
     }
-    if(el.isContentEditable){
+    if(isContentEditable(el)){
       el.textContent = String(rawValue == null ? '' : rawValue);
       fire(el, 'input'); fire(el, 'change');
+      var got = el.textContent || '';
+      if(got !== (rawValue == null ? '' : String(rawValue))){
+        return { ok: false, reason: 'contenteditable region rejected the value' };
+      }
       return { ok: true, reason: null };
     }
     if(el.readOnly){
@@ -154,8 +167,8 @@ export function clickScript(axId: string): string {
   return wrap(`
   var r = resolveEl(${lit(axId)});
   if(!r.el) return { ok: false, reason: r.reason };
-  r.el.scrollIntoView({ block: 'center', inline: 'nearest' });
-  r.el.focus && r.el.focus();
+  scrollTo(r.el);
+  try { r.el.focus && r.el.focus(); } catch(_) {}
   r.el.click();
   return { ok: true, reason: null, tag: (r.el.tagName||'').toLowerCase() };
 `);
@@ -181,8 +194,8 @@ export function typeScript(axId: string, text: unknown, clearFirst = false): str
   var r = resolveEl(${lit(axId)});
   if(!r.el) return { ok: false, reason: r.reason, fields: [{ axId: ${lit(axId)}, ok: false, reason: r.reason }] };
   var incoming = ${lit(text)} == null ? '' : String(${lit(text)});
-  var prior = (r.el.isContentEditable ? (r.el.textContent||'') : (r.el.value == null ? '' : String(r.el.value)));
-  var next = clearFirst ? incoming : (prior + incoming);
+  var prior = (isContentEditable(r.el) ? (r.el.textContent||'') : (r.el.value == null ? '' : String(r.el.value)));
+  var next = ${lit(!!clearFirst)} ? incoming : (prior + incoming);
   var out = fillOne(r.el, next);
   var back = readBack(r.el);
   var field = { axId: ${lit(axId)}, ok: out.ok, reason: out.reason };
@@ -219,17 +232,21 @@ export function fillFormScript(fields: Array<{ axId: string; value: unknown }>, 
   var submitted = false;
   var submitReason = null;
   if(wantSubmit){
-    if(failed > 0){
+    if(!spec.length){
+      submitReason = 'refused to submit: no fields were filled, so the target form is unknown';
+    } else if(failed > 0){
       submitReason = 'skipped submit: ' + failed + ' of ' + spec.length + ' fields failed';
     } else {
+      // Resolve the owning form from the fields that were actually filled.
+      // Guessing (first stamped element, first form on the page) is how a submit
+      // ends up on the wrong form entirely.
       var owner = null;
-      for(var j=0;j<spec.length;j++){
+      for(var j=0;j<spec.length && !owner;j++){
         var cand = document.querySelector('[' + ATTR + '="' + spec[j].axId + '"]');
-        if(cand && cand.form){ owner = cand.form; break; }
-        if(cand && cand.closest && cand.closest('form')){ owner = cand.closest('form'); break; }
+        if(!cand) continue;
+        if(cand.form) owner = cand.form;
+        else if(cand.closest && cand.closest('form')) owner = cand.closest('form');
       }
-      if(!owner) owner = (document.querySelector('[' + ATTR + ']') || {}).form || null;
-      if(!owner) owner = document.forms && document.forms.length ? document.forms[0] : null;
       if(owner){
         var ok = true;
         if(typeof owner.requestSubmit === 'function') owner.requestSubmit();
@@ -287,8 +304,8 @@ export function elementActionScript(action: string, axId: string): string {
   var el = r.el;
   var action = ${lit(verb)};
   if(action === 'click'){
-    el.scrollIntoView({ block: 'center', inline: 'nearest' });
-    el.focus && el.focus();
+    scrollTo(el);
+    try { el.focus && el.focus(); } catch(_) {}
     el.click();
   } else if(action === 'hover'){
     try {
