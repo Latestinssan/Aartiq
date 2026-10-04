@@ -2,6 +2,32 @@ const fetch = require('cross-fetch');
 const { JSDOM } = require('jsdom');
 const { fetchPageContent: sharedFetchPageContent, DEFAULT_UA } = require('./web-extractor');
 
+/** Hard ceiling on results per query. Free tiers are metered per call. */
+const MAX_RESULTS = 20;
+
+/**
+ * Providers that fetch a search engine's raw HTML and parse it with CSS
+ * selectors and regexes. They work with no API key and no account, and they break
+ * without warning the moment the engine changes its markup. Anything that falls
+ * back to one of these must say so in its response.
+ */
+const SCRAPE_PROVIDERS = new Set(['googlescrape', 'duckduckgo', 'youtubescrape']);
+
+/** Providers with a real news index, best first. */
+const NEWS_PROVIDERS = ['tavily', 'brave', 'serp'];
+
+/**
+ * Alternate env var names for the same key. The documented name in .env.example
+ * and the name the code read had drifted apart, so a correctly configured setup
+ * silently ran on scraping. Both spellings now resolve to one key.
+ */
+const KEY_ALIASES = {
+  SERP_API_KEY: ['SERPAPI_API_KEY'],
+  GOOGLE_API_KEY: ['GOOGLE_SEARCH_API_KEY', 'GOOGLE_CSE_API_KEY'],
+  TAVILY_API_KEY: ['TAVILY_KEY'],
+  BRAVE_API_KEY: ['BRAVE_SEARCH_API_KEY'],
+};
+
 class WebSearchProvider {
   constructor() {
     this.keys = {};
@@ -12,12 +38,24 @@ class WebSearchProvider {
   }
 
   _getKey(name) {
-    return this.keys[name] || process.env[name] || '';
+    const names = [name, ...(KEY_ALIASES[name] || [])];
+    for (const n of names) {
+      const v = this.keys[n] ?? process.env[n];
+      if (v) return String(v).trim();
+    }
+    return '';
+  }
+
+  /** Clamp a caller-supplied result count into a sane, metered range. */
+  _clampCount(count) {
+    const n = Number(count);
+    if (!Number.isFinite(n) || n <= 0) return 8;
+    return Math.min(Math.round(n), MAX_RESULTS);
   }
 
   async search(query, provider, count) {
     provider = provider || this._detectBestProvider();
-    count = count || 8;
+    count = this._clampCount(count);
 
     switch (provider) {
       case 'google': return this._searchGoogle(query, count);
@@ -31,11 +69,126 @@ class WebSearchProvider {
     }
   }
 
-  _detectBestProvider() {
-    if (this._getKey('GOOGLE_API_KEY') && this._getKey('GOOGLE_SEARCH_ENGINE_ID')) return 'google';
-    if (this._getKey('BRAVE_API_KEY')) return 'brave';
+  /**
+   * Search and report *how* the answer was obtained.
+   *
+   * The plain `search()` return value looks identical whether it came from a
+   * paid API or from parsing raw engine HTML, which makes it impossible for a
+   * caller to weight the result honestly. This wraps it with `scraped` and
+   * `reason` so that distinction survives the trip to the model.
+   */
+  async searchDetailed(query, provider, count) {
+    let chosen = provider || this._detectBestProvider();
+    let usedFallback = false;
+
+    if (this._isDeprecated(chosen)) {
+      // Google Custom Search JSON API is closed to new customers and existing
+      // keys end 2027-01-01. Fail over to something that still works rather than
+      // surfacing an error the user cannot act on.
+      usedFallback = true;
+      chosen = this._firstLiveApiProvider() || this._fallbackProvider();
+    }
+
+    try {
+      const results = await this.search(query, chosen, count);
+      return {
+        provider: chosen,
+        scraped: SCRAPE_PROVIDERS.has(chosen),
+        ...(usedFallback ? { fallbackFrom: provider, reason: `${provider} is deprecated for new signups; used ${chosen} instead.` } : {}),
+        results: Array.isArray(results) ? results : [],
+      };
+    } catch (e) {
+      // An API key that is present but rejected (expired quota, wrong plan) must
+      // not be the end of the search: fall back once and label the degradation.
+      const fb = this._fallbackProvider(chosen);
+      if (!fb) {
+        return { provider: chosen, scraped: SCRAPE_PROVIDERS.has(chosen), results: [], reason: e.message };
+      }
+      try {
+        const results = await this.search(query, fb, count);
+        return {
+          provider: fb,
+          scraped: SCRAPE_PROVIDERS.has(fb),
+          fallbackFrom: chosen,
+          reason: `${chosen} failed (${e.message}); fell back to ${fb}.`,
+          results: Array.isArray(results) ? results : [],
+        };
+      } catch (e2) {
+        return { provider: chosen, scraped: SCRAPE_PROVIDERS.has(chosen), results: [], reason: e2.message };
+      }
+    }
+  }
+
+  _isDeprecated(provider) {
+    return provider === 'google';
+  }
+
+  /** First provider with a live API key, in cost-of-adoption order. */
+  _firstLiveApiProvider() {
     if (this._getKey('TAVILY_API_KEY')) return 'tavily';
+    if (this._getKey('BRAVE_API_KEY')) return 'brave';
     if (this._getKey('SERP_API_KEY')) return 'serp';
+    return null;
+  }
+
+  /** Last resort when every configured API is unusable. */
+  _fallbackProvider(exclude) {
+    const order = ['duckduckgo', 'googlescrape'];
+    for (const p of order) {
+      if (p !== exclude) return p;
+    }
+    return exclude ?? null;
+  }
+
+  /**
+   * What each provider can and cannot do, so a caller can pick deliberately.
+   * Contains no key material — only whether a key is present.
+   */
+  getProviderInfo() {
+    const info = [
+      {
+        id: 'tavily', name: 'Tavily', keyConfigured: !!this._getKey('TAVILY_API_KEY'),
+        keyEnv: 'TAVILY_API_KEY', scrapes: false, newsIndex: true, deprecated: false,
+        note: 'Recommended default: 1,000 free credits/month, no card required.',
+      },
+      {
+        id: 'brave', name: 'Brave Search', keyConfigured: !!this._getKey('BRAVE_API_KEY'),
+        keyEnv: 'BRAVE_API_KEY', scrapes: false, newsIndex: true, deprecated: false,
+        note: 'Free tier needs a card on file and requires attribution on the built-in search UI.',
+      },
+      {
+        id: 'serp', name: 'SerpAPI', keyConfigured: !!this._getKey('SERP_API_KEY'),
+        keyEnv: 'SERP_API_KEY or SERPAPI_API_KEY', scrapes: false, newsIndex: true, deprecated: false,
+        note: '250 free searches/month.',
+      },
+      {
+        id: 'google', name: 'Google Custom Search JSON', keyConfigured: !!(this._getKey('GOOGLE_API_KEY') && this._getKey('GOOGLE_SEARCH_ENGINE_ID')),
+        keyEnv: 'GOOGLE_API_KEY + GOOGLE_SEARCH_ENGINE_ID', scrapes: false, newsIndex: false, deprecated: true,
+        note: 'DEPRECATED — closed to new customers; existing keys end 2027-01-01. Requests fall back automatically.',
+      },
+      {
+        id: 'duckduckgo', name: 'DuckDuckGo (scraped)', keyConfigured: true,
+        keyEnv: null, scrapes: true, newsIndex: false, deprecated: false,
+        note: 'No key needed. Parses HTML, so it rate-limits and breaks when the markup changes.',
+      },
+      {
+        id: 'googlescrape', name: 'Google (scraped)', keyConfigured: true,
+        keyEnv: null, scrapes: true, newsIndex: false, deprecated: false,
+        note: 'No key needed. Blocks automated traffic aggressively; expect 429s.',
+      },
+    ];
+    return info;
+  }
+
+  /**
+   * API providers first, scraping only as a last resort. Google CSE is demoted
+   * below the others because it no longer accepts new signups.
+   */
+  _detectBestProvider() {
+    if (this._getKey('TAVILY_API_KEY')) return 'tavily';
+    if (this._getKey('BRAVE_API_KEY')) return 'brave';
+    if (this._getKey('SERP_API_KEY')) return 'serp';
+    if (this._getKey('GOOGLE_API_KEY') && this._getKey('GOOGLE_SEARCH_ENGINE_ID')) return 'google';
     return 'googlescrape';
   }
 
@@ -219,12 +372,17 @@ class WebSearchProvider {
     return results;
   }
 
-  async _searchBrave(query, count) {
+  async _searchBrave(query, count, opts = {}) {
     const apiKey = this._getKey('BRAVE_API_KEY');
     if (!apiKey) throw new Error('BRAVE_API_KEY not configured');
 
+    const params = new URLSearchParams({ q: query, count: String(count) });
+    const days = this._freshness(opts.days);
+    if (days) params.set('freshness', days);
+    if (opts.country) params.set('country', String(opts.country));
+
     const res = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+      `https://api.search.brave.com/res/v1/web/search?${params.toString()}`,
       { headers: { 'X-Subscription-Token': apiKey } }
     );
 
@@ -238,22 +396,30 @@ class WebSearchProvider {
       title: r.title || '',
       url: r.url || '',
       snippet: r.description || '',
+      publishedAt: r.page_age || r.age || null,
     }));
   }
 
-  async _searchTavily(query, count) {
+  async _searchTavily(query, count, opts = {}) {
     const apiKey = this._getKey('TAVILY_API_KEY');
     if (!apiKey) throw new Error('TAVILY_API_KEY not configured');
+
+    const body = {
+      api_key: apiKey,
+      query,
+      search_depth: opts.depth === 'advanced' ? 'advanced' : 'basic',
+      max_results: count,
+      include_answer: false,
+    };
+    if (opts.days) {
+      body.days = Math.max(1, Math.min(Number(opts.days) || 7, 365));
+    }
+    if (opts.topic) body.topic = String(opts.topic);
 
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: apiKey,
-        query,
-        search_depth: 'basic',
-        max_results: count,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -266,16 +432,19 @@ class WebSearchProvider {
       title: r.title || '',
       url: r.url || '',
       snippet: r.content || '',
+      publishedAt: r.published_date || null,
+      score: typeof r.score === 'number' ? r.score : null,
     }));
   }
 
-  async _searchSerp(query, count) {
+  async _searchSerp(query, count, opts = {}) {
     const apiKey = this._getKey('SERP_API_KEY');
     if (!apiKey) throw new Error('SERP_API_KEY not configured');
 
-    const res = await fetch(
-      `https://serpapi.com/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&num=${count}&engine=google`
-    );
+    const params = new URLSearchParams({ q: query, api_key: apiKey, num: String(count) });
+    params.set('engine', opts.engine || 'google');
+
+    const res = await fetch(`https://serpapi.com/search?${params.toString()}`);
 
     if (!res.ok) {
       const err = await res.text();
@@ -287,6 +456,153 @@ class WebSearchProvider {
       title: r.title || '',
       url: r.link || '',
       snippet: r.snippet || '',
+      publishedAt: r.date || null,
+    }));
+  }
+
+  /** Translate a day window into Brave's freshness vocabulary. */
+  _freshness(days) {
+    const d = Number(days);
+    if (!Number.isFinite(d) || d <= 0) return null;
+    if (d <= 1) return 'pd';
+    if (d <= 7) return 'pw';
+    if (d <= 31) return 'pm';
+    return 'py';
+  }
+
+  /**
+   * News search, with dates.
+   *
+   * The whole point of the separate entry point is that `web_search` results
+   * carry no trustworthy timestamps, so they cannot answer "which report is
+   * newest". When no provider with a real news index is keyed, this falls back to
+   * web search and marks the timestamps unreliable rather than pretending the
+   * recency phrase in the query produced real dates.
+   */
+  async searchNewsDetailed(query, count, opts = {}) {
+    const n = this._clampCount(count ?? 8);
+    const days = Number(opts.days) > 0 ? Number(opts.days) : 7;
+
+    const requested = opts.provider || this._firstNewsProvider();
+    if (requested) {
+      try {
+        const results = await this._searchNews(query, n, requested, days, opts);
+        return {
+          provider: requested,
+          scraped: false,
+          timestampsReliable: true,
+          results: Array.isArray(results) ? results : [],
+        };
+      } catch (e) {
+        const other = this._firstNewsProvider(requested);
+        if (other) {
+          try {
+            const results = await this._searchNews(query, n, other, days, opts);
+            return {
+              provider: other,
+              scraped: false,
+              timestampsReliable: true,
+              fallbackFrom: requested,
+              reason: `${requested} failed (${e.message}); used ${other} instead.`,
+              results: Array.isArray(results) ? results : [],
+            };
+          } catch { /* fall through to the scrape path */ }
+        }
+        return { provider: requested, scraped: false, timestampsReliable: true, results: [], reason: e.message };
+      }
+    }
+
+    // No news index available. Recency is expressed in the query only, so any
+    // date we surface is a guess and is labelled as such.
+    const datedQuery = `${query} ${days <= 1 ? 'today' : `past ${days} days`}`;
+    const fb = this._fallbackProvider();
+    try {
+      const results = await this.search(datedQuery, fb, n);
+      return {
+        provider: fb,
+        scraped: true,
+        timestampsReliable: false,
+        reason:
+          'No news-capable search API key is configured, so this fell back to scraping a general '
+          + 'web search with a recency phrase. Publication dates are NOT reliable — do not use these '
+          + 'results to decide which source is the most recent.',
+        results: (Array.isArray(results) ? results : []).map(r => ({ ...r, publishedAt: null })),
+      };
+    } catch (e) {
+      return { provider: fb, scraped: true, timestampsReliable: false, results: [], reason: e.message };
+    }
+  }
+
+  _firstNewsProvider(exclude) {
+    for (const p of NEWS_PROVIDERS) {
+      if (p === exclude) continue;
+      if (this._getKey(p === 'tavily' ? 'TAVILY_API_KEY' : p === 'brave' ? 'BRAVE_API_KEY' : 'SERP_API_KEY')) return p;
+    }
+    return null;
+  }
+
+  async _searchNews(query, count, provider, days, opts) {
+    switch (provider) {
+      case 'tavily': return this._searchNewsTavily(query, count, days, opts);
+      case 'brave': return this._searchNewsBrave(query, count, days, opts);
+      case 'serp': return this._searchNewsSerp(query, count, days, opts);
+      default: throw new Error(`No news support for provider ${provider}`);
+    }
+  }
+
+  /** Tavily news topic — dated results from a real news crawl. */
+  async _searchNewsTavily(query, count, days, opts) {
+    return this._searchTavily(query, count, { ...opts, topic: 'news', days });
+  }
+
+  /** Brave's dedicated news endpoint, which returns age fields. */
+  async _searchNewsBrave(query, count, days) {
+    const apiKey = this._getKey('BRAVE_API_KEY');
+    if (!apiKey) throw new Error('BRAVE_API_KEY not configured');
+
+    const params = new URLSearchParams({ q: query, count: String(count) });
+    const fresh = this._freshness(days);
+    if (fresh) params.set('freshness', fresh);
+
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/news/search?${params.toString()}`,
+      { headers: { 'X-Subscription-Token': apiKey, 'Accept': 'application/json' } }
+    );
+    if (!res.ok) throw new Error(`Brave News error ${res.status}: ${await res.text()}`);
+
+    const data = await res.json();
+    return (data.results || []).map(r => ({
+      title: r.title || '',
+      url: r.url || '',
+      snippet: r.description || '',
+      publishedAt: r.age || r.page_age || null,
+      source: r.meta_url || null,
+    }));
+  }
+
+  /** SerpAPI's google_news engine, which carries date strings. */
+  async _searchNewsSerp(query, count, days) {
+    const apiKey = this._getKey('SERP_API_KEY');
+    if (!apiKey) throw new Error('SERP_API_KEY not configured');
+
+    const params = new URLSearchParams({
+      q: query,
+      api_key: apiKey,
+      num: String(count),
+      engine: 'google_news',
+      tbs: `qdr:d${Math.max(1, Math.min(days, 30))}`,
+    });
+
+    const res = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+    if (!res.ok) throw new Error(`SerpAPI news error ${res.status}: ${await res.text()}`);
+
+    const data = await res.json();
+    return (data.news_results || []).map(r => ({
+      title: r.title || '',
+      url: r.link || '',
+      snippet: r.snippet || '',
+      publishedAt: r.date || null,
+      source: r.source || null,
     }));
   }
 
@@ -486,7 +802,7 @@ class WebSearchProvider {
 
   async searchForContext(query, provider) {
     try {
-      const results = await this.search(query, provider, 1);
+      const results = await this.search(query, provider, this._clampCount(1));
       return results
         .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
         .join('\n\n');

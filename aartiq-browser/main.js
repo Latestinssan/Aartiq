@@ -305,6 +305,44 @@ const {
   getProviderLabel,
   getProviderModelStoreKey,
 } = require('./src/lib/provider-model-discovery.js');
+/**
+ * Load `.env` / `.env.local` into `process.env` before anything reads a key.
+ *
+ * No dotenv dependency: the format we need is one line per `KEY=value`, and the
+ * previous behaviour was that a correctly filled `.env` did nothing at all,
+ * because nothing ever read the file. `.env.local` wins over `.env` and neither
+ * overrides a variable the environment already provides, so a key exported by the
+ * launch script still wins. `.env` is gitignored; see `.env.example`.
+ */
+function loadEnvFiles(dir) {
+  for (const name of ['.env', '.env.local']) {
+    const file = require('path').join(dir, name);
+    let text;
+    try {
+      text = require('fs').readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim().replace(/^export\s+/, '');
+      if (!key) continue;
+      let value = line.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"') && value.length > 1)
+        || (value.startsWith("'") && value.endsWith("'") && value.length > 1)
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
+  }
+}
+loadEnvFiles(__dirname);
+
 const webSearchProvider = new WebSearchProvider();
 
 // Handler modules (src/main/handlers/) — modular IPC handler registration
@@ -6097,7 +6135,7 @@ app.whenReady().then(async () => {
   // Failures here are non-fatal to the rest of the browser.
   try {
     const { startAgentApi } = require('./src/lib/agent-api/bootstrap');
-    startAgentApi({ extensions: extensionManager }).catch((e) =>
+    startAgentApi({ extensions: extensionManager, search: webSearchProvider }).catch((e) =>
       console.error('[agent-api] start failed:', e && e.message));
   } catch (e) {
     console.error('[agent-api] not started:', e && e.message);
@@ -6528,7 +6566,7 @@ if (isPackaged && process.platform === 'darwin') {
   ipcMain.handle('web-search-providers', async () => {
     try {
       const providers = webSearchProvider.getAvailableProviders();
-      return { success: true, providers };
+      return { success: true, providers, info: webSearchProvider.getProviderInfo() };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -6541,6 +6579,40 @@ if (isPackaged && process.platform === 'darwin') {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  /**
+   * Which search keys are configured, and where each one came from.
+   *
+   * Reports only *whether* a key exists and which env var supplied it — never the
+   * value. Without this, "search returned scraped results" is undiagnosable,
+   * because the user cannot tell a missing key from a rejected one.
+   */
+  ipcMain.handle('web-search-config-status', async () => {
+    const aliases = {
+      TAVILY_API_KEY: ['TAVILY_KEY'],
+      BRAVE_API_KEY: ['BRAVE_SEARCH_API_KEY'],
+      SERP_API_KEY: ['SERPAPI_API_KEY'],
+      GOOGLE_API_KEY: ['GOOGLE_SEARCH_API_KEY', 'GOOGLE_CSE_API_KEY'],
+    };
+    const check = (name) => {
+      const candidates = [name, ...(aliases[name] || [])];
+      for (const c of candidates) {
+        if (process.env[c]) return { configured: true, source: c };
+      }
+      return { configured: false, source: null };
+    };
+    return {
+      success: true,
+      keys: {
+        TAVILY_API_KEY: check('TAVILY_API_KEY'),
+        BRAVE_API_KEY: check('BRAVE_API_KEY'),
+        SERP_API_KEY: check('SERP_API_KEY'),
+        GOOGLE_API_KEY: check('GOOGLE_API_KEY'),
+        GOOGLE_SEARCH_ENGINE_ID: check('GOOGLE_SEARCH_ENGINE_ID'),
+      },
+      info: webSearchProvider.getProviderInfo(),
+    };
   });
 
   // Web Search RAG Helper with Caching + auto page content
