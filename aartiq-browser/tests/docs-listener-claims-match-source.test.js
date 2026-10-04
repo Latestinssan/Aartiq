@@ -115,10 +115,24 @@ describe('docs listener / count claims match source', () => {
     expect(SECURITY).toMatch(/only two of them are enforcement boundaries/);
   });
 
-  test('M12: the permission-defaults bullet describes the live default and labels the test-only one', () => {
-    expect(SECURITY).toMatch(/permission-store\.js:13-21/);
-    expect(SECURITY).toMatch(/only by unit tests, not at runtime/);
-    expect(SECURITY).not.toMatch(/newer directory-allowlist\.js default ships/);
+  test('M12: the permission-defaults bullet describes the single live default', () => {
+    // The defaults were unified while this gate was in flight: one definition,
+    // in directory-allowlist.js, imported by permission-store. The four-path
+    // default and the tests-only split the original M12 wording was written
+    // for no longer exist, so the page must describe the narrowed default and
+    // must not resurrect either retired claim.
+    const allowlist = read(REPO, 'src/core/directory-allowlist.js');
+    const store = read(REPO, 'src/lib/permission-store.js');
+
+    expect(allowlist).toMatch(/const DEFAULT_ALLOWED_DIRECTORIES = _getDefaultDirectories\(\)/);
+    expect(store).toMatch(/DEFAULT_ALLOWED_DIRECTORIES,\s+isSensitivePath/);
+    expect(store).not.toMatch(/DEFAULT_ALLOWED_DIRECTORIES\s*=/);
+
+    expect(SECURITY).toMatch(/narrowed to a single dedicated app workspace directory/);
+    expect(SECURITY).toMatch(/No personal profile folders/);
+    expect(SECURITY).not.toMatch(/Four default paths/);
+    expect(SECURITY).not.toMatch(/permission-store\.js:13-21/);
+    expect(SECURITY).not.toMatch(/exercised only by unit tests/);
   });
 
   test('M20: the perception layer describes DOM extraction and OCR per command, not screenshots as primary', () => {
