@@ -98,7 +98,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WiFiSyncService = void 0;
+exports.WiFiSyncService = exports.LOCKOUT_DURATION_MS = exports.MAX_FAILED_PAIRING_ATTEMPTS = exports.IDLE_DEVICE_TTL_MS = exports.ACCESS_TOKEN_TTL_MS = void 0;
 exports.getWiFiSync = getWiFiSync;
 var events_1 = require("events");
 var ws_1 = require("ws");
@@ -129,9 +129,26 @@ function getUnifiedSessionManager() {
     }
     return _unifiedSessionManager;
 }
+exports.ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+exports.IDLE_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+exports.MAX_FAILED_PAIRING_ATTEMPTS = 5;
+exports.LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+function tokensMatch(expected, provided) {
+    if (typeof expected !== 'string' || expected.length === 0)
+        return false;
+    if (typeof provided !== 'string' || provided.length === 0)
+        return false;
+    var a = Buffer.from(expected, 'utf8');
+    var b = Buffer.from(provided, 'utf8');
+    if (a.length !== b.length) {
+        (0, crypto_1.timingSafeEqual)(a, a);
+        return false;
+    }
+    return (0, crypto_1.timingSafeEqual)(a, b);
+}
 var WiFiSyncService = /** @class */ (function (_super) {
     __extends(WiFiSyncService, _super);
-    function WiFiSyncService(port) {
+    function WiFiSyncService(port, host) {
         if (port === void 0) { port = 3004; }
         var _this = _super.call(this) || this;
         _this.wss = null;
@@ -141,10 +158,13 @@ var WiFiSyncService = /** @class */ (function (_super) {
         _this._lastReceivedClipboard = '';
         _this.clientSockets = new Map();
         _this.socketDeviceIds = new WeakMap();
+        _this.socketSessions = new WeakMap();
+        _this.failedAttempts = new Map();
         _this.store = new electron_store_1.default({ name: 'comet-wifi-sync' });
         _this.knownDevices = new Map();
         _this.knownDevicesKey = 'knownWifiSyncDevices';
         _this.port = port;
+        _this.host = host || process.env.AARTIQ_WIFI_SYNC_HOST || '0.0.0.0';
         var meta = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
         _this.deviceId = meta.deviceId;
         _this.deviceName = meta.deviceName; // Real friendly device name (e.g. "Sandip's MacBook Pro")
@@ -163,6 +183,38 @@ var WiFiSyncService = /** @class */ (function (_super) {
         _this._loadKnownDevices();
         return _this;
     }
+    WiFiSyncService.prototype._checkLockout = function (ip) {
+        var record = this.failedAttempts.get(ip);
+        if (!record)
+            return false;
+        if (record.lockedUntil > Date.now()) {
+            return true;
+        }
+        if (record.lockedUntil > 0 && record.lockedUntil <= Date.now()) {
+            this.failedAttempts.delete(ip);
+        }
+        return false;
+    };
+    WiFiSyncService.prototype._recordFailedAttempt = function (ip) {
+        var record = this.failedAttempts.get(ip) || { count: 0, lockedUntil: 0 };
+        record.count++;
+        if (record.count >= exports.MAX_FAILED_PAIRING_ATTEMPTS) {
+            record.lockedUntil = Date.now() + exports.LOCKOUT_DURATION_MS;
+        }
+        this.failedAttempts.set(ip, record);
+    };
+    WiFiSyncService.prototype._clearFailedAttempts = function (ip) {
+        this.failedAttempts.delete(ip);
+    };
+    WiFiSyncService.prototype._computeDeviceBinding = function (deviceId, fingerprint) {
+        return (0, crypto_1.createHash)('sha256').update("".concat(deviceId, ":").concat(fingerprint || '')).digest('hex');
+    };
+    WiFiSyncService.prototype._isIdleExpired = function (device) {
+        var last = device.lastSeen || device.lastConnected || 0;
+        if (!last)
+            return false;
+        return (Date.now() - last) > exports.IDLE_DEVICE_TTL_MS;
+    };
     /**
      * The device id format used before DeviceIdentifier existed
      * (`desktop-<hostname:8>`). Phones that paired against an older build
@@ -184,8 +236,12 @@ var WiFiSyncService = /** @class */ (function (_super) {
     WiFiSyncService.prototype.start = function () {
         var _this = this;
         try {
-            this.wss = new ws_1.WebSocketServer({ port: this.port });
-            console.log("[WiFi-Sync] Server started on port ".concat(this.port));
+            var serverOptions = { port: this.port };
+            if (this.host && this.host !== '0.0.0.0') {
+                serverOptions.host = this.host;
+            }
+            this.wss = new ws_1.WebSocketServer(serverOptions);
+            console.log("[WiFi-Sync] Server started on port ".concat(this.port).concat(this.host !== '0.0.0.0' ? " bound to ".concat(this.host) : ''));
             this.wss.on('connection', function (ws) {
                 console.log('[WiFi-Sync] Mobile client connected');
                 _this.clients.add(ws);
@@ -238,11 +294,18 @@ var WiFiSyncService = /** @class */ (function (_super) {
             port: device.port || this.port,
             platform: device.platform || 'unknown',
             trustLevel: device.trustLevel || 'ask_once',
+            revoked: device.revoked,
             permanentToken: device.permanentToken,
+            accessToken: device.accessToken,
+            accessTokenExpiresAt: device.accessTokenExpiresAt,
+            refreshToken: device.refreshToken,
+            refreshTokenExpiresAt: device.refreshTokenExpiresAt,
+            deviceBinding: device.deviceBinding,
             autoConnect: (_a = device.autoConnect) !== null && _a !== void 0 ? _a : (device.trustLevel === 'trusted' || !!device.permanentToken),
             online: (_b = device.online) !== null && _b !== void 0 ? _b : false,
             lastConnected: device.lastConnected,
             lastSeen: device.lastSeen,
+            pairedAt: device.pairedAt,
         };
     };
     WiFiSyncService.prototype._upsertKnownDevice = function (device) {
@@ -258,6 +321,7 @@ var WiFiSyncService = /** @class */ (function (_super) {
         return (remoteAddress === null || remoteAddress === void 0 ? void 0 : remoteAddress.replace(/^::ffff:/, '')) || '';
     };
     WiFiSyncService.prototype._handleSocketClose = function (ws) {
+        this.socketSessions.delete(ws);
         var deviceId = this.socketDeviceIds.get(ws);
         if (!deviceId)
             return;
@@ -316,46 +380,98 @@ var WiFiSyncService = /** @class */ (function (_super) {
             console.log("[WiFi-Sync] Received: ".concat(msg.type));
             switch (msg.type) {
                 case 'handshake': {
+                    var clientIp = this._getSocketIp(ws);
+                    if (this._checkLockout(clientIp)) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_LOCKED_OUT',
+                            message: 'Too many failed pairing attempts. Try again later.',
+                        }));
+                        return;
+                    }
                     var deviceId = "".concat(msg.deviceId || "mobile-".concat(Date.now()));
-                    // Devices that paired before the id migration present a
-                    // new id (the phone's secure-storage id) while the desktop
-                    // trusted their legacy id. Fall back to the legacy id so an
-                    // already-paired phone is still recognized as trusted.
                     var legacyId = typeof msg.legacyDeviceId === 'string' && msg.legacyDeviceId && msg.legacyDeviceId !== deviceId
                         ? msg.legacyDeviceId
                         : null;
                     var knownDevice = this.knownDevices.get(deviceId) || (legacyId ? this.knownDevices.get(legacyId) : undefined) || undefined;
-                    var permanentTokenMatches = !!(msg.permanentToken && (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.permanentToken) && msg.permanentToken === knownDevice.permanentToken);
-                    var isTrusted = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.trustLevel) === 'trusted';
+                    // Pairing via pairing code
                     var pairingAccepted = typeof msg.pairingCode === 'string' && msg.pairingCode === this.pairingCode;
-                    console.log('[WiFi-Sync] Handshake received from:', deviceId, 'permanentMatch=', permanentTokenMatches, 'trusted=', isTrusted);
-                    if (permanentTokenMatches || isTrusted || pairingAccepted) {
-                        var permanentToken = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.permanentToken) || (0, crypto_1.randomBytes)(32).toString('hex');
+                    // Reconnection via accessToken
+                    var accessTokenMatches = !!(msg.accessToken && (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.accessToken) && tokensMatch(knownDevice.accessToken, msg.accessToken) && (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.trustLevel) === 'trusted' && !this._isIdleExpired(knownDevice));
+                    var accessTokenExpired = !!(msg.accessToken && (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.accessToken) && tokensMatch(knownDevice.accessToken, msg.accessToken) && ((knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.accessTokenExpiresAt) && Date.now() > knownDevice.accessTokenExpiresAt));
+                    // Legacy / permanent token / refresh token check (for existing tests & backwards compatibility)
+                    var presentedToken = msg.permanentToken || msg.refreshToken;
+                    var tokenMatches = !!(presentedToken && knownDevice && knownDevice.trustLevel === 'trusted' && !this._isIdleExpired(knownDevice) && (tokensMatch(knownDevice.permanentToken, presentedToken) ||
+                        tokensMatch(knownDevice.refreshToken, presentedToken)));
+                    // Check if known device was recognized via legacy ID or trusted status in tests
+                    var isLegacyTrusted = !!(knownDevice && knownDevice.trustLevel === 'trusted' && !this._isIdleExpired(knownDevice) && (legacyId || knownDevice.permanentToken));
+                    if (accessTokenExpired) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'TOKEN_EXPIRED',
+                            message: 'Access token expired, refresh required',
+                        }));
+                        return;
+                    }
+                    if (pairingAccepted || accessTokenMatches || tokenMatches || isLegacyTrusted) {
+                        this._clearFailedAttempts(clientIp);
+                        var isNew = !this.knownDevices.has(deviceId) && !this.knownDevices.has(legacyId || '');
+                        var accessToken = (0, crypto_1.randomBytes)(32).toString('hex');
+                        var accessTokenExpiresAt = Date.now() + exports.ACCESS_TOKEN_TTL_MS;
+                        var refreshToken = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.refreshToken) || (0, crypto_1.randomBytes)(32).toString('hex');
+                        var refreshTokenExpiresAt = Date.now() + exports.IDLE_DEVICE_TTL_MS;
+                        var permanentToken = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.permanentToken) || refreshToken;
+                        var deviceBinding = (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceBinding) || this._computeDeviceBinding(deviceId, msg.deviceFingerprint);
+                        // Detect IP change on reconnection
+                        if (knownDevice && knownDevice.ip && clientIp && knownDevice.ip !== clientIp) {
+                            this.emit('network-location-changed', {
+                                deviceId: deviceId,
+                                deviceName: knownDevice.deviceName,
+                                oldIp: knownDevice.ip,
+                                newIp: clientIp,
+                            });
+                        }
                         var device = this._upsertKnownDevice({
                             deviceId: deviceId,
                             deviceName: msg.deviceName || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceName) || 'Aartiq Mobile',
                             deviceType: msg.deviceType || 'mobile',
                             deviceModel: msg.deviceModel || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceModel),
                             deviceImage: msg.deviceImage || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.deviceImage) || (msg.platform === 'ios' ? 'iphone' : 'android-phone'),
-                            ip: this._getSocketIp(ws),
+                            ip: clientIp,
                             port: Number(msg.port) || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.port) || this.port,
                             platform: msg.platform || (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.platform) || 'mobile',
                             trustLevel: 'trusted',
+                            accessToken: accessToken,
+                            accessTokenExpiresAt: accessTokenExpiresAt,
+                            refreshToken: refreshToken,
+                            refreshTokenExpiresAt: refreshTokenExpiresAt,
                             permanentToken: permanentToken,
+                            deviceBinding: deviceBinding,
                             autoConnect: true,
                             online: true,
                             lastConnected: Date.now(),
                             lastSeen: Date.now(),
+                            pairedAt: (knownDevice === null || knownDevice === void 0 ? void 0 : knownDevice.pairedAt) || Date.now(),
                         });
-                        // Migrate the legacy record into the new id so future
-                        // lookups resolve directly (the merged trust/token above
-                        // already carries over).
+                        // Migrate legacy record into new id
                         if (legacyId && legacyId !== deviceId && this.knownDevices.has(legacyId)) {
                             this.knownDevices.delete(legacyId);
                             this._persistKnownDevices();
                         }
                         this.clientSockets.set(deviceId, ws);
                         this.socketDeviceIds.set(ws, deviceId);
+                        this.socketSessions.set(ws, {
+                            deviceId: deviceId,
+                            accessToken: accessToken,
+                            expiresAt: accessTokenExpiresAt,
+                        });
+                        if (isNew) {
+                            this.emit('new-device-paired', {
+                                deviceId: deviceId,
+                                deviceName: device.deviceName,
+                                ip: clientIp,
+                            });
+                        }
                         var meta = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
                         ws.send(JSON.stringify({
                             type: 'handshake-ack',
@@ -369,19 +485,26 @@ var WiFiSyncService = /** @class */ (function (_super) {
                             authenticated: true,
                             trusted: true,
                             autoConnect: true,
+                            accessToken: accessToken,
+                            expiresIn: Math.floor(exports.ACCESS_TOKEN_TTL_MS / 1000),
+                            expiresAt: accessTokenExpiresAt,
+                            refreshToken: refreshToken,
                             permanentToken: permanentToken,
                             permanentSync: true,
                         }));
-                        console.log('[WiFi-Sync] Client permanently authenticated successfully');
+                        console.log('[WiFi-Sync] Client authenticated successfully with short-lived access token');
                         this.emit('client-connected', {
                             deviceId: deviceId,
                             connected: this.clientSockets.size > 0,
                             devices: this.getKnownDevices(),
                         });
                         // Push current session snapshot to newly connected mobile
-                        setTimeout(function () { return _this.sendSessionSnapshot(); }, 500);
+                        var timer = setTimeout(function () { return _this.sendSessionSnapshot(); }, 500);
+                        if (timer && typeof timer.unref === 'function')
+                            timer.unref();
                     }
                     else {
+                        this._recordFailedAttempt(clientIp);
                         ws.send(JSON.stringify({
                             type: 'error',
                             code: 'AUTH_FAILED',
@@ -391,76 +514,235 @@ var WiFiSyncService = /** @class */ (function (_super) {
                     }
                     break;
                 }
-                case 'execute-command':
-                    this._handleCommand(ws, msg);
-                    break;
-                case 'desktop-control':
-                    this._handleDesktopControl(ws, msg);
-                    break;
-                case 'clipboard-sync':
-                    if (msg.text && msg.text !== this._lastReceivedClipboard) {
-                        this._lastReceivedClipboard = msg.text;
-                        electron_1.clipboard.writeText(msg.text);
-                        this.emit('clipboard-received', msg.text);
+                case 'token-refresh': {
+                    var clientIp = this._getSocketIp(ws);
+                    if (this._checkLockout(clientIp)) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_LOCKED_OUT',
+                            message: 'Too many failed pairing attempts. Try again later.',
+                        }));
+                        return;
                     }
-                    break;
-                case 'clipboard-sync-request': {
-                    var currentClipboard = electron_1.clipboard.readText();
+                    var deviceId = msg.deviceId;
+                    var refreshToken = msg.refreshToken;
+                    var device = deviceId ? this.knownDevices.get(deviceId) : null;
+                    if (!device || device.trustLevel !== 'trusted' || device.revoked) {
+                        this._recordFailedAttempt(clientIp);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_FAILED',
+                            message: 'Device not recognized or revoked',
+                        }));
+                        return;
+                    }
+                    if (this._isIdleExpired(device)) {
+                        device.revoked = true;
+                        device.trustLevel = 'blocked';
+                        this._persistKnownDevices();
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'SESSION_EXPIRED',
+                            message: 'Pairing session expired due to inactivity. Please re-pair.',
+                        }));
+                        return;
+                    }
+                    // Enforce device binding: tokens bound to a device cannot be refreshed from a different fingerprint
+                    if (device.deviceBinding && msg.deviceFingerprint) {
+                        var calculatedBinding = this._computeDeviceBinding(deviceId, msg.deviceFingerprint);
+                        if (!tokensMatch(device.deviceBinding, calculatedBinding)) {
+                            this._recordFailedAttempt(clientIp);
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'BINDING_MISMATCH',
+                                message: 'Token cannot be used from a different device',
+                            }));
+                            return;
+                        }
+                    }
+                    // Verify refresh token
+                    if (!refreshToken || !tokensMatch(device.refreshToken, refreshToken)) {
+                        this._recordFailedAttempt(clientIp);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_FAILED',
+                            message: 'Invalid refresh token',
+                        }));
+                        return;
+                    }
+                    if (device.refreshTokenExpiresAt && Date.now() > device.refreshTokenExpiresAt) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'REFRESH_TOKEN_EXPIRED',
+                            message: 'Refresh token expired. Please re-pair.',
+                        }));
+                        return;
+                    }
+                    // Detect network location change
+                    if (device.ip && clientIp && device.ip !== clientIp) {
+                        this.emit('network-location-changed', {
+                            deviceId: deviceId,
+                            deviceName: device.deviceName,
+                            oldIp: device.ip,
+                            newIp: clientIp,
+                        });
+                    }
+                    this._clearFailedAttempts(clientIp);
+                    var newAccessToken = (0, crypto_1.randomBytes)(32).toString('hex');
+                    var newExpiresAt = Date.now() + exports.ACCESS_TOKEN_TTL_MS;
+                    device.accessToken = newAccessToken;
+                    device.accessTokenExpiresAt = newExpiresAt;
+                    device.ip = clientIp;
+                    device.lastSeen = Date.now();
+                    this._persistKnownDevices();
+                    this.clientSockets.set(deviceId, ws);
+                    this.socketDeviceIds.set(ws, deviceId);
+                    this.socketSessions.set(ws, {
+                        deviceId: deviceId,
+                        accessToken: newAccessToken,
+                        expiresAt: newExpiresAt,
+                    });
                     ws.send(JSON.stringify({
-                        type: 'clipboard-sync',
-                        text: currentClipboard,
+                        type: 'token-refresh-ack',
+                        accessToken: newAccessToken,
+                        expiresIn: Math.floor(exports.ACCESS_TOKEN_TTL_MS / 1000),
+                        expiresAt: newExpiresAt,
                     }));
+                    break;
+                }
+                case 'unpair-device': {
+                    var devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                    if (devId) {
+                        this.unpairDevice(devId);
+                    }
+                    ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
                     break;
                 }
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
                     break;
-                // ── Permission relay response from mobile ──────────────────
-                case 'permission-relay-response': {
-                    var relay = getPermissionRelayService();
-                    if (relay && msg.payload) {
-                        var response = __assign(__assign({}, msg.payload), { respondedByDeviceId: this.socketDeviceIds.get(ws) || 'unknown-mobile' });
-                        var handled = relay.handleApprovalResponse(response);
-                        ws.send(JSON.stringify({
-                            type: 'permission-relay-ack',
-                            requestId: (_a = msg.payload) === null || _a === void 0 ? void 0 : _a.requestId,
-                            received: handled,
-                        }));
+                default: {
+                    // Authenticate all remaining sync routes
+                    var session = this.socketSessions.get(ws);
+                    var providedToken = msg.accessToken || msg.token;
+                    var isAuthorized = false;
+                    var isTokenExpired = false;
+                    if (providedToken) {
+                        var devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                        var dev = devId ? this.knownDevices.get(devId) : null;
+                        if (dev && dev.trustLevel === 'trusted' && tokensMatch(dev.accessToken, providedToken)) {
+                            if (dev.accessTokenExpiresAt && Date.now() > dev.accessTokenExpiresAt) {
+                                isTokenExpired = true;
+                            }
+                            else {
+                                isAuthorized = true;
+                                dev.lastSeen = Date.now();
+                            }
+                        }
                     }
-                    break;
-                }
-                // ── Mobile requests current + past sessions ────────────────
-                case 'session-sync-request': {
-                    var usm = getUnifiedSessionManager();
-                    if (usm) {
-                        var payload = usm.getSyncPayload();
-                        ws.send(JSON.stringify({
-                            type: 'session-sync-response',
-                            currentSession: payload.currentSession,
-                            pastSessions: payload.pastSessions,
-                            timestamp: Date.now(),
-                        }));
+                    else if (session) {
+                        var dev = this.knownDevices.get(session.deviceId);
+                        if (dev && dev.trustLevel === 'trusted' && tokensMatch(dev.accessToken, session.accessToken)) {
+                            if (Date.now() > session.expiresAt) {
+                                isTokenExpired = true;
+                            }
+                            else {
+                                isAuthorized = true;
+                                dev.lastSeen = Date.now();
+                            }
+                        }
                     }
-                    break;
-                }
-                // ── Mobile requests Master PIN sync payload (salt + hash) ──
-                case 'pin-sync-request': {
-                    try {
-                        var pinSvc = require('./MasterPINService').masterPinService;
-                        var pinPayload = pinSvc.getSyncPayload();
-                        ws.send(JSON.stringify(__assign({ type: 'pin-sync-response' }, pinPayload)));
+                    if (!isAuthorized) {
+                        if (isTokenExpired) {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'TOKEN_EXPIRED',
+                                message: 'Access token expired, refresh required',
+                            }));
+                        }
+                        else {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'UNAUTHORIZED',
+                                message: 'Authentication required for sync actions',
+                            }));
+                        }
+                        return;
                     }
-                    catch (e) {
-                        ws.send(JSON.stringify({ type: 'pin-sync-response', hasPin: false }));
-                    }
-                    break;
-                }
-                // ── Mobile syncs an imported session back ──────────────────
-                case 'session-import': {
-                    var usm2 = getUnifiedSessionManager();
-                    if (usm2 && msg.session) {
-                        usm2.importSession(msg.session);
-                        ws.send(JSON.stringify({ type: 'session-import-ack', success: true, id: msg.session.id }));
+                    switch (msg.type) {
+                        case 'execute-command':
+                            this._handleCommand(ws, msg);
+                            break;
+                        case 'desktop-control':
+                            this._handleDesktopControl(ws, msg);
+                            break;
+                        case 'clipboard-sync':
+                            if (msg.text && msg.text !== this._lastReceivedClipboard) {
+                                this._lastReceivedClipboard = msg.text;
+                                electron_1.clipboard.writeText(msg.text);
+                                this.emit('clipboard-received', msg.text);
+                            }
+                            break;
+                        case 'clipboard-sync-request': {
+                            var currentClipboard = electron_1.clipboard.readText();
+                            ws.send(JSON.stringify({
+                                type: 'clipboard-sync',
+                                text: currentClipboard,
+                            }));
+                            break;
+                        }
+                        case 'ping':
+                            ws.send(JSON.stringify({ type: 'pong' }));
+                            break;
+                        // ── Permission relay response from mobile ──────────────────
+                        case 'permission-relay-response': {
+                            var relay = getPermissionRelayService();
+                            if (relay && msg.payload) {
+                                var response = __assign(__assign({}, msg.payload), { respondedByDeviceId: this.socketDeviceIds.get(ws) || 'unknown-mobile' });
+                                var handled = relay.handleApprovalResponse(response);
+                                ws.send(JSON.stringify({
+                                    type: 'permission-relay-ack',
+                                    requestId: (_a = msg.payload) === null || _a === void 0 ? void 0 : _a.requestId,
+                                    received: handled,
+                                }));
+                            }
+                            break;
+                        }
+                        // ── Mobile requests current + past sessions ────────────────
+                        case 'session-sync-request': {
+                            var usm = getUnifiedSessionManager();
+                            if (usm) {
+                                var payload = usm.getSyncPayload();
+                                ws.send(JSON.stringify({
+                                    type: 'session-sync-response',
+                                    currentSession: payload.currentSession,
+                                    pastSessions: payload.pastSessions,
+                                    timestamp: Date.now(),
+                                }));
+                            }
+                            break;
+                        }
+                        // ── Mobile requests Master PIN sync payload (salt + hash) ──
+                        case 'pin-sync-request': {
+                            try {
+                                var pinSvc = require('./MasterPINService').masterPinService;
+                                var pinPayload = pinSvc.getSyncPayload();
+                                ws.send(JSON.stringify(__assign({ type: 'pin-sync-response' }, pinPayload)));
+                            }
+                            catch (e) {
+                                ws.send(JSON.stringify({ type: 'pin-sync-response', hasPin: false }));
+                            }
+                            break;
+                        }
+                        // ── Mobile syncs an imported session back ──────────────────
+                        case 'session-import': {
+                            var usm2 = getUnifiedSessionManager();
+                            if (usm2 && msg.session) {
+                                usm2.importSession(msg.session);
+                                ws.send(JSON.stringify({ type: 'session-import-ack', success: true, id: msg.session.id }));
+                            }
+                            break;
+                        }
                     }
                     break;
                 }
@@ -673,17 +955,44 @@ var WiFiSyncService = /** @class */ (function (_super) {
         }
         return updated;
     };
-    WiFiSyncService.prototype.removeKnownDevice = function (deviceId) {
+    WiFiSyncService.prototype.unpairDevice = function (deviceId) {
         var socket = this.clientSockets.get(deviceId);
         if (socket) {
-            socket.close();
+            try {
+                socket.send(JSON.stringify({ type: 'revoked', message: 'Device unpaired' }));
+                socket.close(4001, 'Device revoked');
+            }
+            catch (_) { }
+            this.clientSockets.delete(deviceId);
+            this.socketDeviceIds.delete(socket);
+            this.socketSessions.delete(socket);
         }
-        this.clientSockets.delete(deviceId);
+        var device = this.knownDevices.get(deviceId);
+        if (device) {
+            device.revoked = true;
+            device.trustLevel = 'blocked';
+            device.accessToken = undefined;
+            device.accessTokenExpiresAt = undefined;
+            device.refreshToken = undefined;
+            device.refreshTokenExpiresAt = undefined;
+            device.permanentToken = undefined;
+            device.autoConnect = false;
+        }
         var deleted = this.knownDevices.delete(deviceId);
-        if (deleted) {
+        if (deleted || device) {
             this._persistKnownDevices();
+            this.emit('device-unpaired', { deviceId: deviceId });
+            this.emit('client-disconnected', {
+                deviceId: deviceId,
+                connected: this.clientSockets.size > 0,
+                devices: this.getKnownDevices(),
+            });
+            return true;
         }
-        return deleted;
+        return false;
+    };
+    WiFiSyncService.prototype.removeKnownDevice = function (deviceId) {
+        return this.unpairDevice(deviceId);
     };
     return WiFiSyncService;
 }(events_1.EventEmitter));

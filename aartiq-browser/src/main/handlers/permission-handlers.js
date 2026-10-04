@@ -80,6 +80,32 @@ module.exports = function registerPermissionHandlers(ipcMain, handlers) {
     }
   });
 
+  ipcMain.handle('directory-get-broad-grants-warning', async () => {
+    try {
+      return { success: true, warning: permissionStore.getBroadGrantWarning() };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('directory-narrow-broad-grants', async () => {
+    try {
+      const narrowed = permissionStore.narrowBroadGrants();
+      return { success: true, narrowed, directories: permissionStore.getAllowedDirectories() };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('directory-dismiss-broad-grants-warning', async () => {
+    try {
+      permissionStore.dismissBroadGrantWarning();
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('set-proxy', async (event, config) => {
     const updates = config
       ? {

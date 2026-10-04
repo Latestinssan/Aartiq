@@ -104,7 +104,12 @@ class BrowserMcpServer {
     if (!this._nativeApprovalManager && this.mainWindow) {
       try {
         const { NativeApprovalManager } = require('../main/handlers/native-approval-manager.js');
-        this._nativeApprovalManager = new NativeApprovalManager(this.mainWindow);
+        this._nativeApprovalManager = new NativeApprovalManager(this.mainWindow, {
+          permissionStore: this.permissionStore,
+          requireBiometricPerSession: this.store ? this.store.get('security_requireBiometricPerSession', false) : false,
+          requireBiometricEveryTime: this.store ? this.store.get('security_requireBiometricEveryAction', false) : false,
+          requireDeviceUnlockForManualApproval: this.store ? this.store.get('security_requireDeviceUnlockForManualApproval', true) : true,
+        });
       } catch (e) {
         console.error('[MCP] Failed to load NativeApprovalManager:', e.message);
       }

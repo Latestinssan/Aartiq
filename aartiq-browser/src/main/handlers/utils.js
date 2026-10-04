@@ -209,8 +209,8 @@ exports.execShellCommand = async function(rawCommand, preApproved, reason, riskL
         } catch (e) {
           dirToAdd = nodePath.dirname(p);
         }
-        store.addAllowedDirectory(dirToAdd, { access: 'read-write', recursive: true });
-        store.logAudit(`directory-allowlist.granted-via-panel: ${dirToAdd} for command: ${command}`);
+        store.addAllowedDirectory(dirToAdd, { access: 'read', recursive: true });
+        store.logAudit(`directory-allowlist.granted-via-panel: ${dirToAdd} for command: ${command} (read-only)`);
       }
     }
   } catch (e) {
@@ -385,13 +385,13 @@ exports.normalizeMacNativePanelMode = function(mode = 'sidebar') {
 // SYNC & APPROVAL HELPERS
 // ============================================================================
 
-exports.generateShellApprovalQR = async function(command) {
+exports.generateShellApprovalQR = async function(command, explicitToken, explicitPin) {
   const QRCode = require('qrcode');
   const os = require('os');
   const deviceId = os.hostname();
   const { randomBytes } = require('crypto');
-  const token = randomBytes(5).toString('hex');
-  const pin = String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
+  const token = explicitToken || randomBytes(5).toString('hex');
+  const pin = explicitPin || String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
   const deepLinkUrl = `aartiq://approve?id=${token}&deviceId=${encodeURIComponent(deviceId)}&pin=${pin}&command=${encodeURIComponent(command)}`;
   
   const qrImage = await QRCode.toDataURL(deepLinkUrl);

@@ -588,6 +588,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWifiSyncDevices: () => ipcRenderer.invoke('get-wifi-sync-devices'),
   setWifiSyncDeviceTrust: (payload) => ipcRenderer.invoke('set-wifi-sync-device-trust', payload),
   removeWifiSyncDevice: (deviceId) => ipcRenderer.invoke('remove-wifi-sync-device', deviceId),
+  unpairWifiSyncDevice: (deviceId) => ipcRenderer.invoke('unpair-wifi-sync-device', deviceId),
+  onWifiSyncNewDevice: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('wifi-sync-new-device', subscription);
+    return () => ipcRenderer.removeListener('wifi-sync-new-device', subscription);
+  },
+  onWifiSyncLocationChange: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('wifi-sync-location-change', subscription);
+    return () => ipcRenderer.removeListener('wifi-sync-location-change', subscription);
+  },
   onWifiSyncStatus: (callback) => {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('wifi-sync-status', subscription);
@@ -645,6 +656,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDirectoryAllowlist: () => ipcRenderer.invoke('directory-allowlist-get'),
   addDirectoryToAllowlist: (dirPath, options) => ipcRenderer.invoke('directory-allowlist-add', { dirPath, ...options }),
   removeDirectoryFromAllowlist: (dirPath) => ipcRenderer.invoke('directory-allowlist-remove', { dirPath }),
+  getBroadGrantsWarning: () => ipcRenderer.invoke('directory-get-broad-grants-warning'),
+  narrowBroadGrants: () => ipcRenderer.invoke('directory-narrow-broad-grants'),
+  dismissBroadGrantsWarning: () => ipcRenderer.invoke('directory-dismiss-broad-grants-warning'),
 
   // Directory permission request panel — fired by main when a blocked path is encountered
   onDirectoryPermissionRequest: (callback) => {

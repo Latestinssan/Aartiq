@@ -907,7 +907,10 @@ capabilityController.registerAction({
 capabilityController.registerAction({
   name: 'execute-shell-command',
   handler: async (params) => params,
-  requiresApproval: 'never',
+  requiresApproval: {
+    local: 'never',
+    remote: 'always',
+  },
   riskLevel: 'high',
   description: 'Execute shell command (with permission dialog)',
 });
@@ -6092,10 +6095,10 @@ function analyzeCommandRisk(command) {
   return { description: explainCommand(command), risks, harmLevel, isWhitelisted: isSafeCmd };
 }
 
-async function generateShellApprovalQR(command) {
+async function generateShellApprovalQR(command, explicitToken, explicitPin) {
   const deviceId = os.hostname();
-  const token = randomBytes(5).toString('hex');
-  const pin = String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
+  const token = explicitToken || randomBytes(5).toString('hex');
+  const pin = explicitPin || String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
   const deepLinkUrl = `aartiq://shell-approve?id=${token}&deviceId=${encodeURIComponent(deviceId)}&pin=${pin}&cmd=${encodeURIComponent(command)}`;
   try {
     const qrImage = await QRCode.toDataURL(deepLinkUrl);

@@ -18,10 +18,24 @@ class CapabilityController {
     this._pendingApprovalCallbacks = new Map();
   }
 
+  _validateActionPolicy(action) {
+    if (action.name === 'execute-shell-command') {
+      if (action.requiresApproval === 'never') {
+        throw new Error("Security violation: execute-shell-command can never be registered as 'never' for remote origin");
+      }
+      if (typeof action.requiresApproval === 'object' && action.requiresApproval !== null) {
+        if (action.requiresApproval.remote === 'never') {
+          throw new Error("Security violation: execute-shell-command can never be registered as 'never' for remote origin");
+        }
+      }
+    }
+  }
+
   registerAction(action) {
     if (this.actions.has(action.name)) {
       throw new Error(`Action "${action.name}" is already registered.`);
     }
+    this._validateActionPolicy(action);
     const capabilityVersion = action.capabilityVersion || 1;
     this.actions.set(action.name, {
       name: action.name,
@@ -42,6 +56,7 @@ class CapabilityController {
     if (!this.actions.has(action.name)) {
       throw new Error(`Action "${action.name}" is not registered.`);
     }
+    this._validateActionPolicy(action);
     const prev = this.actions.get(action.name);
     this.actions.set(action.name, {
       name: action.name,
@@ -68,19 +83,33 @@ class CapabilityController {
    * 4. User approves → renderer calls approveAndExecute(ticketId)
    * 5. Main validates ticket, verifies params hash, executes action
    */
-  async executeAction(name, params = {}) {
+  async executeAction(name, params = {}, options = {}) {
     const action = this.actions.get(name);
     if (!action) {
       return { approved: false, reason: `Action "${name}" is not registered.` };
     }
 
+    const origin = params.origin || options.origin || 'local';
+    let policy = action.requiresApproval;
+    if (typeof policy === 'object' && policy !== null) {
+      policy = policy[origin] || (origin === 'remote' ? 'always' : 'always');
+    }
+
+    // Safety rule: remote origin for execute-shell-command ALWAYS requires approval,
+    // regardless of configuration.
+    if (origin === 'remote' && name === 'execute-shell-command') {
+      policy = 'always';
+    }
+
     let needsApproval = false;
     let approvalReason = '';
 
-    if (action.requiresApproval === 'always') {
+    if (policy === 'always') {
       needsApproval = true;
-      approvalReason = 'This action always requires approval';
-    } else if (action.requiresApproval === 'first-time-per-session') {
+      approvalReason = origin === 'remote'
+        ? 'Remote-origin action always requires approval'
+        : 'This action always requires approval';
+    } else if (policy === 'first-time-per-session') {
       if (!this.firstTimeApprovals.has(name)) {
         needsApproval = true;
         approvalReason = 'First time executing this action this session';
@@ -90,7 +119,7 @@ class CapabilityController {
     // Check permission store - DO NOT override 'always'
     if (
       needsApproval &&
-      action.requiresApproval !== 'always' &&
+      policy !== 'always' &&
       this.permissionStore
     ) {
       const permKey = `CAPABILITY:${name}`;
@@ -99,18 +128,33 @@ class CapabilityController {
       }
     }
 
-    // If approval needed, issue a ticket and WAIT for user response
+    // If approval needed, issue a ticket and WAIT for user response (or return immediately if non-blocking requested)
     if (needsApproval) {
       const ticket = this.ticketManager.issueTicket(name, params, {
         riskLevel: action.riskLevel,
         description: action.description,
         approvalReason,
         capabilityVersion: action.capabilityVersion,
+        origin,
       });
 
       // Notify renderer about pending approval
       if (this.onApprovalRequired) {
         this.onApprovalRequired(ticket);
+      }
+
+      if (options.waitForApproval === false || params.waitForApproval === false) {
+        return {
+          approved: false,
+          needsApproval: true,
+          ticketId: ticket.ticketId,
+          action: name,
+          params: ticket.params,
+          paramsHash: ticket.paramsHash,
+          metadata: ticket.metadata,
+          expiresAt: ticket.expiresAt,
+          reason: approvalReason,
+        };
       }
 
       // Wait for the user to approve/deny via the renderer UI

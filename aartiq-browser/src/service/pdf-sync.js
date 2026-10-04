@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const pdfjsLib = require('pdfjs-dist');
 const sharp = require('sharp');
@@ -21,6 +22,44 @@ class PDFSyncService extends EventEmitter {
         this.server = null;
         this.isRunning = false;
         this.fileIndex = new Map(); // filename -> metadata
+        this.authToken = options.authToken || process.env.AARTIQ_PDF_SYNC_TOKEN || crypto.randomBytes(32).toString('hex');
+    }
+
+    getAuthToken() {
+        return this.authToken;
+    }
+
+    setAuthToken(token) {
+        this.authToken = token;
+    }
+
+    _extractToken(req) {
+        const auth = req.headers && req.headers.authorization;
+        if (typeof auth === 'string') {
+            const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
+            if (m) return m[1].trim();
+        }
+        if (req.headers && req.headers['x-aartiq-token']) {
+            return String(req.headers['x-aartiq-token']).trim();
+        }
+        try {
+            const parsedUrl = new URL(req.url, `http://localhost:${this.port}`);
+            const queryToken = parsedUrl.searchParams.get('token');
+            if (queryToken) return queryToken.trim();
+        } catch (_) {}
+        return null;
+    }
+
+    _verifyToken(token) {
+        if (!token || typeof token !== 'string') return false;
+        if (!this.authToken || typeof this.authToken !== 'string') return false;
+        const expected = Buffer.from(this.authToken, 'utf8');
+        const actual = Buffer.from(token, 'utf8');
+        if (expected.length !== actual.length) {
+            crypto.timingSafeEqual(expected, expected);
+            return false;
+        }
+        return crypto.timingSafeEqual(expected, actual);
     }
 
     async initialize() {
@@ -77,6 +116,25 @@ class PDFSyncService extends EventEmitter {
         if (req.method === 'OPTIONS') {
             res.writeHead(200);
             res.end();
+            return;
+        }
+
+        // Host header validation to prevent DNS rebinding
+        const rawHost = (req.headers.host || '').split(':')[0].toLowerCase();
+        const allowedHosts = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+        const resolvedHost = resolveServiceHost();
+        if (resolvedHost) allowedHosts.add(resolvedHost.toLowerCase());
+        if (!allowedHosts.has(rawHost)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Forbidden', message: 'Invalid Host header' }));
+            return;
+        }
+
+        // Token authentication check (Issue 3: Require authentication on sync listeners)
+        const token = this._extractToken(req);
+        if (!this._verifyToken(token)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Unauthorized', message: 'Authentication required' }));
             return;
         }
 
@@ -179,16 +237,16 @@ class PDFSyncService extends EventEmitter {
                     return;
                 }
                 
-                list.innerHTML = data.files.map(file => `
-                    <div class="file-item">
-                        <div class="file-icon">📄</div>
-                        <div class="file-info">
-                            <div class="file-name">${file.name}</div>
-                            <div class="file-meta">${file.sizeFormatted} • ${file.date}</div>
-                        </div>
-                        <a href="/download/${encodeURIComponent(file.name)}" class="download-btn" download>Download</a>
-                    </div>
-                `).join('');
+                list.innerHTML = data.files.map(function(file) {
+                    return '<div class="file-item">' +
+                        '<div class="file-icon">📄</div>' +
+                        '<div class="file-info">' +
+                            '<div class="file-name">' + file.name + '</div>' +
+                            '<div class="file-meta">' + file.sizeFormatted + ' • ' + file.date + '</div>' +
+                        '</div>' +
+                        '<a href="/download/' + encodeURIComponent(file.name) + '" class="download-btn" download>Download</a>' +
+                    '</div>';
+                }).join('');
             } catch (e) {
                 console.error('Failed to load files:', e);
             }
