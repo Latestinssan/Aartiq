@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -37,5 +37,16 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Xcode 15+ refuses to build any target whose deployment target is below
+    # 15.0, and many pods still declare 9.0-13.0 in their own podspecs. Without
+    # this the whole build fails with "the range of supported deployment target
+    # versions is 15.0 to 27.0.x" before a single file is compiled.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # Pods that still declare an older target also emit a lot of noise about
+      # excluding arm64 simulator slices; keep the warning but drop the error.
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = ''
+    end
   end
 end
