@@ -164,6 +164,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchPageContent: (url, maxChars) => ipcRenderer.invoke('fetch-page-content', url, maxChars),
   webSearchYoutube: (query, count) => ipcRenderer.invoke('web-search-youtube', query, count),
 
+  // Research jobs stream `research-progress` back as they run; the returned
+  // function unsubscribes, matching `onChatStreamPart`.
+  runResearch: (payload) => ipcRenderer.invoke('research-run', payload),
+  onResearchProgress: (callback) => {
+    const subscription = (_event, data) => callback(data);
+    ipcRenderer.on('research-progress', subscription);
+    return () => ipcRenderer.removeListener('research-progress', subscription);
+  },
+
   domClickElement: (opts) => ipcRenderer.invoke('dom-click-element', opts),
   domFillForm: (opts) => ipcRenderer.invoke('dom-fill-form', opts),
   multiFillForm: (opts) => ipcRenderer.invoke('dom-multi-fill-form', opts),

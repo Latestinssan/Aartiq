@@ -139,10 +139,38 @@ describe('docs listener / count claims match source', () => {
     expect(SKILLS).toContain(agentClaim);
     expect(FEATURES).toContain(agentClaim);
 
-    expect(MCP_PAGE).not.toMatch(/60\+ tools/);
-    expect(SEARCH_IDX).not.toMatch(/60\+ tools/);
-    expect(SKILLS).not.toMatch(/36 tools/);
-    expect(FEATURES).not.toMatch(/36 tools/);
+    // No contradictory count may sit on a page. This used to be four hardcoded
+    // negative guards ("60+ tools" on the MCP pages, "36 tools" on the agent
+    // pages) and they were wrong twice: a guard naming a count pins that count
+    // forever, so every registry change had to come back here to edit it, and
+    // the "36 tools" guard forbade a number that the registry then made true.
+    // Both counts are derived above, so any published count that is neither of
+    // them is stale and fails. The four toContain assertions above catch a
+    // wrong count replacing a right one; this catches a wrong count left
+    // *beside* a right one, which is the case they cannot see.
+    const derived = new Set([
+      mcpClaim,
+      agentClaim,
+      `${mcpTools} tools`,
+      `${agentTools} tools`,
+    ]);
+    const stale = [];
+    for (const [label, text] of [
+      ['mcp-settings', MCP_PAGE],
+      ['search-index', SEARCH_IDX],
+      ['skills', SKILLS],
+      ['features', FEATURES],
+    ]) {
+      // m[0] is the text as published, so the failure quotes the page back
+      // accurately — "60+ tools" stays "60+ tools" in the message.
+      for (const m of text.matchAll(/(\d+)\+? tools(?: across (\d+)\+? categories)?/g)) {
+        const pair = m[2]
+          ? `${m[1]} tools across ${m[2]} categories`
+          : `${m[1]} tools`;
+        if (!derived.has(pair)) stale.push(`${label}: ${JSON.stringify(m[0])}`);
+      }
+    }
+    expect(stale).toEqual([]);
 
     // Refs into tools.ts must point at lines that exist on this checkout.
     for (const [name, text] of [['mcp-settings', MCP_PAGE], ['skills', SKILLS]]) {
@@ -151,11 +179,21 @@ describe('docs listener / count claims match source', () => {
         if (m[2]) expect(Number(m[2])).toBeLessThanOrEqual(toolsTsLines);
       }
     }
-    // Tools that only exist on an unpushed branch must not be documented as implemented.
-    for (const absent of ['page_find', 'news_search', 'search_providers', 'fill_form', 'form_submit']) {
-      expect(SKILLS).not.toContain(absent);
+    // These five tools and the research pipeline used to exist only on an
+    // unpushed branch, and this gate forbade the pages from naming them. The
+    // code has landed, so the names are now required rather than forbidden —
+    // a tool in the registry with no published description is the same defect
+    // in the other direction.
+    for (const present of [
+      'page_find',
+      'news_search',
+      'search_providers',
+      'fill_form',
+      'form_submit',
+    ]) {
+      expect(SKILLS).toContain(present);
     }
-    expect(SKILLS).not.toMatch(/research-pipeline\.ts/);
+    expect(SKILLS).toMatch(/research-pipeline\.ts/);
   });
 
   test('M15: README and the overview page carry the same status paragraph', () => {

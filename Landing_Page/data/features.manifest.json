@@ -1464,6 +1464,150 @@
       "riskTier": "low",
       "requiredApproval": "n/a",
       "notes": "Real and undocumented. Decide whether to document it (it is the honest replacement for the keyboard-shortcuts page) or leave it internal."
+    },
+    {
+      "id": "agent.page-tools",
+      "title": "Agent API page tools: page_find, dom_query, get_page_text",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/skills"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/agent-api/tools.ts:143 page_find",
+        "aartiq-browser/src/lib/agent-api/tools.ts:171 dom_query",
+        "aartiq-browser/src/lib/agent-api/tools.ts:192 get_page_text",
+        "aartiq-browser/src/lib/snapshot/manager.ts:25 AX_MARKER_ATTR = 'data-aartiq-ax'"
+      ],
+      "tests": [
+        "tests/agent-api-bridge-tools.test.js#pageFind searches the in-memory snapshot without touching the page",
+        "tests/agent-api-bridge-tools.test.js#pageSearchText runs a live-DOM script because text mode can see prose",
+        "tests/agent-api-bridge-tools.test.js#domQuery passes the selector and options into the script",
+        "tests/snapshot-ref-binding.test.js#still reaches matches nested inside a non-actionable ancestor",
+        "tests/snapshot-ref-binding.test.js#refuses to search before a snapshot exists",
+        "tests/page-scripts-forms.test.js#finds text and returns surrounding context"
+      ],
+      "plannedTestIds": [],
+      "decision": "implement",
+      "riskTier": "none",
+      "requiredApproval": "none",
+      "notes": "page_find reads a tab that is already open and issues no network request, so it is the cheaper path whenever the answer is on screen. It exists because a search is real egress: it sends the user's query to a third party and returns a different page. Refs bind by a data-aartiq-ax stamp the collector writes onto actionable nodes only — blanket stamping perturbed page code that queries the DOM — with backendNodeId as first-priority identity.",
+      "coverage": "Read-only, so the risk tier is none. The tests cover snapshot search, live-DOM text search, selector query and ref binding; nothing asserts that mode='tree' cannot be tricked into returning a ref for a node outside the snapshot, which is a gap rather than a known defect."
+    },
+    {
+      "id": "agent.search-tools",
+      "title": "Agent API search tools: web_search, news_search, search_providers",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/skills"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/agent-api/tools.ts:200 web_search",
+        "aartiq-browser/src/lib/agent-api/tools.ts:229 news_search",
+        "aartiq-browser/src/lib/agent-api/tools.ts:254 search_providers",
+        "aartiq-browser/src/lib/web-search-service.js:162 getProviderInfo reports keyConfigured, scrapes, newsIndex and deprecated per provider",
+        "aartiq-browser/src/lib/web-search-service.js:184-192 DuckDuckGo and Google scraped fallbacks, keyless"
+      ],
+      "tests": [
+        "tests/web-search-service.test.js#prefers a configured API over scraping",
+        "tests/web-search-service.test.js#falls back to scraping and says so when the keyed API fails",
+        "tests/web-search-service.test.js#routes away from deprecated Google CSE rather than failing",
+        "tests/web-search-service.test.js#reports an empty result with a reason rather than throwing",
+        "tests/web-search-service.test.js#uses a real news index and marks timestamps reliable",
+        "tests/web-search-service.test.js#marks timestamps unreliable when it has to fall back to scraping",
+        "tests/agent-api-bridge-tools.test.js#delegates webSearch and newsSearch to the provider"
+      ],
+      "plannedTestIds": [],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Risk is low rather than none because the query leaves the machine. The API-first preference is real: Tavily (1,000 free credits/month, no card) is the recommended single key, SerpAPI is 250/month, Brave needs a card and attribution, and Google Custom Search JSON is closed to new customers with existing keys ending 2027-01-01. The keyless scraped path is supported and is labelled scraped wherever it is reported, because scraped results carry no publication dates — which is exactly what makes 'which source is most recent' unanswerable from them.",
+      "coverage": "Provider selection, fallback, deprecation routing, empty-result reasons and the timestampsReliable flag are all covered. No test exercises a live provider, so the capability flags in getProviderInfo are asserted from configuration, not from an API response."
+    },
+    {
+      "id": "agent.form-filling",
+      "title": "Form filling separated from form submission (fill_form / form_submit)",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/skills"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/agent-api/tools.ts:267 fill_form, verb 'input'",
+        "aartiq-browser/src/lib/agent-api/tools.ts:300 form_submit, verb 'sideEffecting'",
+        "aartiq-browser/src/lib/snapshot/page-scripts.ts:214 fillFormScript",
+        "aartiq-browser/src/lib/agent-api/registry.ts:43-57 the verb gate runs before the handler, so form_submit cannot be reached by a parameter"
+      ],
+      "tests": [
+        "tests/page-scripts-forms.test.js#does not submit when submit is false",
+        "tests/page-scripts-forms.test.js#submits the form owning the filled fields, not the first form on the page",
+        "tests/page-scripts-forms.test.js#refuses an element that is not inside a form",
+        "tests/page-scripts-forms.test.js#refuses to submit a partially filled form",
+        "tests/page-scripts-forms.test.js#refuses a readOnly field and says why",
+        "tests/page-scripts-forms.test.js#reports a select mismatch instead of claiming success",
+        "tests/page-scripts-forms.test.js#keeps going after a failure and reports the good fields",
+        "tests/snapshot-ref-binding.test.js#throws a stale-ref error for a ref that was never issued"
+      ],
+      "plannedTestIds": [],
+      "decision": "implement",
+      "riskTier": "medium",
+      "requiredApproval": "in-app approval on form_submit",
+      "notes": "Two tools rather than one tool with a submit flag, because filling a form is reversible and submitting one is not. fill_form carries the input verb and never submits; form_submit is sideEffecting and passes the verb gate. Three bugs were found by these tests and fixed: typeScript emitted a bare clearFirst identifier (ReferenceError on every type_ref), contenteditable detection relied only on el.isContentEditable so a plain div reported as filled, and fillFormScript fell back to document.forms[0] and could land a fill in an arbitrary form or submit one.",
+      "coverage": "Form filling is covered at the script level, including the framework-setter path, checkbox and select semantics, and the submit rules. No test drives form_submit through the registry's verb gate with a rejected approval, so the end-to-end refusal path is argued from registry.ts:43-57 rather than exercised."
+    },
+    {
+      "id": "research.cross-verification",
+      "title": "Deep Research: claim-level cross-verification and last-source tracking",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/skills"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/research-pipeline.ts:474 runResearch, deps injected",
+        "aartiq-browser/src/lib/research-pipeline.ts:205 extractClaims keys claims on subject|verb",
+        "aartiq-browser/src/lib/research-pipeline.ts:293 verifyClaims re-derives domains from each claim URL and requires >=2 distinct domains",
+        "aartiq-browser/src/lib/research-pipeline.ts:382 pickLastSource names a source only when timestampsReliable",
+        "aartiq-browser/src/lib/researchState.ts:153 applyResearchProgress",
+        "aartiq-browser/main.js:6630 research-run IPC handler streams research-progress to the sender",
+        "aartiq-browser/preload.js:169 runResearch / :172 onResearchProgress"
+      ],
+      "tests": [
+        "tests/research-pipeline.test.js#keys different magnitudes of the same verb to the same claim",
+        "tests/research-pipeline.test.js#re-derives the domain from the url, so a subdomain cannot fake diversity",
+        "tests/research-pipeline.test.js#flags a dispute when independent sources report different values",
+        "tests/research-pipeline.test.js#does not call a claim corroborated on one domain alone",
+        "tests/research-pipeline.test.js#refuses to name a source when the dates are untrustworthy",
+        "tests/research-pipeline.test.js#names the queries it did not have budget for",
+        "tests/research-pipeline.test.js#finishes at 100 progress and a terminal status",
+        "tests/research-pipeline.test.js#does not report failure when pages were read but held no claims",
+        "tests/research-progress-plumbing.test.js#streams progress back to the sender instead of only returning at the end",
+        "tests/research-progress-plumbing.test.js#re-hydrates dates lost to structured-clone serialization",
+        "tests/research-progress-plumbing.test.js#filters events belonging to a superseded job"
+      ],
+      "plannedTestIds": [],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Risk is low because it reads pages the user asked it to read. The claim is the unit of verification rather than the article, which is what keeps '450 million dollars' and '450 million euros' from being matched into false agreement. Domains are re-derived from each claim's own URL instead of trusted from the caller, so subdomains cannot fake independence. A last source is named only when publication timestamps are reliable; otherwise the answer is unknown with the reason attached, because without the reason a caller retries and guesses anyway. Reported as partial in the UI when a contradiction is unresolved rather than when it is resolved.",
+      "coverage": "Claim extraction, verification, last-source selection, budget clamping and the full IPC path are covered. Deliberate limit, stated rather than hidden: extractClaims surfaces only numeric claims with a named subject, so disputed qualitative findings never reach the contradictions panel. That is a false negative rather than a false positive, and it means the coverage percentage reflects numeric agreement specifically, not overall source agreement. A test asserting that a disputed non-numeric claim is surfaced would fail today, so this limit is load-bearing documentation rather than an oversight."
     }
   ],
   "openQuestions": [

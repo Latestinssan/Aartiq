@@ -12,6 +12,7 @@ import type { AgentRegistry } from '../agent/agent-registry';
 import type { SnapshotManager } from '../snapshot/manager';
 import type { AutofillVault } from '../autofill/vault';
 import type { ChromeExtensionManager } from '../extensions/ChromeExtensionManager';
+import type { SearchProviderLike } from './bridge';
 
 export interface Bridge {
   call<T = any>(method: string, args?: any): Promise<T>;
@@ -49,6 +50,12 @@ export interface ToolContext {
   snapshots: SnapshotManager;
   vault?: AutofillVault;
   extensions?: ChromeExtensionManager;
+  /**
+   * Web/news search. Optional on purpose: an absent provider must not be a crash
+   * but a plain-text "not configured" answer, so the model can report it instead
+   * of silently losing the capability.
+   */
+  search?: SearchProviderLike;
   config: AgentApiConfig;
 }
 

@@ -51,6 +51,10 @@ const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
 const registry_1 = require("./registry");
 const tools_1 = require("./tools");
 const providers_1 = require("./providers");
+// Host / Origin / token checks shared with the MCP browser bridge and the native
+// macOS bridge. require() of a CJS module from TS is fine here because the file
+// is plain data and pure functions with no Node-only dependencies.
+const local_server_auth_1 = require("../local-server-auth");
 class AgentApiServer {
     constructor(deps) {
         this.deps = deps;
@@ -67,6 +71,7 @@ class AgentApiServer {
             snapshots: this.deps.snapshots,
             vault: this.deps.vault,
             extensions: this.deps.extensions,
+            search: this.deps.search,
             config: this.config,
         };
     }
@@ -88,7 +93,26 @@ class AgentApiServer {
     }
     async startHttp() {
         const host = (0, providers_1.bindHost)(this.config);
+        // A token is required even in the default loopback configuration: any page
+        // open in any browser on this machine can reach 127.0.0.1. In remote mode it
+        // is required too — there is no configuration in which this listener is open.
+        this.sessionToken = this.config.token || (0, local_server_auth_1.generateSessionToken)();
         this.httpServer = http.createServer((req, res) => {
+            const verdict = (0, local_server_auth_1.checkLocalRequest)(req, {
+                port: this.config.port,
+                token: this.sessionToken,
+                requireToken: true,
+                allowRemote: this.config.remote === true,
+                remoteHosts: this.config.remoteHosts,
+                service: 'agent-api',
+            });
+            if (!verdict.ok) {
+                // verdict.log contains the reason, method and path only — never a token.
+                console.warn(`[agent-api] ${verdict.log}`);
+                res.writeHead(verdict.status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ error: verdict.code }));
+                return;
+            }
             if (req.method === 'GET' && req.url === '/health') {
                 res.writeHead(200, { 'content-type': 'application/json' });
                 res.end(JSON.stringify({ ok: true, tools: this.registry.list().length, remote: this.config.remote }));
@@ -104,6 +128,9 @@ class AgentApiServer {
                         args = body ? JSON.parse(body) : {};
                     }
                     catch { /* ignore */ }
+                    // x-agent-id stays an identifier only. Authentication is the token
+                    // above; an unrecognised id is auto-registered, so it cannot be the
+                    // thing that decides whether a request is trusted.
                     const agentId = req.headers['x-agent-id'];
                     const out = await this.callTool(method, args, agentId);
                     res.writeHead(out.isError ? 400 : 200, { 'content-type': 'application/json' });
@@ -115,7 +142,7 @@ class AgentApiServer {
             res.end();
         });
         await new Promise((resolve) => this.httpServer.listen(this.config.port, host, resolve));
-        console.error(`[agent-api] HTTP on ${host}:${this.config.port} (remote=${this.config.remote})`);
+        console.error(`[agent-api] HTTP on ${host}:${this.config.port} (remote=${this.config.remote}, token required)`);
     }
     async startMcp() {
         const server = new index_js_1.Server({ name: 'aartiq-agent-api', title: 'Aartiq Browser Agent API', version: '1.0.0' }, { capabilities: { tools: {} } });
