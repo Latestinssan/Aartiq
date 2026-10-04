@@ -27,6 +27,21 @@ also keeps 46203: its BridgeClient calls only the native bridge's
 Both changes are pinned by `tests/network-listener-hardening.test.js`, with
 the mutation record in `aartiq-browser/docs-audit/mutation-check-network-hardening.txt`.
 
+### System roots are refused by the directory allowlist
+
+`addAllowedDirectory` accepted anything you typed — `/`, `/etc`, a Windows
+drive root — and wrote it to settings as a read-write allowance. It now
+refuses the filesystem root, the directories the operating system lives in
+and Windows drive / system directories, and records the refusal in the audit
+trail instead. The refusal is exact-match: a path *under* a root is a
+different decision and stays allowed, pinned as the boundary case so
+widening the ban is a deliberate choice rather than an accident. Flagged for
+maintainer review (docs-audit M12); the AutomationSettings UI path and the
+tests-only default in `directory-allowlist.js` are untouched. Gate:
+`tests/permission-store-system-root.test.js` (10 failed before the fix, 12/12
+after), mutation record
+`aartiq-browser/docs-audit/mutation-check-system-roots.txt`.
+
 ## Licensing
 
 ### The browser ships Apache-2.0 everywhere

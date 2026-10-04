@@ -15,6 +15,7 @@
 - The background task service (3999) and the PDF sync server now bind `127.0.0.1` by default instead of `0.0.0.0`. `AARTIQ_SERVICE_HOST` is the explicit opt-in for phone/laptop file access. Neither listener sends an `Access-Control-Allow-Origin` header any more — the wildcard is gone. WiFi sync (3004) is untouched and still binds every interface; that stays open (docs-audit/issues/wifi-sync-bind-address.md).
 - The agent API moves to port `46204`; the native macOS bridge keeps `46203`. Both used to default to `46203`, so whichever started second lost the bind and the error was swallowed. `aartiq-mcp` still targets `46203` — its BridgeClient calls only the native bridge's `/native-mac-ui/*` routes.
 - New gate: `tests/network-listener-hardening.test.js` pins the loopback call sites, the env override, the missing CORS headers, and the port split. Mutation record: `docs-audit/mutation-check-network-hardening.txt`.
+- `addAllowedDirectory` now refuses system roots — the filesystem root, the directories the operating system lives in, and Windows drive roots / system directories — and records the refusal in the audit trail instead of writing it to settings. This is exact-match: a path *under* a root is still allowed, so the boundary is visible and deliberate. Flagged for maintainer review (docs-audit issue M12). Gate: `tests/permission-store-system-root.test.js` (12 tests; 10 failed before the fix). Mutation record: `docs-audit/mutation-check-system-roots.txt`.
 
 ## Version 0.3.8 — Local listener authentication and shell approval defaults
 

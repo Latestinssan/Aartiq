@@ -38,6 +38,7 @@
 # the removed CORS headers, and the 46203/46204 port split.
 /aartiq-browser/tests/network-listener-hardening.test.js  @Latestinssan
 /aartiq-browser/tests/licence-audit-rename.test.js        @Latestinssan
+/aartiq-browser/tests/permission-store-system-root.test.js @Latestinssan
 
 # The checker and the manifest harness that keep the manifest honest.
 /scripts/check-docs.ts                      @Latestinssan

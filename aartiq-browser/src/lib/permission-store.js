@@ -20,6 +20,45 @@ const DEFAULT_ALLOWED_DIRECTORIES = [
   { path: '/System/Applications', recursive: true, access: 'read', grantedAt: 0, grantedVia: 'default' },
 ];
 
+/**
+ * System roots addAllowedDirectory must not grant (mismatch-inventory M12).
+ *
+ * The filesystem root and the directories the operating system itself lives
+ * in. A recursive grant over any of these is the whole machine, not a
+ * directory, so it is refused at the door and the refusal is written to the
+ * audit trail.
+ *
+ * The rule is exact match, not a prefix ban: `/etc/aartiq` is not `/etc`.
+ * That boundary is deliberate and pinned by
+ * tests/permission-store-system-root.test.js — widening it to a prefix ban is
+ * a one-line change to `isSystemRoot` plus the boundary test in that file,
+ * and is the maintainer's call.
+ *
+ * Seeded defaults never pass through this function (they are written into
+ * settings directly), so `/tmp` and the read-only /Applications entries are
+ * unaffected.
+ */
+const SYSTEM_ROOTS = new Set([
+  '/', '/bin', '/boot', '/dev', '/etc', '/lib', '/lib32', '/lib64', '/libx32',
+  '/proc', '/run', '/sbin', '/sys', '/usr', '/var',
+  '/library', '/system',
+]);
+
+const WINDOWS_SYSTEM_ROOTS = new Set([
+  'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
+]);
+
+/** @param {string} resolved path.resolve() output already. */
+function isSystemRoot(resolved) {
+  const noTrailing = resolved.replace(/[\\/]+$/, '');
+  if (noTrailing === '') return true; // '/', '//', 'C:\' with nothing after
+  const lower = noTrailing.toLowerCase();
+  if (SYSTEM_ROOTS.has(lower)) return true;
+  if (/^[a-z]:$/.test(lower)) return true; // bare drive root: 'C:'
+  if (WINDOWS_SYSTEM_ROOTS.has(lower)) return true;
+  return false;
+}
+
 class PermissionStore {
   constructor() {
     this.permissions = new Map();
@@ -247,6 +286,10 @@ class PermissionStore {
   addAllowedDirectory(dirPath, options = {}) {
     if (!dirPath || typeof dirPath !== 'string') return false;
     const resolved = path.resolve(dirPath);
+    if (isSystemRoot(resolved)) {
+      this.logAudit(`directory-allowlist.add.rejected system-root: ${resolved}`);
+      return false;
+    }
     if (!Array.isArray(this.settings.allowedDirectories)) {
       this.settings.allowedDirectories = [...DEFAULT_ALLOWED_DIRECTORIES];
     }
