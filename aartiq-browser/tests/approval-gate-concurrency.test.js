@@ -11,25 +11,31 @@
  *
  * One shared gate is used throughout, deliberately. `tickets` and
  * `consumedTickets` are module-level and shared by every instance, while ticket
- * ids are `ticket-${perInstanceCounter}-${Date.now()}`. A fresh instance per test
- * restarts the counter, so two tests running in the same millisecond mint the
- * same id and the second one is rejected by an unrelated earlier redemption.
- * That id scheme is itself worth reporting; here it is only worked around so the
- * concurrency assertions are not measuring it by accident.
+ * ids are `ticket-${perInstanceCounter}-${Date.now()}`. A fresh instance per
+ * describe restarts the counter, so two tickets minted in the same millisecond
+ * collide on the id and the second is rejected by an unrelated earlier
+ * redemption. That is not hypothetical: before this file used a single shared
+ * gate, full-suite runs intermittently failed `reports a scope mismatch when
+ * the action type differs` with APPROVAL_INVALID instead of
+ * APPROVAL_SCOPE_MISMATCH — the counter had restarted and the id landed on an
+ * already-consumed one. The instance layout below is what keeps those
+ * assertions from measuring that accident. The id scheme itself is worth
+ * reporting; it is recorded in docs-audit/mutation-check-approval-gate.txt
+ * and left for the maintainer.
  *
  * The last block covers the path the app actually uses:
- * src/core/approval-ticket-manager.js. src/lib/approval-gate.js has no callers.
+ * src/core/approval-ticket-manager.js (its own per-manager ticket map, no
+ * ApprovalGate involved). src/lib/approval-gate.js has no callers.
  */
 
 const { ApprovalGate, ERRORS } = require('../src/lib/approval-gate');
 
+// The file's single shared gate — see the header. Every describe below uses
+// it, so the counter never restarts and no id can collide with one that was
+// already consumed.
+const gate = new ApprovalGate();
+
 describe('ApprovalGate.consumeTicket — one ticket, one redemption', () => {
-  let gate;
-
-  beforeAll(() => {
-    gate = new ApprovalGate();
-  });
-
   it('lets exactly one of two simultaneous redemptions succeed', async () => {
     const action = 'CONCURRENT_PAIR';
     const id = await gate.createTicket(action, { value: 1 });
@@ -70,11 +76,8 @@ describe('ApprovalGate.consumeTicket — one ticket, one redemption', () => {
 });
 
 describe('ApprovalGate.consumeTicket — existing guarantees must survive the fix', () => {
-  let gate;
-
-  beforeAll(() => {
-    gate = new ApprovalGate();
-  });
+  // Uses the file's single shared gate (see the header) — a second instance
+  // would restart the id counter and reintroduce the same-ms collision.
 
   it('refuses a second, sequential redemption', async () => {
     const action = 'SEQUENTIAL_TWICE';
