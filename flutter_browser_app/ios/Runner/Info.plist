@@ -47,6 +47,43 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Schemes the app may hand off to other apps (canOpenURL / openURL).
+	     iOS silently answers "not installed / cannot open" for any scheme
+	     that is not listed here. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>http</string>
+		<string>https</string>
+		<string>tel</string>
+		<string>sms</string>
+		<string>facetime</string>
+		<string>facetime-audio</string>
+		<string>mailto</string>
+		<string>geo</string>
+		<string>itms-apps</string>
+		<string>itms</string>
+		<string>whatsapp</string>
+		<string>tg</string>
+		<string>telegram</string>
+		<string>signal</string>
+		<string>skype</string>
+		<string>zoomus</string>
+		<string>slack</string>
+		<string>discord</string>
+		<string>spotify</string>
+		<string>youtube</string>
+		<string>instagram</string>
+		<string>fb</string>
+		<string>twitter</string>
+		<string>snapchat</string>
+		<string>tiktok</string>
+		<string>googlemaps</string>
+		<string>comgooglemaps</string>
+		<string>applemaps</string>
+		<string>ftp</string>
+		<string>magnet</string>
+		<string>aartiq</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

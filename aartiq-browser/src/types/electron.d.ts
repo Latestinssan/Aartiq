@@ -372,6 +372,7 @@ declare global {
             saveAuthSession: (session: any) => void;
             getAuthToken: () => Promise<string | null>;
             getAuthSession: () => Promise<any>;
+            signInFirebaseMain: (payload: { provider: 'google' | 'custom'; idToken?: string; token?: string }) => Promise<{ success: boolean; uid?: string; error?: string }>;
             getUserInfo: () => Promise<any>;
             clearAuth: () => void;
             googleOAuthLogin: () => void;

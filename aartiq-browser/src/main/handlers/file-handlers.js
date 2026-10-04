@@ -47,6 +47,16 @@ module.exports = function registerFileHandlers(ipcMain, handlers) {
 
   ipcMain.handle('save-persistent-data', async (event, { key, data }) => {
     store.set(`persistent_${key}`, data);
+    // The renderer mirrors the Firebase config here so the main process can
+    // initialize Firebase (config only lives in renderer localStorage).
+    // Reinitialize so CloudSync/P2P pick it up.
+    if (key === 'firebase-config' && data) {
+      try {
+        require('../../lib/FirebaseService').default.reinitialize();
+      } catch (e) {
+        console.warn('[Firebase] Reinitialize after config mirror failed:', e.message);
+      }
+    }
     return { success: true };
   });
 

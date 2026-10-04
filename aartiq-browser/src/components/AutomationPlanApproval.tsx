@@ -5,8 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronRight,
   FolderOpen, Globe, Terminal, FileText, Brain, Zap, Lock, Eye, EyeOff,
-  Clock, ArrowRight, Save, X
+  Clock, ArrowRight, Save, X, Smartphone
 } from 'lucide-react';
+import DeviceImage from './DeviceImage';
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
@@ -107,6 +108,8 @@ const AutomationPlanApproval = memo(function AutomationPlanApproval({
   const [rememberDirs, setRememberDirs] = useState(false);
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
+  const [waitingMobileApproval, setWaitingMobileApproval] = useState(false);
+  const [mobileError, setMobileError] = useState<string | null>(null);
 
   const criticalCount = plan.operations.filter(o => o.risk === 'critical').length;
   const highRiskCount = plan.operations.filter(o => o.risk === 'high').length;
@@ -118,6 +121,51 @@ const AutomationPlanApproval = memo(function AutomationPlanApproval({
     if (rememberDirs) saveAllowlist(allowlisted);
     onApprove({ background: runInBackground, allowlistedDirs: allowlisted });
   }, [plan.directories, rememberDirs, runInBackground, onApprove]);
+
+  const handleRequestMobileApproval = useCallback(async () => {
+    setWaitingMobileApproval(true);
+    setMobileError(null);
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (!electronAPI?.invoke) {
+        throw new Error('Electron API unavailable');
+      }
+
+      const overallRisk = criticalCount > 0 ? 'critical' : highRiskCount > 0 ? 'high' : medRiskCount > 0 ? 'medium' : 'low';
+
+      const response = await electronAPI.invoke('permission-relay-request-mobile', {
+        taskName: plan.taskName,
+        taskType: plan.taskType,
+        riskLevel: overallRisk,
+        operations: plan.operations.map(op => ({
+          id: op.id,
+          type: op.type,
+          description: op.description,
+          target: op.target,
+          risk: op.risk,
+          details: op.details,
+          policyDenied: op.policyDenied,
+        })),
+        directories: plan.directories,
+        urls: plan.urls,
+        estimatedDuration: plan.estimatedDuration,
+        requiresNetwork: plan.requiresNetwork,
+        requiresFileAccess: plan.requiresFileAccess,
+      });
+
+      if (response?.approved) {
+        const allowlisted = rememberDirs ? [...new Set([...getAllowlist(), ...plan.directories])] : getAllowlist();
+        if (rememberDirs) saveAllowlist(allowlisted);
+        onApprove({ background: runInBackground, allowlistedDirs: allowlisted });
+      } else {
+        setMobileError(response?.reason || 'Mobile approval was denied');
+      }
+    } catch (e: any) {
+      setMobileError(e.message || 'Mobile relay failed');
+    } finally {
+      setWaitingMobileApproval(false);
+    }
+  }, [plan, criticalCount, highRiskCount, medRiskCount, rememberDirs, runInBackground, onApprove]);
 
   const handleDeny = useCallback(() => {
     onDeny(denyReason || undefined);
@@ -375,13 +423,43 @@ const AutomationPlanApproval = memo(function AutomationPlanApproval({
             />
           </div>
         )}
+        {/* Mobile Error Notice */}
+        {mobileError && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[10px]">
+            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+            <span>{mobileError}</span>
+          </div>
+        )}
+
+        {/* Waiting for Mobile Approval Overlay */}
+        {waitingMobileApproval && (
+          <div className="p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-400/30 text-cyan-200 text-[11px] flex items-center gap-3">
+            <DeviceImage
+              deviceType="phone"
+              deviceImage="android-phone"
+              size={42}
+              isOnline={true}
+              isPermanentSynced={true}
+            />
+            <div className="flex-1">
+              <div className="flex items-center gap-1.5">
+                <p className="font-bold text-white text-xs">Waiting for Mobile Approval...</p>
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              </div>
+              <p className="text-[10px] text-cyan-200/70 mt-0.5">
+                Permanent sync active. Confirm with Master PIN + Android Screen Lock on your phone.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-white/[0.06]">
+      <div className="flex items-center gap-1.5 px-4 py-3 border-t border-white/[0.06]">
         <button
           onClick={showDenyInput ? handleDeny : () => setShowDenyInput(true)}
-          className={`flex-1 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all ${
+          disabled={waitingMobileApproval}
+          className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all ${
             showDenyInput
               ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
               : 'bg-white/[0.05] text-secondary-text/50 hover:text-secondary-text hover:bg-white/[0.08]'
@@ -391,13 +469,23 @@ const AutomationPlanApproval = memo(function AutomationPlanApproval({
         </button>
         <button
           onClick={onModify}
-          className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg bg-white/[0.05] text-secondary-text/50 hover:text-secondary-text hover:bg-white/[0.08] transition-all"
+          disabled={waitingMobileApproval}
+          className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg bg-white/[0.05] text-secondary-text/50 hover:text-secondary-text hover:bg-white/[0.08] transition-all"
         >
           Modify
         </button>
         <button
+          onClick={handleRequestMobileApproval}
+          disabled={waitingMobileApproval}
+          className="flex-1 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-all flex items-center justify-center gap-1 border border-cyan-500/30"
+          title="Send approval request to paired mobile device (requires Master PIN + Android Screen Lock)"
+        >
+          <Smartphone size={10} /> Mobile
+        </button>
+        <button
           onClick={handleApprove}
-          className="flex-1 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-all flex items-center justify-center gap-1"
+          disabled={waitingMobileApproval}
+          className="flex-1 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-all flex items-center justify-center gap-1"
         >
           <CheckCircle2 size={10} /> Approve
         </button>

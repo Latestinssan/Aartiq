@@ -436,11 +436,12 @@ class _AartiqHomePageState extends State<AartiqHomePage>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildFeatureIcon(Icons.history, "History",
-            () => Navigator.pushNamed(context, '/settings')),
+        _buildFeatureIcon(Icons.history_edu_rounded, "Sessions",
+            () => Navigator.pushNamed(context, '/session-viewer')),
         _buildFeatureIcon(Icons.bookmark, "Bookmarks",
             () => Navigator.pushNamed(context, '/bookmarks')),
-        _buildFeatureIcon(Icons.download, "Downloads", () {}),
+        _buildFeatureIcon(Icons.terminal_rounded, "Control",
+            () => Navigator.pushNamed(context, '/desktop-control')),
         _buildFeatureIcon(Icons.qr_code, "Sync",
             () => Navigator.pushNamed(context, '/connect-desktop')),
       ],

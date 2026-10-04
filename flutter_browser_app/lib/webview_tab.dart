@@ -9,9 +9,9 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'javascript_console_result.dart';
+import 'link_launcher.dart';
 import 'long_press_alert_dialog.dart';
 import 'models/browser_model.dart';
 import 'models/window_model.dart';
@@ -392,22 +392,37 @@ class _WebViewTabState extends State<WebViewTab> with WidgetsBindingObserver {
         }
       },
       shouldOverrideUrlLoading: (controller, navigationAction) async {
-        var url = navigationAction.request.url;
-
-        if (url != null &&
-            !["http", "https", "file", "chrome", "data", "javascript", "about"]
-                .contains(url.scheme)) {
-          if (await canLaunchUrl(url)) {
-            // Launch the App
-            await launchUrl(
-              url,
-            );
-            // and cancel the request
-            return NavigationActionPolicy.CANCEL;
-          }
+        final url = navigationAction.request.url;
+        if (url == null) {
+          return NavigationActionPolicy.ALLOW;
         }
 
-        return NavigationActionPolicy.ALLOW;
+        final scheme = LinkLauncher.schemeOf(url);
+
+        if (LinkLauncher.isInternalScheme(scheme)) {
+          // Store links go to the Play Store / App Store, like in any browser.
+          if ((scheme == 'http' || scheme == 'https') &&
+              LinkLauncher.isStoreLink(url)) {
+            await LinkLauncher.openExternalUrl(url, context: context);
+            return NavigationActionPolicy.CANCEL;
+          }
+          return NavigationActionPolicy.ALLOW;
+        }
+
+        if (scheme.isEmpty) {
+          return NavigationActionPolicy.ALLOW;
+        }
+
+        // Non-web scheme (tel:, mailto:, intent:, market:, …) → other app.
+        // Only the main frame or a direct user tap may hand control over to
+        // another app, so a hidden iframe cannot pop the dialer.
+        if (!navigationAction.isForMainFrame &&
+            !(navigationAction.hasGesture ?? false)) {
+          return NavigationActionPolicy.CANCEL;
+        }
+
+        await LinkLauncher.openExternalUrl(url, context: context);
+        return NavigationActionPolicy.CANCEL;
       },
       onDownloadStartRequest: (controller, url) async {
         String path = url.url.path;

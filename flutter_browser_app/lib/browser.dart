@@ -7,6 +7,7 @@ import 'package:flutter_browser/custom_image.dart';
 import 'package:flutter_browser/tab_viewer.dart';
 import 'package:flutter_browser/app_bar/browser_app_bar.dart';
 import 'package:flutter_browser/models/webview_model.dart';
+import 'package:flutter_browser/link_launcher.dart';
 import 'package:flutter_browser/util.dart';
 import 'package:flutter_browser/webview_tab.dart';
 import 'package:flutter_browser/clipboard_monitor.dart';
@@ -96,12 +97,21 @@ class _BrowserState extends State<Browser> with SingleTickerProviderStateMixin {
       if (!mounted) return;
 
       if (action == 'view' && url != null && url.isNotEmpty) {
-        // Standard deep-link / browser URL → open in WebView tab
-        final windowModel = Provider.of<WindowModel>(context, listen: false);
-        windowModel.addTab(WebViewTab(
-          key: GlobalKey(),
-          webViewModel: WebViewModel(url: WebUri(url)),
-        ));
+        // aartiq:// links are routed by AppLinks in main.dart; re-launching
+        // them here would bounce straight back into this app forever.
+        if (LinkLauncher.schemeOf(WebUri(url)) != 'aartiq') {
+          // Standard deep-link / browser URL → open in WebView tab
+          final windowModel = Provider.of<WindowModel>(context, listen: false);
+          if (LinkLauncher.canLoadInWebView(WebUri(url))) {
+            windowModel.addTab(WebViewTab(
+              key: GlobalKey(),
+              webViewModel: WebViewModel(url: WebUri(url)),
+            ));
+          } else {
+            // tel:, mailto:, intent:, … → handled by another app
+            LinkLauncher.openExternalUrl(WebUri(url), context: context);
+          }
+        }
       } else if (action == 'search') {
         // Widget search bar tapped (no typed query yet) → just open the app
         // If a query was pre-filled (e.g. from OS web-search intent) navigate to it
@@ -109,11 +119,16 @@ class _BrowserState extends State<Browser> with SingleTickerProviderStateMixin {
         final browserModel = Provider.of<BrowserModel>(context, listen: false);
         final settings     = browserModel.getSettings();
         if (query != null && query.isNotEmpty) {
-          final uri = WebUri(settings.searchEngine.searchUrl + query);
-          windowModel.addTab(WebViewTab(
-            key: GlobalKey(),
-            webViewModel: WebViewModel(url: uri),
-          ));
+          final uri =
+              Util.resolveAddressInput(query, settings.searchEngine.searchUrl);
+          if (LinkLauncher.canLoadInWebView(uri)) {
+            windowModel.addTab(WebViewTab(
+              key: GlobalKey(),
+              webViewModel: WebViewModel(url: uri),
+            ));
+          } else {
+            LinkLauncher.openExternalUrl(uri, context: context);
+          }
         }
         // If no query → app is open, user lands on home page / search bar
       } else if (action == 'voice') {
@@ -319,12 +334,13 @@ class _BrowserState extends State<Browser> with SingleTickerProviderStateMixin {
               Provider.of<BrowserModel>(context, listen: false);
           final settings = browserModel.getSettings();
 
-          var url = WebUri(value.trim());
-          if (Util.isLocalizedContent(url) ||
-              (url.isValidUri && url.toString().split(".").length > 1)) {
-            url = url.scheme.isEmpty ? WebUri("https://$url") : url;
-          } else {
-            url = WebUri(settings.searchEngine.searchUrl + value);
+          var url = Util.resolveAddressInput(
+              value, settings.searchEngine.searchUrl);
+
+          // tel:, mailto:, market:, … belong to other apps, not a new tab.
+          if (!LinkLauncher.canLoadInWebView(url)) {
+            LinkLauncher.openExternalUrl(url, context: context);
+            return;
           }
 
           windowModel.addTab(WebViewTab(

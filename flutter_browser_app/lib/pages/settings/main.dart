@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_browser/auth_service.dart';
 import 'package:flutter_browser/models/browser_model.dart';
 import 'package:flutter_browser/pages/settings/android_settings.dart';
@@ -16,6 +16,10 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  /// Same channel the Android side uses for intent data; it also exposes
+  /// `openDefaultBrowserSettings`.
+  static const MethodChannel _systemChannel =
+      MethodChannel('com.aartiq.intent_data');
   Widget _buildGoogleProfileSection(BuildContext context, Map<String, dynamic>? user, bool isLoggedIn) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -359,21 +363,75 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _setAsDefaultBrowser(BuildContext context) async {
-    if (Util.isDesktop()) {
-      // success = await window.ipcRenderers.invoke('set-as-default-browser');
-    } else if (Platform.isAndroid) {
-      // Open Android Default App Settings
-      // const intent = 'android.settings.MANAGE_DEFAULT_APPS_SETTINGS';
-      // InAppWebView can handle some intents or we can use url_launcher
-      // For now, let's just show a snackbar or use a method in BrowserModel
+    if (Util.isAndroid()) {
+      // Ask Android for the browser role (Android 10+), falling back to the
+      // Default apps settings screen.
+      String? status;
+      try {
+        status = await _systemChannel
+            .invokeMethod<String>('openDefaultBrowserSettings');
+      } catch (e) {
+        status = null;
+      }
+
+      if (!context.mounted) return;
+
+      final String message;
+      switch (status) {
+        case 'already':
+          message = 'Aartiq is already your default browser.';
+          break;
+        case 'granted':
+          message = 'Aartiq is now your default browser.';
+          break;
+        case 'settings':
+          message = 'Pick Aartiq in the Default apps list to finish.';
+          break;
+        case 'denied':
+          message = 'Aartiq was not set as the default browser.';
+          break;
+        default:
+          message = 'Could not open the default browser settings.';
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+
+    if (Util.isIOS()) {
+      // iOS does not expose an API for this — walk the user through Settings.
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF121212),
+          title: const Text(
+            'Set as Default Browser',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'iPhone apps cannot change this themselves.\n\n'
+            'Open Settings → Aartiq → Default Browser App and choose Aartiq.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'OK',
+                style: TextStyle(color: Color(0xFF00E5FF)),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
     }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(Util.isDesktop()
-              ? 'Please set Aartiq as default in your System Settings.'
-              : 'Please set Aartiq as default in your System Settings.'),
+        const SnackBar(
+          content: Text('Please set Aartiq as default in your System Settings.'),
         ),
       );
     }

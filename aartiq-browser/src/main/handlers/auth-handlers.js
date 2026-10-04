@@ -202,6 +202,47 @@ async function verifyVaultAccess({ reason, actionText, store, permissionStore })
 module.exports = function registerAuthHandlers(ipcMain, handlers) {
   const { mainWindow, store, permissionStore } = handlers;
 
+  // ---------------------------------------------------------------------------
+  // Main-process Firebase sign-in.
+  //
+  // Cloud sync and P2P run in the MAIN process, but Google sign-in happens in
+  // the renderer (popup / OAuth window). The renderer forwards its Google id
+  // token (or a custom token) here so both processes end up signed into the
+  // SAME Firebase account/uid — that shared uid is what the device-registry
+  // bridge (devices/{uid}) and the shared pairing master key are keyed on.
+  // ---------------------------------------------------------------------------
+  async function signInMainProcessFirebase(payload) {
+    try {
+      const firebaseService = require('../../lib/FirebaseService').default;
+      if (!firebaseService.app) {
+        return { success: false, error: 'Firebase config not available in main process yet' };
+      }
+      let user = null;
+      if (payload?.provider === 'custom' && payload.token) {
+        user = await firebaseService.signInWithCustomToken(payload.token);
+      } else if (payload?.provider === 'google' && payload.idToken) {
+        const { GoogleAuthProvider } = require('firebase/auth');
+        user = await firebaseService.signInWithCredential(
+          GoogleAuthProvider.credential(payload.idToken)
+        );
+      } else {
+        return { success: false, error: 'Unsupported sign-in payload' };
+      }
+      if (user) {
+        console.log('[Auth] Main process signed into Firebase:', user.uid);
+        return { success: true, uid: user.uid };
+      }
+      return { success: false, error: 'Sign-in returned no user' };
+    } catch (error) {
+      console.error('[Auth] Main process Firebase sign-in failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  ipcMain.handle('sign-in-firebase-main', async (event, payload) => {
+    return signInMainProcessFirebase(payload);
+  });
+
   function getVaultEntries() {
     return store.get('vault_entries') || [];
   }
@@ -667,6 +708,21 @@ module.exports = function registerAuthHandlers(ipcMain, handlers) {
               if (d.id_token) params.set('id_token', d.id_token);
               if (d.firebaseConfig) params.set('firebase_config', btoa(JSON.stringify(d.firebaseConfig)));
               dispatchAuthCallback(`aartiq-browser://auth?${params.toString()}`);
+
+              // Hand the session to the MAIN process too (cloud sync / P2P
+              // live there). Persist the provided Firebase config so the main
+              // process can initialize, then sign in with the same Google id
+              // token → same uid as the renderer (same Google account).
+              try {
+                if (d.firebaseConfig && store) {
+                  store.set('persistent_firebase-config', d.firebaseConfig);
+                  require('../../lib/FirebaseService').default.reinitialize();
+                }
+              } catch (e) { /* config mirror is best-effort */ }
+              const googleIdToken = d.idToken || d.id_token;
+              if (googleIdToken) {
+                signInMainProcessFirebase({ provider: 'google', idToken: googleIdToken }).catch(() => {});
+              }
             }
           }
         } catch (e) { }

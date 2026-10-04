@@ -195,6 +195,16 @@ void main(List<String> args) async {
       SyncService().tryAutoReconnect();
     }
 
+    // Firebase bridge: publish this device's P2P id under the account and
+    // sync the shared pairing master key once a real Firebase session exists
+    // (both devices signed into the same Google account → same uid).
+    AuthService().onAuthStateChanged.listen((user) {
+      if (user != null && AuthService().currentFirebaseUser != null) {
+        unawaited(
+            SyncService().initializeCloud(user['userId'] as String));
+      }
+    });
+
     Timer.periodic(const Duration(seconds: 3), (timer) async {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       if (data?.text != null) {

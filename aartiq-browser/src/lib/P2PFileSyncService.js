@@ -92,6 +92,9 @@ var P2PFileSyncService = /** @class */ (function (_super) {
         _this.storage = null; // Add storage property
         _this.userId = null;
         _this.remoteDeviceId = null; // Track the device we are trying to connect to
+        _this._initiator = true; // true = we create the offer, false = we answer
+        _this._ownSignalsSubscribed = false;
+        _this._pendingRemoteCandidates = [];
         _this._relayListenerOff = null;
         _this.deviceId = deviceId;
         _this._passphrase = passphrase || P2PFileSyncService.generatePassphrase();
@@ -126,7 +129,7 @@ var P2PFileSyncService = /** @class */ (function (_super) {
     P2PFileSyncService.prototype.initializeFirebase = function () {
         var _this = this;
         FirebaseService_1.default.onAuthReady(function () {
-            var _a;
+            var _a, _b, _c, _d, _e;
             if (FirebaseService_1.default.app && ((_a = FirebaseService_1.default.auth) === null || _a === void 0 ? void 0 : _a.currentUser)) {
                 _this.db = (0, database_1.getDatabase)(FirebaseService_1.default.app);
                 _this.storage = (0, storage_1.getStorage)(FirebaseService_1.default.app);
@@ -134,33 +137,97 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                 console.log('[P2P] Firebase initialized for user:', _this.userId);
                 _this.emit('firebase-ready', _this.userId);
                 _this._listenForRelayFiles(); // Start listening for relayed files
+                // Always listen on OUR OWN inbox (p2p_signals/{uid}/{ourId}).
+                // Previously the only listener was attached to the remote
+                // device's inbox, so answers from the peer were never seen and
+                // a phone-initiated offer was never answered.
+                _this._subscribeOwnSignals();
+                // Make sure the account-scoped master key exists before any
+                // signal needs to be signed or verified.
+                (_e = (_d = (_c = (_b = _this._cloudSync()) === null || _b === void 0 ? void 0 : _b.ensurePairingMasterKey) === null || _c === void 0 ? void 0 : _c.call(_b)) === null || _d === void 0 ? void 0 : _d.catch) === null || _e === void 0 ? void 0 : _e.call(_d, function () { });
             }
             else {
                 console.warn('[P2P] Firebase not ready or no user logged in.');
             }
         });
     };
+    /** Lazy access to the cloud sync singleton (avoids module-load cycles). */
+    P2PFileSyncService.prototype._cloudSync = function () {
+        try {
+            return require('./CloudSyncService').cloudSyncService;
+        }
+        catch (_) {
+            return null;
+        }
+    };
+    P2PFileSyncService.prototype._subscribeOwnSignals = function () {
+        var _this = this;
+        if (!this.db || !this.userId || this._ownSignalsSubscribed)
+            return;
+        this._ownSignalsSubscribed = true;
+        var signalRef = (0, database_1.ref)(this.db, "p2p_signals/".concat(this.userId, "/").concat(this.deviceId));
+        (0, database_1.onValue)(signalRef, function (snapshot) { return _this._handleFirebaseSignal(snapshot); });
+    };
+    /**
+     * Fetch the shared pairing master key, creating it if this is the first
+     * device of the account to ask. Returns null when cloud sync/auth is not
+     * available — callers fail closed in that case.
+     */
+    P2PFileSyncService.prototype._getMasterKey = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            var cloud, key;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        cloud = this._cloudSync();
+                        if (!cloud)
+                            return [2 /*return*/, null];
+                        key = typeof cloud.getPairingMasterKey === 'function' ? cloud.getPairingMasterKey() : null;
+                        if (!(!key && typeof cloud.ensurePairingMasterKey === 'function')) return [3 /*break*/, 2];
+                        return [4 /*yield*/, cloud.ensurePairingMasterKey().catch(function () { return null; })];
+                    case 1:
+                        key = _a.sent();
+                        _a.label = 2;
+                    case 2: return [2 /*return*/, key || null];
+                }
+            });
+        });
+    };
     // Call this from the renderer process when a connection is desired
     P2PFileSyncService.prototype.connectToRemoteDevice = function (remoteDeviceId) {
         return __awaiter(this, void 0, void 0, function () {
-            var signalRef;
-            var _this = this;
+            var cloud, _1;
             return __generator(this, function (_a) {
-                this.remoteDeviceId = remoteDeviceId;
-                if (!this.userId) {
-                    console.error('[P2P] User not authenticated for Firebase signaling.');
-                    return [2 /*return*/, false];
+                switch (_a.label) {
+                    case 0:
+                        if (!this.userId || !this.db) {
+                            console.error('[P2P] User not authenticated for Firebase signaling.');
+                            return [2 /*return*/, false];
+                        }
+                        cloud = this._cloudSync();
+                        if (!(cloud && typeof cloud.resolveP2pId === 'function')) return [3 /*break*/, 4];
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, cloud.resolveP2pId(remoteDeviceId)];
+                    case 2:
+                        remoteDeviceId = _a.sent();
+                        return [3 /*break*/, 4];
+                    case 3:
+                        _1 = _a.sent();
+                        return [3 /*break*/, 4];
+                    case 4:
+                        this.remoteDeviceId = remoteDeviceId;
+                        this._subscribeOwnSignals();
+                        return [2 /*return*/, this.initializeP2PConnection(remoteDeviceId, true)];
                 }
-                signalRef = (0, database_1.ref)(this.db, "p2p_signals/".concat(this.userId, "/").concat(this.remoteDeviceId));
-                (0, database_1.onValue)(signalRef, function (snapshot) { return _this._handleFirebaseSignal(snapshot); });
-                return [2 /*return*/, this.initializeP2PConnection(remoteDeviceId)];
             });
         });
     };
     // Method to send signaling data via Firebase
     P2PFileSyncService.prototype.sendSignal = function (signal, remoteDeviceId) {
         return __awaiter(this, void 0, void 0, function () {
-            var signalPath;
+            var masterKey, computeSignalAuth, timestamp, signalPath;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -168,11 +235,23 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                             console.error('[P2P] Cannot send signal: Firebase not ready, no user, or no remote device.');
                             return [2 /*return*/];
                         }
-                        signalPath = "p2p_signals/".concat(this.userId, "/").concat(remoteDeviceId);
-                        // Push the signal to Firebase. Use a timestamp or unique ID to order messages.
-                        return [4 /*yield*/, (0, database_1.set)((0, database_1.ref)(this.db, signalPath), { signal: signal, sender: this.deviceId, timestamp: Date.now() })];
+                        return [4 /*yield*/, this._getMasterKey()];
                     case 1:
-                        // Push the signal to Firebase. Use a timestamp or unique ID to order messages.
+                        masterKey = _a.sent();
+                        if (!masterKey) {
+                            console.error('[P2P] Not sending signal: shared pairing master key unavailable.');
+                            return [2 /*return*/];
+                        }
+                        computeSignalAuth = require('./pairing-auth').computeSignalAuth;
+                        timestamp = Date.now();
+                        signalPath = "p2p_signals/".concat(this.userId, "/").concat(remoteDeviceId);
+                        return [4 /*yield*/, (0, database_1.set)((0, database_1.ref)(this.db, signalPath), {
+                                signal: signal,
+                                sender: this.deviceId,
+                                timestamp: timestamp,
+                                auth: computeSignalAuth(masterKey, timestamp),
+                            })];
+                    case 2:
                         _a.sent();
                         console.log("[P2P] Sent signal to ".concat(remoteDeviceId, " via Firebase:"), signal);
                         return [2 /*return*/];
@@ -182,33 +261,156 @@ var P2PFileSyncService = /** @class */ (function (_super) {
     };
     // Handle incoming signaling data from Firebase
     P2PFileSyncService.prototype._handleFirebaseSignal = function (snapshot) {
-        var data = snapshot.val();
-        if (data && data.sender !== this.deviceId) { // Ignore signals sent by self
-            console.log('[P2P] Received signal from Firebase:', data.signal);
-            var signal = data.signal;
-            if (this.peerConnection) {
-                if (signal.sdp) {
-                    this.peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp))
-                        .catch(function (e) { return console.error('[P2P] Error setting remote description:', e); });
+        return __awaiter(this, void 0, void 0, function () {
+            var data, masterKey, verifySignalAuth, signal, sender, e_1;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        data = snapshot.val();
+                        if (!data || data.sender === this.deviceId) {
+                            return [2 /*return*/]; // empty (or our own echo)
+                        }
+                        return [4 /*yield*/, this._getMasterKey()];
+                    case 1:
+                        masterKey = _a.sent();
+                        verifySignalAuth = require('./pairing-auth').verifySignalAuth;
+                        if (!verifySignalAuth(masterKey, data.auth, data.timestamp)) {
+                            console.warn('[P2P] Rejected signal from', data.sender, '— master-key authentication failed');
+                            (0, database_1.set)(snapshot.ref, null);
+                            return [2 /*return*/];
+                        }
+                        signal = data.signal;
+                        sender = data.sender;
+                        console.log('[P2P] Received signal from Firebase:', sender);
+                        _a.label = 2;
+                    case 2:
+                        _a.trys.push([2, 8, , 9]);
+                        if (!(signal === null || signal === void 0 ? void 0 : signal.sdp)) return [3 /*break*/, 4];
+                        return [4 /*yield*/, this._handleRemoteSdp(signal.sdp, sender)];
+                    case 3:
+                        _a.sent();
+                        return [3 /*break*/, 7];
+                    case 4:
+                        if (!(signal === null || signal === void 0 ? void 0 : signal.candidate)) return [3 /*break*/, 7];
+                        if (!this.peerConnection) return [3 /*break*/, 6];
+                        return [4 /*yield*/, this.peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate))];
+                    case 5:
+                        _a.sent();
+                        return [3 /*break*/, 7];
+                    case 6:
+                        // Candidate arrived before the peer connection exists — hold it.
+                        this._pendingRemoteCandidates.push(signal.candidate);
+                        _a.label = 7;
+                    case 7: return [3 /*break*/, 9];
+                    case 8:
+                        e_1 = _a.sent();
+                        console.error('[P2P] Error handling signal:', e_1);
+                        return [3 /*break*/, 9];
+                    case 9:
+                        // Clear the signal after processing to avoid re-processing
+                        (0, database_1.set)(snapshot.ref, null);
+                        return [2 /*return*/];
                 }
-                else if (signal.candidate) {
-                    this.peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate))
-                        .catch(function (e) { return console.error('[P2P] Error adding ICE candidate:', e); });
+            });
+        });
+    };
+    P2PFileSyncService.prototype._handleRemoteSdp = function (sdp, sender) {
+        return __awaiter(this, void 0, void 0, function () {
+            var type, answer;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        type = sdp === null || sdp === void 0 ? void 0 : sdp.type;
+                        if (!(type === 'offer')) return [3 /*break*/, 8];
+                        this.remoteDeviceId = sender;
+                        if (!(!this.peerConnection || this._initiator)) return [3 /*break*/, 2];
+                        return [4 /*yield*/, this.initializeP2PConnection(sender, false)];
+                    case 1:
+                        _a.sent();
+                        _a.label = 2;
+                    case 2: return [4 /*yield*/, this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))];
+                    case 3:
+                        _a.sent();
+                        return [4 /*yield*/, this.peerConnection.createAnswer()];
+                    case 4:
+                        answer = _a.sent();
+                        return [4 /*yield*/, this.peerConnection.setLocalDescription(answer)];
+                    case 5:
+                        _a.sent();
+                        return [4 /*yield*/, this.sendSignal({ sdp: this.peerConnection.localDescription }, sender)];
+                    case 6:
+                        _a.sent();
+                        return [4 /*yield*/, this._flushPendingCandidates()];
+                    case 7:
+                        _a.sent();
+                        return [3 /*break*/, 11];
+                    case 8:
+                        if (!(type === 'answer')) return [3 /*break*/, 11];
+                        if (!this.peerConnection) return [3 /*break*/, 11];
+                        return [4 /*yield*/, this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))];
+                    case 9:
+                        _a.sent();
+                        return [4 /*yield*/, this._flushPendingCandidates()];
+                    case 10:
+                        _a.sent();
+                        _a.label = 11;
+                    case 11: return [2 /*return*/];
                 }
-            }
-            // Clear the signal after processing to avoid re-processing
-            (0, database_1.set)(snapshot.ref, null);
-        }
+            });
+        });
+    };
+    P2PFileSyncService.prototype._flushPendingCandidates = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            var pending, _i, pending_1, candidate, e_2;
+            var _a;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        pending = this._pendingRemoteCandidates.splice(0);
+                        _i = 0, pending_1 = pending;
+                        _b.label = 1;
+                    case 1:
+                        if (!(_i < pending_1.length)) return [3 /*break*/, 6];
+                        candidate = pending_1[_i];
+                        _b.label = 2;
+                    case 2:
+                        _b.trys.push([2, 4, , 5]);
+                        return [4 /*yield*/, ((_a = this.peerConnection) === null || _a === void 0 ? void 0 : _a.addIceCandidate(new RTCIceCandidate(candidate)))];
+                    case 3:
+                        _b.sent();
+                        return [3 /*break*/, 5];
+                    case 4:
+                        e_2 = _b.sent();
+                        console.warn('[P2P] Failed to add queued ICE candidate:', e_2);
+                        return [3 /*break*/, 5];
+                    case 5:
+                        _i++;
+                        return [3 /*break*/, 1];
+                    case 6: return [2 /*return*/];
+                }
+            });
+        });
     };
     /**
      * Initialize WebRTC connection for P2P file transfer
      */
-    P2PFileSyncService.prototype.initializeP2PConnection = function (remoteDeviceId) {
-        return __awaiter(this, void 0, void 0, function () {
+    P2PFileSyncService.prototype.initializeP2PConnection = function (remoteDeviceId_1) {
+        return __awaiter(this, arguments, void 0, function (remoteDeviceId, initiator) {
             var _this = this;
+            if (initiator === void 0) { initiator = true; }
             return __generator(this, function (_a) {
                 try {
                     // Create peer connection with STUN servers
+                    if (this.peerConnection) {
+                        try {
+                            this.peerConnection.close();
+                        }
+                        catch (_) { /* already closed */ }
+                        this.peerConnection = null;
+                    }
+                    this._initiator = initiator;
+                    this._pendingRemoteCandidates = [];
+                    this.remoteDeviceId = remoteDeviceId;
                     this.peerConnection = new RTCPeerConnection({
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
@@ -216,8 +418,8 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         ]
                     });
                     this.peerConnection.onicecandidate = function (event) {
-                        if (event.candidate) {
-                            _this.sendSignal({ candidate: event.candidate }, remoteDeviceId);
+                        if (event.candidate && _this.remoteDeviceId) {
+                            _this.sendSignal({ candidate: event.candidate }, _this.remoteDeviceId);
                         }
                     };
                     this.peerConnection.onnegotiationneeded = function () { return __awaiter(_this, void 0, void 0, function () {
@@ -225,20 +427,26 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         return __generator(this, function (_a) {
                             switch (_a.label) {
                                 case 0:
-                                    _a.trys.push([0, 3, , 4]);
-                                    return [4 /*yield*/, this.peerConnection.createOffer()];
+                                    if (!this._initiator)
+                                        return [2 /*return*/]; // answer side drives negotiation explicitly
+                                    _a.label = 1;
                                 case 1:
+                                    _a.trys.push([1, 4, , 5]);
+                                    return [4 /*yield*/, this.peerConnection.createOffer()];
+                                case 2:
                                     offer = _a.sent();
                                     return [4 /*yield*/, this.peerConnection.setLocalDescription(offer)];
-                                case 2:
-                                    _a.sent();
-                                    this.sendSignal({ sdp: this.peerConnection.localDescription }, remoteDeviceId);
-                                    return [3 /*break*/, 4];
                                 case 3:
+                                    _a.sent();
+                                    if (this.remoteDeviceId) {
+                                        this.sendSignal({ sdp: this.peerConnection.localDescription }, this.remoteDeviceId);
+                                    }
+                                    return [3 /*break*/, 5];
+                                case 4:
                                     err_1 = _a.sent();
                                     console.error('[P2P] Error creating or sending offer:', err_1);
-                                    return [3 /*break*/, 4];
-                                case 4: return [2 /*return*/];
+                                    return [3 /*break*/, 5];
+                                case 5: return [2 /*return*/];
                             }
                         });
                     }); };
@@ -246,6 +454,11 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         _this.dataChannel = event.channel;
                         _this.setupDataChannel();
                     };
+                    if (initiator) {
+                        // Creating the data channel triggers onnegotiationneeded → offer.
+                        this.dataChannel = this.peerConnection.createDataChannel('sync-channel');
+                        this.setupDataChannel();
+                    }
                     return [2 /*return*/, true];
                 }
                 catch (error) {
@@ -308,7 +521,7 @@ var P2PFileSyncService = /** @class */ (function (_super) {
      */
     P2PFileSyncService.prototype.scanFolder = function (folderPath, types) {
         return __awaiter(this, void 0, void 0, function () {
-            var fs, path, results, scanRecursive, e_1;
+            var fs, path, results, scanRecursive, e_3;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
@@ -376,8 +589,8 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         _a.sent();
                         return [3 /*break*/, 6];
                     case 5:
-                        e_1 = _a.sent();
-                        console.error('[P2P] Scan error:', e_1);
+                        e_3 = _a.sent();
+                        console.error('[P2P] Scan error:', e_3);
                         return [3 /*break*/, 6];
                     case 6: return [2 /*return*/, results];
                 }
@@ -458,7 +671,7 @@ var P2PFileSyncService = /** @class */ (function (_super) {
      */
     P2PFileSyncService.prototype.syncViaRelay = function (folderId) {
         return __awaiter(this, void 0, void 0, function () {
-            var folder, localFiles, filesQueued, _i, localFiles_2, file, fileData, encryptResult, encryptedData, iv, authTag, salt, storagePath, fileRef, downloadURL, fileRelayMetadata, e_2;
+            var folder, localFiles, filesQueued, _i, localFiles_2, file, fileData, encryptResult, encryptedData, iv, authTag, salt, storagePath, fileRef, downloadURL, fileRelayMetadata, e_4;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -513,8 +726,8 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         this.emit('relay-queued', { folderId: folderId, count: filesQueued });
                         return [2 /*return*/, { success: true, filesSynced: filesQueued }];
                     case 11:
-                        e_2 = _a.sent();
-                        console.error('[Relay] Offline queue failed:', e_2);
+                        e_4 = _a.sent();
+                        console.error('[Relay] Offline queue failed:', e_4);
                         return [2 /*return*/, { success: false, filesSynced: 0 }];
                     case 12: return [2 /*return*/];
                 }
@@ -527,7 +740,7 @@ var P2PFileSyncService = /** @class */ (function (_super) {
             return;
         var relayRef = (0, database_1.ref)(this.db, "p2p_relay_metadata/".concat(this.deviceId));
         this._relayListenerOff = (0, database_1.onValue)(relayRef, function (snapshot) { return __awaiter(_this, void 0, void 0, function () {
-            var filesToProcess, _a, _b, _c, _i, fileId, fileMetadata, fileRef, arrayBuffer, decryptResult, decryptedData, e_3;
+            var filesToProcess, _a, _b, _c, _i, fileId, fileMetadata, fileRef, arrayBuffer, decryptResult, decryptedData, e_5;
             return __generator(this, function (_d) {
                 switch (_d.label) {
                     case 0:
@@ -577,8 +790,8 @@ var P2PFileSyncService = /** @class */ (function (_super) {
                         this.emit('file-relayed', __assign(__assign({}, fileMetadata), { decryptedData: decryptedData }));
                         return [3 /*break*/, 9];
                     case 8:
-                        e_3 = _d.sent();
-                        console.error("[Relay] Error processing relayed file ".concat(fileMetadata.name, ":"), e_3);
+                        e_5 = _d.sent();
+                        console.error("[Relay] Error processing relayed file ".concat(fileMetadata.name, ":"), e_5);
                         return [3 /*break*/, 9];
                     case 9:
                         _i++;

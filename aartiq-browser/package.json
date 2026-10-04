@@ -21,7 +21,7 @@
     "test:extraction:live": "electron tests/live-extraction-test.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "predev": "npx tsc src/lib/P2PFileSyncService.ts src/lib/WiFiSyncService.ts src/lib/modelRegistry.ts src/lib/CloudSyncService.ts src/types/electron.d.ts --outDir src/lib --module CommonJS --skipLibCheck --esModuleInterop",
+    "predev": "npx tsc src/lib/P2PFileSyncService.ts src/lib/WiFiSyncService.ts src/lib/modelRegistry.ts src/lib/CloudSyncService.ts src/lib/DeviceIdentifier.ts src/lib/MasterPINService.ts src/lib/UnifiedSessionManager.ts src/lib/PermissionRelayService.ts src/types/electron.d.ts --outDir src/lib --module CommonJS --skipLibCheck --esModuleInterop",
     "test:prod": "node test-production.js",
     "prebuild-electron": "node verify-build.js",
     "build-macos-helper": "node scripts/build-macos-device-unlock-helper.js",

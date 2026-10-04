@@ -245,6 +245,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getAuthToken: () => ipcRenderer.invoke('get-auth-token'),
   getAuthSession: () => ipcRenderer.invoke('get-auth-session'),
+  // Sign the MAIN process into Firebase with a credential from the renderer
+  // so cloud sync / P2P share the renderer's Google account uid.
+  signInFirebaseMain: (payload) => ipcRenderer.invoke('sign-in-firebase-main', payload),
   getUserInfo: () => ipcRenderer.invoke('get-user-info'),
   clearAuth: () => ipcRenderer.send('clear-auth'),
 

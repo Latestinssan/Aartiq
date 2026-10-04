@@ -20,6 +20,8 @@ class PopupMenuActions {
   // ignore: constant_identifier_names
   static const String SHARE = "Share";
   // ignore: constant_identifier_names
+  static const String OPEN_IN_BROWSER = "Open in external browser";
+  // ignore: constant_identifier_names
   static const String FIND_ON_PAGE = "Find on page";
   // ignore: constant_identifier_names
   static const String DESKTOP_MODE = "Desktop site";
@@ -54,6 +56,7 @@ class PopupMenuActions {
         HISTORY,
         FAVORITES,
         SHARE,
+        OPEN_IN_BROWSER,
         DESKTOP_MODE,
         ADD_TO_HOME_SCREEN,
         DOWNLOAD,
@@ -73,6 +76,7 @@ class PopupMenuActions {
       HISTORY,
       FAVORITES,
       SHARE,
+      OPEN_IN_BROWSER,
       DESKTOP_MODE,
       FIND_ON_PAGE,
       SETTINGS,

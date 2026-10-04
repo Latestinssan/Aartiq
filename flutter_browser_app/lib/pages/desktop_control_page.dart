@@ -442,6 +442,13 @@ class _DesktopControlPageState extends State<DesktopControlPage>
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.history_edu_rounded, color: Color(0xFF00E5FF)),
+            tooltip: 'Aartiq Sessions',
+            onPressed: () {
+              Navigator.pushNamed(context, '/session-viewer');
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white70),
             onPressed: _fetchDesktopStatus,
           ),

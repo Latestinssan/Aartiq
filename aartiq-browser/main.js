@@ -1073,7 +1073,21 @@ let tesseractOcrService = new TesseractOcrService();
 let screenVisionService = new ScreenVisionService(cometAiEngine);
 wifiSyncService = getWiFiSync();
 wifiSyncService.start();
-p2pSyncService = getP2PSync();
+// P2P needs a stable device id at construction; without one getP2PSync()
+// returns null and the desktop side of Firebase P2P never existed.
+p2pSyncService = getP2PSync(wifiSyncService.getDeviceId());
+// Cloud sync was declared but never initialized, so desktop registration,
+// device discovery and Firebase P2P never ran. Wire it with the same
+// stable desktop id WiFi sync uses so devices/{uid}/{deviceId} and the
+// P2P inbox (p2p_signals/{uid}/{deviceId}) agree with what mobile expects.
+try {
+  const { cloudSyncService: cloudSync } = require('./src/lib/CloudSyncService.js');
+  cloudSyncService = cloudSync;
+  cloudSyncService.setDeviceInfo(wifiSyncService.getDeviceId(), wifiSyncService.getDeviceName(), 'desktop');
+  cloudSyncService.initialize();
+} catch (e) {
+  console.warn('[CloudSync] Failed to initialize cloud sync:', e.message);
+}
 let flutterBridge = null;
 let fileSystemMcp = null;
 let nativeAppMcp = null;
@@ -9434,7 +9448,11 @@ ${tabData}`;
   // Wire modular IPC handlers from src/main/handlers/
   // NOTE: must be after createWindow() so mainWindow is initialized
   const handlerDeps = {
-    mainWindow, store, getTopWindow, isDev, isOnline,
+    mainWindow,
+    // Live accessor: handlers must not hold the startup window by value —
+    // it is destroyed when the user closes the window and a new one may be
+    // created later. Resolved at send time by sync-handlers (and friends).
+    getMainWindow: () => mainWindow, store, getTopWindow, isDev, isOnline,
     cometAiEngine, llmProviders, llmGenerateHandler, llmStreamHandler,
     tabViews, activeTabId,
     robotService, tesseractOcrService, screenVisionService, permissionStore, checkAiActionPermission,

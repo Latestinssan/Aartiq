@@ -1,13 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter/material.dart';
 import 'main.dart';
+import 'models/permission_model.dart';
+import 'models/session_model.dart';
+import 'services/permission_service.dart';
+import 'services/device_info_service.dart';
+import 'services/pairing_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'pages/permission_approval_page.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -20,6 +29,9 @@ class SyncService {
   final Set<String> _pendingDiscoveryReconnects = <String>{};
 
   DatabaseReference? _signalRef;
+  StreamSubscription<DatabaseEvent>? _p2pSignalsSubscription;
+  String? _pairingMasterKey;
+  final List<Map<String, dynamic>> _pendingRemoteCandidates = [];
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _dataChannel;
   bool isConnected = false;
@@ -191,14 +203,11 @@ class SyncService {
   }
 
   Future<void> connect(String targetDeviceId) async {
-    this.remoteDeviceId = targetDeviceId;
-    _signalRef = FirebaseDatabase.instance.ref('p2p_signals/$userId/$deviceId');
-
-    _signalRef!.onValue.listen((event) {
-      if (event.snapshot.value != null) {
-        _handleSignal(event.snapshot.value as Map);
-      }
-    });
+    // Bridge: resolve the peer's P2P inbox id from the Firebase registry
+    // (devices/{uid}/{id}/p2pId), falling back to the id we were given.
+    final resolvedTarget = await _resolveP2pId(targetDeviceId);
+    this.remoteDeviceId = resolvedTarget;
+    _subscribeOwnSignals();
 
     await _setupPeerConnection();
 
@@ -211,7 +220,39 @@ class SyncService {
 
     RTCSessionDescription offer = await _peerConnection!.createOffer();
     await _peerConnection!.setLocalDescription(offer);
-    _sendSignal({'sdp': offer.toMap()});
+    unawaited(_sendSignal({'sdp': offer.toMap()}));
+  }
+
+  /// Listen on our OWN signal inbox (p2p_signals/{uid}/{ourId}) exactly once.
+  /// Required so a desktop-initiated offer is answered even when the phone
+  /// never called [connect] itself.
+  void _subscribeOwnSignals() {
+    final owner = _p2pUserId;
+    final me = _p2pDeviceId;
+    if (owner == null || me == null || _p2pSignalsSubscription != null) return;
+    _signalRef = FirebaseDatabase.instance.ref('p2p_signals/$owner/$me');
+    _p2pSignalsSubscription = _signalRef!.onValue.listen((event) {
+      final value = event.snapshot.value;
+      if (value is Map) {
+        _handleSignal(Map<String, dynamic>.from(value));
+      }
+    });
+  }
+
+  /// Resolve a device's P2P inbox id from devices/{uid}/{deviceId}/p2pId.
+  Future<String> _resolveP2pId(String deviceIdOrP2pId) async {
+    final owner = _p2pUserId;
+    if (owner == null) return deviceIdOrP2pId;
+    try {
+      final snapshot = await FirebaseDatabase.instance
+          .ref('devices/$owner/$deviceIdOrP2pId/p2pId')
+          .get();
+      final p2pId = snapshot.value;
+      if (p2pId is String && p2pId.isNotEmpty) return p2pId;
+    } catch (e) {
+      print('[Sync] p2pId lookup failed: $e');
+    }
+    return deviceIdOrP2pId;
   }
 
   Future<void> _setupPeerConnection() async {
@@ -269,25 +310,57 @@ class SyncService {
     }
   }
 
+  String? get _p2pUserId => userId ?? _cloudUserId;
+  String? get _p2pDeviceId => deviceId ?? _cloudDeviceId;
+
   void _handleSignal(Map data) {
-    if (data['sender'] == deviceId) return;
+    if (data['sender'] == _p2pDeviceId) return;
+    _verifyAndHandleSignal(data);
+  }
+
+  /// Master-key gate: only signals signed with the same account-scoped
+  /// pairing master key both devices share are processed.
+  Future<void> _verifyAndHandleSignal(Map data) async {
+    var masterKey = await _ensurePairingMasterKey();
+    if (!verifySignalAuth(masterKey, data['auth'], data['timestamp'])) {
+      // One refresh in case our cached key is stale (e.g. the account key was
+      // re-created), then reject for good.
+      masterKey = await _ensurePairingMasterKey(forceRefresh: true);
+      if (!verifySignalAuth(masterKey, data['auth'], data['timestamp'])) {
+        print('[Sync] Rejected P2P signal: master-key authentication failed');
+        return;
+      }
+    }
 
     final signal = data['signal'];
+    if (signal is! Map) return;
+
     if (signal['sdp'] != null) {
-      _peerConnection!
-          .setRemoteDescription(
-        RTCSessionDescription(signal['sdp']['sdp'], signal['sdp']['type']),
-      )
-          .then((_) {
-        if (signal['sdp']['type'] == 'offer') {
-          _peerConnection!.createAnswer().then((answer) {
-            _peerConnection!.setLocalDescription(answer);
-            _sendSignal({'sdp': answer.toMap()});
-          });
-        }
-      });
+      if (_peerConnection == null) {
+        // Desktop-initiated offer arrived before we connected ourselves.
+        await _setupPeerConnection();
+      }
+      try {
+        await _peerConnection!.setRemoteDescription(
+          RTCSessionDescription(signal['sdp']['sdp'], signal['sdp']['type']),
+        );
+      } catch (e) {
+        print('[Sync] setRemoteDescription failed: $e');
+        return;
+      }
+      if (signal['sdp']['type'] == 'offer') {
+        final answer = await _peerConnection!.createAnswer();
+        await _peerConnection!.setLocalDescription(answer);
+        unawaited(_sendSignal({'sdp': answer.toMap()}));
+      }
+      await _flushPendingRemoteCandidates();
     } else if (signal['candidate'] != null) {
-      _peerConnection!.addCandidate(
+      if (_peerConnection == null) {
+        _pendingRemoteCandidates
+            .add(Map<String, dynamic>.from(signal['candidate'] as Map));
+        return;
+      }
+      await _peerConnection!.addCandidate(
         RTCIceCandidate(
           signal['candidate']['candidate'],
           signal['candidate']['sdpMid'],
@@ -297,12 +370,76 @@ class SyncService {
     }
   }
 
-  void _sendSignal(Map signal) {
-    if (userId == null || remoteDeviceId == null) return;
-    FirebaseDatabase.instance.ref('p2p_signals/$userId/$remoteDeviceId').set({
+  Future<void> _flushPendingRemoteCandidates() async {
+    final pending = _pendingRemoteCandidates.toList();
+    _pendingRemoteCandidates.clear();
+    for (final candidate in pending) {
+      try {
+        await _peerConnection?.addCandidate(
+          RTCIceCandidate(
+            candidate['candidate'],
+            candidate['sdpMid'],
+            candidate['sdpMLineIndex'],
+          ),
+        );
+      } catch (e) {
+        print('[Sync] Failed to add queued ICE candidate: $e');
+      }
+    }
+  }
+
+  /// Create-or-read the account-scoped master key both devices need to
+  /// connect. First device to sign in generates it; the other reads the
+  /// identical value. A transaction guarantees a single winner.
+  Future<String?> _ensurePairingMasterKey({bool forceRefresh = false}) async {
+    if (!forceRefresh && _pairingMasterKey != null) return _pairingMasterKey;
+    final owner = _p2pUserId;
+    if (owner == null) return null;
+    try {
+      final keyRef =
+          FirebaseDatabase.instance.ref('pairing/$owner/masterKey');
+      final result = await keyRef.runTransaction((Object? current) {
+        if (current is String && current.isNotEmpty) {
+          return Transaction.success(current);
+        }
+        return Transaction.success(_randomHex(32));
+      });
+      final key = result.snapshot.value;
+      if (key is String && key.isNotEmpty) {
+        _pairingMasterKey = key;
+        return key;
+      }
+    } catch (e) {
+      print('[Sync] Failed to ensure pairing master key: $e');
+    }
+    return null;
+  }
+
+  String _randomHex(int byteCount) {
+    final rng = Random.secure();
+    return List.generate(
+      byteCount,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
+
+  Future<void> _sendSignal(Map signal) async {
+    final owner = _p2pUserId;
+    if (owner == null || remoteDeviceId == null) return;
+    final masterKey = await _ensurePairingMasterKey();
+    if (masterKey == null) {
+      print(
+          '[Sync] Not sending P2P signal: shared pairing master key unavailable');
+      return;
+    }
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    await FirebaseDatabase.instance
+        .ref('p2p_signals/$owner/$remoteDeviceId')
+        .set({
       'signal': signal,
-      'sender': deviceId,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'sender': _p2pDeviceId,
+      'timestamp': timestamp,
+      'auth': computeSignalAuth(masterKey, timestamp),
     });
   }
 
@@ -375,9 +512,30 @@ class SyncService {
   final StreamController<Map<String, dynamic>> _fileTransferController =
       StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onFileTransfer => _fileTransferController.stream;
+
+  // Unified Session Streams
+  final StreamController<UnifiedSessionModel> _sessionController =
+      StreamController<UnifiedSessionModel>.broadcast();
+  Stream<UnifiedSessionModel> get onSessionUpdated => _sessionController.stream;
+
+  final StreamController<List<SessionSummaryModel>> _pastSessionsController =
+      StreamController<List<SessionSummaryModel>>.broadcast();
+  Stream<List<SessionSummaryModel>> get onPastSessionsUpdated =>
+      _pastSessionsController.stream;
+
+  UnifiedSessionModel? lastKnownCurrentSession;
+  List<SessionSummaryModel> lastKnownPastSessions = [];
+
+  // Permission Relay Request Stream
+  final StreamController<PermissionRelayRequest> _permissionRelayController =
+      StreamController<PermissionRelayRequest>.broadcast();
+  Stream<PermissionRelayRequest> get onPermissionRelayRequest =>
+      _permissionRelayController.stream;
+
   final Map<String, dynamic> _cloudDeviceCache = {};
   StreamSubscription<DatabaseEvent>? _cloudDevicesSubscription;
   StreamSubscription<DatabaseEvent>? _cloudAIResponsesSubscription;
+  StreamSubscription<DatabaseEvent>? _cloudPermissionRequestsSubscription;
 
   Future<void> startDiscovery() async {
     _discoveredDeviceIds.clear();
@@ -516,19 +674,57 @@ class SyncService {
         },
       );
 
-      // Send handshake
+      // Load native OS metadata and permanent token
+      final meta = await DeviceInfoService().getDeviceMetadata();
+      const secureStorage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      );
+      final storedPermanentToken =
+          await secureStorage.read(key: 'aartiq_permanent_token_$deviceId');
+
+      // Send handshake with real device model and permanent token
       _desktopSocket!.add(
         jsonEncode({
           'type': 'handshake',
-          'deviceId': this.deviceId,
-          'deviceName': 'Aartiq Mobile (${Platform.operatingSystem})',
-          'platform': 'mobile',
+          'deviceId': meta.deviceId,
+          // The phone's pre-migration id (device_id.txt UUID). The desktop
+          // falls back to it when the new id is unknown so an already-paired
+          // phone stays trusted instead of hitting "Invalid pairing code" on
+          // reconnect.
+          'legacyDeviceId': this.deviceId,
+          'deviceName': meta.deviceName, // Real device name (e.g. "Google Pixel 8 Pro")
+          'deviceModel': meta.model,
+          'deviceImage': meta.deviceImage,
+          'deviceType': meta.deviceType,
+          'platform': meta.platform,
+          'permanentToken': storedPermanentToken,
           'pairingCode': pairingCode,
         }),
       );
 
       // Wait for authentication response
       await completer.future.timeout(const Duration(seconds: 10));
+
+      // Save received permanent token to Native OS Secure Storage
+      final receivedPermanentToken = handshakeAck?['permanentToken'] as String?;
+      if (receivedPermanentToken != null && receivedPermanentToken.isNotEmpty) {
+        await secureStorage.write(
+          key: 'aartiq_permanent_token_$deviceId',
+          value: receivedPermanentToken,
+        );
+        // The desktop announces its pre-migration id too; store the token
+        // under it as well so reconnects that use either id form authenticate.
+        final legacyDesktopId = handshakeAck?['legacyDeviceId'] as String?;
+        if (legacyDesktopId != null &&
+            legacyDesktopId.isNotEmpty &&
+            legacyDesktopId != deviceId) {
+          await secureStorage.write(
+            key: 'aartiq_permanent_token_$legacyDesktopId',
+            value: receivedPermanentToken,
+          );
+        }
+        print('[Sync] Permanent sync authentication token saved to Native OS');
+      }
 
       isConnectedToDesktop = true;
       _desktopConnectionMode = 'local';
@@ -541,17 +737,20 @@ class SyncService {
       await saveDeviceToMemory({
         'deviceId': deviceId,
         'deviceName': _connectedDesktopLabel,
+        'deviceModel': handshakeAck?['model'] ?? 'MacBook / PC',
+        'deviceImage': handshakeAck?['deviceImage'] ?? 'macbook',
         'deviceType': 'desktop',
         'ip': ip,
         'port': port,
-        'trusted': handshakeAck?['trusted'] == true,
+        'trusted': true,
+        'permanentSynced': true,
         'autoConnect': true,
         'isOnline': true,
         'connectionMode': 'local',
         'lastConnected': DateTime.now().millisecondsSinceEpoch,
         'lastSeen': DateTime.now().millisecondsSinceEpoch,
       });
-      print('[Sync] Connected and Authenticated to desktop at $ip:$port');
+      print('[Sync] Permanently Connected & Authenticated to $_connectedDesktopLabel at $ip:$port');
     } catch (e) {
       _desktopSocket?.close();
       _desktopSocket = null;
@@ -742,9 +941,91 @@ class SyncService {
             lastSeen: DateTime.now().millisecondsSinceEpoch,
           ));
         }
+      } else if (msg['type'] == 'permission-relay-request') {
+        print('[Sync] Received permission-relay-request: ${msg['payload']?['requestId']}');
+        final reqMap = Map<String, dynamic>.from(msg['payload'] ?? {});
+        final req = PermissionRelayRequest.fromJson(reqMap);
+        _permissionRelayController.add(req);
+        PermissionService().handleIncomingRequest(reqMap);
+
+        // Auto-navigate to PermissionApprovalPage
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => PermissionApprovalPage(request: req),
+          ),
+        );
+      } else if (msg['type'] == 'session-sync-response') {
+        print('[Sync] Received session-sync-response');
+        if (msg['currentSession'] != null) {
+          final current = UnifiedSessionModel.fromJson(
+              Map<String, dynamic>.from(msg['currentSession']));
+          lastKnownCurrentSession = current;
+          _sessionController.add(current);
+        }
+        if (msg['pastSessions'] != null) {
+          final past = (msg['pastSessions'] as List<dynamic>)
+              .map((p) =>
+                  SessionSummaryModel.fromJson(Map<String, dynamic>.from(p)))
+              .toList();
+          lastKnownPastSessions = past;
+          _pastSessionsController.add(past);
+        }
+      } else if (msg['type'] == 'session-delta') {
+        print('[Sync] Received session-delta');
+        requestSessionSync();
+      } else if (msg['type'] == 'pin-sync-response') {
+        print('[Sync] Received pin-sync-response: hasPin=${msg['hasPin']}');
       }
     } catch (e) {
       print('[Sync] Error handling desktop message: $e');
+    }
+  }
+
+  /// Request current & past sessions from connected desktop or cloud
+  Future<void> requestSessionSync() async {
+    if (isConnectedToDesktop && _desktopSocket != null) {
+      _desktopSocket!.add(jsonEncode({
+        'type': 'session-sync-request',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }));
+      print('[Sync] Sent session-sync-request to desktop');
+    } else if (userId != null) {
+      try {
+        final snap = await FirebaseDatabase.instance
+            .ref('sessions/$userId/current')
+            .get();
+        if (snap.exists && snap.value != null) {
+          final current = UnifiedSessionModel.fromJson(
+              Map<String, dynamic>.from(snap.value as Map));
+          lastKnownCurrentSession = current;
+          _sessionController.add(current);
+        }
+      } catch (e) {
+        print('[Sync] Error loading cloud sessions: $e');
+      }
+    }
+  }
+
+  /// Send permission approval response back to desktop (WebSocket or Firebase)
+  Future<void> sendPermissionResponse(PermissionRelayResponse response) async {
+    if (isConnectedToDesktop && _desktopSocket != null) {
+      _desktopSocket!.add(jsonEncode({
+        'type': 'permission-relay-response',
+        'payload': response.toJson(),
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }));
+      print(
+          '[Sync] Sent permission-relay-response via WebSocket: ${response.requestId}');
+    } else if (userId != null) {
+      try {
+        final ref = FirebaseDatabase.instance
+            .ref('permissionResponses/$userId/${response.requestId}');
+        await ref.set(response.toJson());
+        print(
+            '[Sync] Sent permission-relay-response via Firebase: ${response.requestId}');
+      } catch (e) {
+        print('[Sync] Error sending permission response to Firebase: $e');
+      }
     }
   }
 
@@ -964,6 +1245,7 @@ class SyncService {
   String? _cloudUserId;
   String? _cloudDeviceId;
   bool _cloudConnected = false;
+  bool _cloudInitialized = false;
   DatabaseReference? _cloudDevicesRef;
   final StreamController<Map<String, dynamic>> _cloudDevicesController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -971,6 +1253,7 @@ class SyncService {
       _cloudDevicesController.stream;
 
   Future<void> initializeCloud(String userId, {String? deviceId}) async {
+    if (_cloudInitialized && _cloudUserId == userId) return;
     _cloudUserId = userId;
     _cloudConnected = true;
     if (deviceId != null) {
@@ -991,8 +1274,87 @@ class SyncService {
       }
     }
     print('[CloudSync] Initialized for user: $userId, device: $_cloudDeviceId');
+    // Bridge: publish this device's P2P id under the shared Google account so
+    // the desktop can find our signal inbox, and make sure both devices hold
+    // the same pairing master key before any P2P traffic.
+    await _registerCloudDevice();
+    await _ensurePairingMasterKey();
+    _subscribeOwnSignals();
     _startCloudDeviceListener();
     _startCloudAIResponseListener();
+    _startCloudPermissionRequestListener();
+    _startCloudSessionListener();
+    _cloudInitialized = true;
+  }
+
+  /// Publish this device in devices/{uid}/{deviceId} with its P2P inbox id so
+  /// both devices can address each other through the Firebase registry.
+  Future<void> _registerCloudDevice() async {
+    if (_cloudUserId == null || _cloudDeviceId == null) return;
+    try {
+      final meta = await DeviceInfoService().getDeviceMetadata();
+      final deviceRef = FirebaseDatabase.instance
+          .ref('devices/$_cloudUserId/$_cloudDeviceId');
+      await deviceRef.set({
+        'deviceId': _cloudDeviceId,
+        // The inbox under p2p_signals/{uid}/{p2pId} this device listens on.
+        'p2pId': _cloudDeviceId,
+        'deviceName': meta.deviceName,
+        'deviceModel': meta.model,
+        'deviceImage': meta.deviceImage,
+        'deviceType': 'mobile',
+        'platform': meta.platform,
+        'lastSeen': DateTime.now().millisecondsSinceEpoch,
+        'online': true,
+      });
+      await deviceRef.onDisconnect().update({
+        'online': false,
+        'lastSeen': DateTime.now().millisecondsSinceEpoch,
+      });
+      print('[CloudSync] Device registered: $_cloudDeviceId (p2pId: $_cloudDeviceId)');
+    } catch (e) {
+      print('[CloudSync] Device registration failed: $e');
+    }
+  }
+
+  void _startCloudPermissionRequestListener() {
+    if (_cloudUserId == null) return;
+
+    _cloudPermissionRequestsSubscription?.cancel();
+    final permRef =
+        FirebaseDatabase.instance.ref('permissionRequests/$_cloudUserId');
+
+    _cloudPermissionRequestsSubscription =
+        permRef.onChildAdded.listen((event) {
+      if (event.snapshot.value != null && event.snapshot.value is Map) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        final req = PermissionRelayRequest.fromJson(data);
+        if (!req.isExpired) {
+          _permissionRelayController.add(req);
+          PermissionService().handleIncomingRequest(data);
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (_) => PermissionApprovalPage(request: req),
+            ),
+          );
+        }
+      }
+    });
+  }
+
+  void _startCloudSessionListener() {
+    if (_cloudUserId == null) return;
+
+    final sessionRef =
+        FirebaseDatabase.instance.ref('sessions/$_cloudUserId/current');
+    sessionRef.onValue.listen((event) {
+      if (event.snapshot.value != null && event.snapshot.value is Map) {
+        final current = UnifiedSessionModel.fromJson(
+            Map<String, dynamic>.from(event.snapshot.value as Map));
+        lastKnownCurrentSession = current;
+        _sessionController.add(current);
+      }
+    });
   }
 
   void _startCloudDeviceListener() {

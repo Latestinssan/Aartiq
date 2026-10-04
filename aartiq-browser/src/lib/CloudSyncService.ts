@@ -1,7 +1,8 @@
 import { EventEmitter } from 'events';
-import { Database, ref, set, onValue, get, push, update, remove, onDisconnect, getDatabase } from 'firebase/database';
+import { Database, ref, set, onValue, get, push, update, remove, onDisconnect, getDatabase, runTransaction } from 'firebase/database';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, getAuth } from 'firebase/auth';
 import { getStorage, ref as storageRef, deleteObject, FirebaseStorage } from 'firebase/storage';
+import { randomBytes } from 'crypto';
 import firebaseService from './FirebaseService';
 import { Security } from './Security';
 import { CloudConfig } from './SyncMethodManager';
@@ -43,6 +44,7 @@ export class CloudSyncService extends EventEmitter {
     private pendingQueue: PendingData[] = [];
     private isP2PMode: boolean = true;
     private autoCleanupInterval: NodeJS.Timeout | null = null;
+    private pairingMasterKey: string | null = null;
 
     private constructor() {
         super();
@@ -79,6 +81,9 @@ export class CloudSyncService extends EventEmitter {
                 this.connected = true;
                 console.log('[CloudSync] User logged in:', user.uid);
                 await this._registerDevice();
+                // Both devices on this Google account must hold the same
+                // pairing master key before any P2P traffic is allowed.
+                await this.ensurePairingMasterKey();
                 this._startListeningForDevices();
                 this._startPromptListener();
                 this._startAIResponseListener();
@@ -87,6 +92,7 @@ export class CloudSyncService extends EventEmitter {
                 this.user = null;
                 this.userId = null;
                 this.connected = false;
+                this.pairingMasterKey = null;
                 console.log('[CloudSync] User logged out');
                 this.emit('disconnected');
             }
@@ -322,6 +328,9 @@ export class CloudSyncService extends EventEmitter {
         const deviceRef = ref(this.db, `devices/${this.userId}/${this.deviceId}`);
         const deviceData = {
             deviceId: this.deviceId,
+            // P2P inbox id — both devices read this from the registry to find
+            // each other's Firebase signal inbox (p2p_signals/{uid}/{p2pId}).
+            p2pId: this.deviceId,
             deviceName: this.deviceName,
             deviceType: this.deviceType,
             platform: process.platform,
@@ -334,6 +343,56 @@ export class CloudSyncService extends EventEmitter {
 
         onDisconnect(deviceRef).update({ online: false, lastSeen: Date.now() });
         console.log('[CloudSync] Device registered:', this.deviceId);
+    }
+
+    public getPairingMasterKey(): string | null {
+        return this.pairingMasterKey;
+    }
+
+    /**
+     * Create-or-read the account-scoped master key that both devices need to
+     * connect. The first device to sign in generates it; every other device
+     * on the same Google account reads the identical value. A transaction
+     * guarantees a single winner if both sign in simultaneously.
+     */
+    public async ensurePairingMasterKey(): Promise<string | null> {
+        if (this.pairingMasterKey) return this.pairingMasterKey;
+        if (!this.db || !this.userId) return null;
+        try {
+            const keyRef = ref(this.db, `pairing/${this.userId}/masterKey`);
+            const result = await runTransaction(keyRef, (current: any) => {
+                if (typeof current === 'string' && current.length > 0) return current;
+                return randomBytes(32).toString('hex');
+            });
+            const key = result.snapshot.val();
+            if (typeof key === 'string' && key.length > 0) {
+                this.pairingMasterKey = key;
+                console.log('[CloudSync] Pairing master key ready (shared by both devices)');
+                return key;
+            }
+        } catch (error) {
+            console.error('[CloudSync] Failed to ensure pairing master key:', error);
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a device's P2P inbox id from the Firebase registry
+     * (devices/{uid}/{deviceId}/p2pId), falling back to the device id itself
+     * for peers registered before the bridge existed.
+     */
+    public async resolveP2pId(deviceId: string): Promise<string> {
+        if (!this.db || !this.userId || !deviceId) return deviceId;
+        try {
+            const snapshot = await get(ref(this.db, `devices/${this.userId}/${deviceId}/p2pId`));
+            const p2pId = snapshot.val();
+            if (typeof p2pId === 'string' && p2pId.length > 0 && p2pId !== deviceId) {
+                return p2pId;
+            }
+        } catch (error) {
+            console.warn('[CloudSync] p2pId lookup failed for', deviceId, error);
+        }
+        return deviceId;
     }
 
     private _startListeningForDevices(): void {
