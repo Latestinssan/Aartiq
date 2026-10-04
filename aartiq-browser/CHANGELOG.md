@@ -83,6 +83,70 @@
 Full detail, including what was deliberately left unfixed, is in
 `release_notes/v0.3.8.md` and `aartiq-browser/docs-audit/security-defaults-verification.md`.
 
+---
+
+### Every change in v0.3.8
+
+11 merged pull requests from `v0.3.7` to the `v0.3.8-beta.1` tag. PR #5 was drafted and closed without merging.
+
+| PR | Merged | Title |
+|---|---|---|
+| #1 | 2026-10-04 | security: authenticate the local listeners and stop auto-granting shell commands |
+| #2 | 2026-10-04 | fix: accept the credential header the shipped CLI and native panels send |
+| #3 | 2026-10-04 | docs: generate the tier table from the classifier and gate the security defaults |
+| #4 | 2026-10-04 | security: rotate Android upload key, untrack leaked keystore + Firebase config |
+| #6 | 2026-10-04 | fix(ios): bundle GoogleService-Info.plist so Firebase can initialise |
+| #7 | 2026-10-04 | build: prepare v0.3.8 |
+| #8 | 2026-10-04 | docs: make the feature docs falsifiable, and close the Genmoji triage item |
+| #9 | 2026-10-04 | test(docs): gate the Cloud Sync page against the sync service |
+| #10 | 2026-10-04 | fix(linux): stop registering five IPC channels twice at startup |
+| #11 | 2026-10-04 | fix(approval): make a ticket claim atomic so it cannot be redeemed twice |
+| #12 | 2026-10-04 | docs: complete the v0.3.8 release notes |
+
+### Commits, `v0.3.7..v0.3.8-beta.1`
+
+37 commits.
+
+```
+c38ecacd  docs: complete the v0.3.8 release notes (#12)
+72085f01  fix(approval): make a ticket claim atomic so it cannot be redeemed twice (#11)
+ee10f21b  fix(linux): stop registering five IPC channels twice at startup (#10)
+9ccf91e7  test(docs): gate the Cloud Sync page against the sync service (#9)
+57b70fc0  docs: make the feature docs falsifiable, and close the Genmoji triage item (#8)
+0c2da24d  Merge pull request #7 from Latestinssan/release/v0.3.8
+99dc5b60  docs: publish the v0.3.8 release notes and changelog entry
+6018c001  build: set the release version to 0.3.8
+2155d23e  Merge pull request #3 from Latestinssan/docs/align-with-security-defaults
+4ab7bb35  docs: resync the ci block for the regenerated counts and the corrected note
+3ddd303f  fix(ios): bundle GoogleService-Info.plist so Firebase can initialise
+38e29ea7  docs: resync the risk table for the allow-list grant rule
+d959170b  docs: publish the allow-list rule, not just the deny-list
+eda19ff9  security: require a classified binary before offering "Allow Always"
+c1b154ee  docs: resync the generated blocks from the corrected SSOT
+e03f0272  build: exercise every new docs:check rule by publishing the wrong sentence
+520d9955  build: stop deriving doc paths from a directory name
+3a76370d  build: resolve the landing repository from one variable in every docs script
+2ffe6c70  docs: add the generator that reads the tier table out of the classifier
+f9722c60  fix: accept the credential header the shipped clients actually send (#2)
+18ee0b24  build: derive the Flutter version from package.json, gate it in CI
+56857eef  security: untrack leaked signing key and Firebase config
+e2ea6fe5  security: authenticate the local listeners and stop auto-granting shell commands
+63baa5ee  docs: release note, changelog entry, and issue drafts for the defaults change
+84c2a351  security: two fail-open defaults found in the same audit
+1e4d8a24  security: stop auto-granting shell commands; scope "Allow Always" to one command
+fd0ba455  security: authenticate the local listeners and bind the MCP bridge to loopback
+fb19f913  docs: verify security defaults before changing them
+ecc82f53  docs: add a consistency gate and generate the facts the docs repeat
+12e7231f  docs() Update Permission Workflow
+ed3023b5  docs(): Revise project status and maintenance model details
+e0f52f4f  docs: README jest numbers from green run + Windows sandboxing update
+acc703ae  test: jest-circus has no this.skip - use conditional it.skip for automation
+5b96855d  test: fix automation skip (arrow fn this) + disable hanging CRX verifier suite
+f6d23a92  docs: README version badge/current-release/release-notes -> v0.3.7
+4b168473  ci: fix Windows AppContainer AVE + full-suite hang/ESM and automation availability
+5a6fbacd  ci: jest tests manual-only via workflow_dispatch (no push/PR triggers)
+```
+
 ## Version 0.3.7 — Windows AppContainer OS-Level Sandboxing
 
 ### Security
