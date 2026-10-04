@@ -32,6 +32,37 @@ export interface ReleaseEntry {
 
 export const releases: ReleaseEntry[] = [
   {
+    version: '0.3.8',
+    date: '2026-10-04',
+    codename: 'Palisade',
+    channel: 'beta',
+    changes: {
+      security: [
+        'Local listeners now require a per-process token on every route, including SSE. The MCP browser bridge binds 127.0.0.1, the route that accepted a caller-chosen token is gone, and the Host and Origin headers are validated. The same checks now cover the Agent API HTTP server and the native macOS bridge, whose token existed but which no route read',
+        'Shell commands no longer auto-run. The unconditional 8-hour startup grants for low and medium commands are removed — because every non-destructive command was classified medium, that meant cp, mv, mkdir, npm, git, curl and osascript ran unprompted after each launch. Auto-approval is now the autoApproveLowRiskShell setting, off by default, covering read-only commands only',
+        '"Allow Always" is keyed on the whole command line rather than the first word, and permanent grants are allow-listed to binaries the classifier knows. Existing grants migrate: eligible ones narrow to the exact command line, and network-capable, script-capable and destructive ones are dropped with an audit-log entry',
+        'The Android release upload keystore was committed in plaintext in a public repository and has been rotated. The keystore and Firebase config are untracked, and two ignore rules that matched nothing are corrected. The old key remains retrievable from git history — rotation is what closed the hole',
+        'X-Aartiq-Native-Token is accepted again. It is the header the shipped CLI and macOS native panels send, and the first cut of the token gate did not read it, so every native-bridge request was answered 401 after upgrade',
+        'An approval ticket could be redeemed twice: consumeTicket is async and its only await sat between the unconsumed check and the consumed mark, so eight simultaneous redemptions of one ticket all reported success. The claim now happens above the first await. The module has no callers and no user was affected — the live approval path is fully synchronous and is now covered by tests asserting exactly one success under eight simultaneous redemptions',
+      ],
+      fix: [
+        'The desktop app could not start on Linux. Five linux: IPC channels were registered by both setupLinuxIPCHandlers and main.js, and Electron throws on a second registration of a channel, so the main process stopped at module top level before the window opened. macOS and Windows were unaffected, which is why it went unnoticed',
+        'iOS could not initialise Firebase at all. GoogleService-Info.plist was never referenced by Runner.xcodeproj so it never reached the app bundle, and PRODUCT_BUNDLE_IDENTIFIER did not match the plist, which Firebase treats as fatal. The plist is now wired into the Runner target and the bundle identifier is aligned',
+        'Flutter versionCode was pinned at 10 across v0.3.5 to v0.3.7 because no workflow passed --build-number, which turned every Play upload into a version-code conflict. sync-version now derives it from semver, and auto-tag fails the release if the two versions disagree',
+        'iOS 13 and 14 are no longer supported. The deployment target is 15.0 with a hook forcing every pod target to match, because Xcode 27 refuses to build anything lower and the pods still declared 9.0 to 13.0',
+      ],
+      change: [
+        'The Claude Desktop config now carries the session token in the mcp-remote URL, because mcp-remote accepts a bare URL and nothing else. The token regenerates on every start, so a config written by an earlier version is answered 401 until Auto-Configure is run again',
+        'Grants you made deliberately in Settings → Permissions are untouched. Grants that were dropped by the migration are listed in the audit log',
+      ],
+      docs: [
+        'Eight false claims on the Cloud Sync page were corrected against the source: a three-tier Read Only / Standard / Trusted permission ladder, mDNS discovery, a 60-second pairing timeout, transfer and per-item size ceilings, an audit trail, automatic conflict resolution, and an encryption guarantee attributed to a shared-keychain.js file that does not exist. The end-to-end encryption claim is true and was kept, narrowed to say that the local WebSocket is not covered by it',
+        'tests/docs-sync-match-source.test.js enforces that with 17 assertions reading both the rendered page and the sync service. Twelve of its first 15 failed before the fix, and three separate mutations of the corrected page are each caught',
+        'npm run docs:check fails when a published number or security claim disagrees with the code or with the site single source of truth. It still runs only when a person runs it — it is not wired into any workflow',
+      ],
+    },
+  },
+  {
     version: '0.3.7',
     date: '2026-09-13',
     codename: 'AppContainer',
@@ -200,6 +231,7 @@ export const releases: ReleaseEntry[] = [
       change: [
         'MCP pairing flow simplified: auto-configure → restart Claude → auto-verify (no copy/paste tokens)',
         'MCP server auto-confirms pairing on local SSE connection (security boundary: 127.0.0.1 only)',
+        'Correction (2026-10-04): the 127.0.0.1-only boundary was not true at v0.3.4 — see the binding correction in the Security list below.',
         'Removed manual PIN/prompt copy-paste flow that failed due to LLM safety training',
         'Updated electron.d.ts with correct multiFillForm, pullOllamaModel, importOllamaModel, ollamaListModels types',
         'Complete UX polish — agent state, action chain, planning screen, compressible steps, action cards, live terminal, permission dialogs, batch permissions, high-risk warnings, auto-approve',
@@ -213,6 +245,7 @@ export const releases: ReleaseEntry[] = [
       ],
       security: [
         'MCP server binds to 127.0.0.1 only — no external network exposure for pairing',
+        'Correction (2026-10-04): not true at v0.3.4 — the tagged code called listen(port) with no host argument, binding every interface (git show v0.3.4, mcp-browser-server.js:1620). The loopback bind shipped in v0.3.8 (resolveBindHost, security_mcpBridgeRemote, default off).',
         'Pairing tokens expire after 10 minutes',
         'Biometric approval (Touch ID / Windows Hello) required for high-risk actions',
         'Medium-risk approval required — every action must pass 5 trust questions',

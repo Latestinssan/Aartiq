@@ -35,14 +35,50 @@
 - The native macOS bridge and the CLI send `X-Aartiq-Native-Token`. The first cut of the gate did not read that header, so every native-bridge request was answered with 401 after upgrade. It is accepted now, alongside `Authorization: Bearer`, `X-Aartiq-Token` and `?token=`.
 - The header list is pinned by a test that reads the shipped clients rather than a copy of their header, so a client that changes what it sends fails the suite instead of the app.
 
+#### Android signing key and Firebase config were committed to a public repository
+- The release upload keystore was committed in plaintext at `flutter_browser_app/android/app/keystore-base64.txt`. Because the repository is public, the key has been extractable by anyone since it was created. **The key has been rotated**, and `GOOGLE_SERVICES_JSON` was updated to match. Untracking the file does not close a hole for anyone who already cloned; rotation does.
+- Two ignore rules were wrong, which is why the file stayed tracked after an earlier commit claimed to have gitignored Firebase config: `.gitignore` matched `ios/Runner/GoogleService-Info.plist` while the file lives at `ios/GoogleService-Info.plist`, and nothing covered `keystore-base64.txt` because the existing patterns only matched `*.jks` and `*.keystore`. Both files remain on disk locally; only tracking was removed, and CI still generates them from secrets.
+- **Android users may have to uninstall before updating, and this could not be verified from the repository.** If release APKs were signed directly with the upload key and Play App Signing was never enrolled, Android cannot update an existing install across a key change. If Play App Signing is enrolled, the rotated key is only the upload key and installs update normally. Check the Play Console before describing the Android upgrade as seamless.
+- The Android keystore remains retrievable from git history. A history purge would not help anyone who already cloned, so it was left out of scope deliberately.
+
+#### An approval ticket could be redeemed twice
+- `consumeTicket` in `src/lib/approval-gate.js` is async, and its only `await` sat between the check that a ticket was unconsumed and the mark that consumed it, so every simultaneous redemption passed the check and all reported success — eight simultaneous redemptions of one ticket returned eight successes.
+- The claim now happens above the first `await`. JavaScript runs synchronous statements without interleaving another async caller, so deleting the ticket there is the atomic claim. The hash check still runs afterwards and a mismatch still fails closed.
+- **This module has no callers and is not a documented feature, so no user was affected and this is not a live vulnerability.** The approval path the app actually uses is `src/core/approval-ticket-manager.js`, whose `redeemTicket` is fully synchronous and so has no interleaving point; two tests now assert that eight simultaneous redemptions yield exactly one success, so an `await` cannot be introduced there unnoticed.
+- One deliberate behaviour change: a concurrent `peekTicket` now reports `APPROVAL_INVALID` during the consume window where it previously reported `valid`.
+- Still open: ticket ids combine a per-instance counter with `Date.now()` while the ticket store is module-level, so two `ApprovalGate` instances built in the same millisecond mint identical ids. Left unchanged rather than folded into a security fix.
+
+### Fixed
+
+#### The desktop app could not start on Linux
+- `setupLinuxIPCHandlers()` registered five `linux:` IPC channels that `main.js` then registered again at module scope. Electron's `ipcMain.handle` throws on a second registration of a channel, the call was not wrapped, and it ran at module top level — so **on Linux the main process stopped executing at `linux:notify`, before the window was created**, and the four registrations after it never happened. macOS and Windows were unaffected, which is why it went unnoticed.
+- `main.js`'s copies are the ones kept rather than the module's, because they carry a `process.platform !== 'linux'` check answering `{ error: 'Not Linux' }` on the other two platforms where `setupLinuxIPCHandlers()` never runs. Removing those instead would have traded a Linux-only crash for every `preload` invoke on macOS and Windows rejecting with `No handler registered`.
+- This also made the defect testable for the first time: `linux-integration.js` named a parameter `interface`, a reserved word in strict mode and therefore in every Jest module, so the file could not be loaded by the test runner at all.
+- Not confirmed by booting the AppImage. The fix is backed by `tests/linux-ipc-registration.test.js` and by reading the two registration sites.
+- Five `linux:` channels are registered once and invoked by nothing. Fixing the crash removed the duplication, not the dead channels.
+
+#### iOS could not initialise Firebase at all
+- `GoogleService-Info.plist` was never referenced by `Runner.xcodeproj`, so it was never copied into `Runner.app`. `Info.plist` carries no inline keys and `AppDelegate.swift` initialises nothing, so `Firebase.initializeApp()` had nothing to configure from and **iOS sign-in could not work**.
+- `PRODUCT_BUNDLE_IDENTIFIER` was `com.aartiq-com.aartiq` while the plist declares `com.aartiq`, which Firebase treats as fatal. Now aligned across Debug, Release and Profile.
+- The deployment target is raised to 15.0, with a `post_install` hook forcing every pod target to match. Xcode 27 refuses to build any target below 15.0 and the pods still declared 9.0 to 13.0, so the build failed before compiling a file. **This drops iOS 13 and 14 support.**
+- Verified: the debug build succeeds, the built `Runner.app` contains the plist, its `BUNDLE_ID` matches the app's `CFBundleIdentifier`, and all 14 plist keys are identical between source and bundle.
+
+#### Flutter version numbers had stopped moving
+- `pubspec.yaml` had drifted to `0.3.5+10` against a `package.json` at `0.3.7`, and no workflow passed `--build-number`, so `versionCode` stayed pinned at **10** across v0.3.5 to v0.3.7 — which is what turned each Play upload into a fresh version-code conflict. `sync-version.ts` now rewrites pubspec's `version:` from `package.json` and derives the build number from semver, and `auto-tag.yml` fails the release if the two disagree.
+
 ### Documentation
 - The risk tier table, test counts and live repository figures published by the docs generator are now read from the same source files the runtime reads, and `npm run docs:check` fails when a published number or a security claim disagrees with the code. The gate is not yet wired into a workflow, so it only protects a commit when someone runs it.
+- The published feature pages had drifted from the source. Eight claims on the Cloud Sync page described behaviour the sync service does not have: a three-tier Read Only / Standard / Trusted permission ladder, mDNS discovery, a 60-second pairing timeout, transfer and per-item size ceilings, an audit trail, automatic conflict resolution, and an encryption guarantee attributed to a `shared-keychain.js` file that does not exist. All eight are corrected, and the true encryption claim is kept and made more precise — the page now says plainly that the local WebSocket is not covered by it.
+- `tests/docs-sync-match-source.test.js` enforces that correction with 17 assertions reading both the rendered page and `src/lib/WiFiSyncService.ts`, stripping comments before matching so documenting a removed claim does not trip the gate. Before the fix **12 of its 15 assertions failed**; the 3 that passed were the true encryption claims.
+- Still unproven and published as such: four features are marked `works` with neither a test nor a signed-off manual check (`apple-intelligence.generate-image`, `apple-intelligence.summary`, `http-api.native-bridge`, `keyboard.global-hotkeys`), one manual check (`siri.appintents`) is unsigned, and 18 further rows await a maintainer decision.
 
 ### Behaviour changes users may notice
 - The Claude Desktop config now carries the session token in the `mcp-remote` URL, because `mcp-remote` accepts a bare URL and nothing else. The token changes on every Aartiq start, so a config written by an earlier version is answered with 401 until Auto-Configure is run again.
 
 ### Testing
 - `tests/local-server-auth.test.js` (44 cases, real sockets), `tests/shell-command-tiers.test.js` (193 cases), `tests/shell-approval-defaults.test.js` (61 cases).
+- `tests/approval-gate-concurrency.test.js` (11 cases), `tests/linux-ipc-registration.test.js` (6 cases), `tests/docs-sync-match-source.test.js` (17 cases).
+- Full suite on this tag: **980 passed, 26 skipped, 0 failed**, 35 suites.
 
 Full detail, including what was deliberately left unfixed, is in
 `release_notes/v0.3.8.md` and `aartiq-browser/docs-audit/security-defaults-verification.md`.
