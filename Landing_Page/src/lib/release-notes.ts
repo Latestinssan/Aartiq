@@ -13,6 +13,21 @@ export interface ReleaseEntry {
     docs?: string[];
     security?: string[];
   };
+  /**
+   * Added later than the entry it belongs to, to say that something described
+   * here is no longer true — without editing what the entry originally said.
+   *
+   * A release note records what a build did. Rewriting one to match today's
+   * behaviour makes the history wrong and hides that the behaviour changed, so
+   * superseded descriptions stay and carry a dated correction next to them.
+   */
+  superseded?: Array<{
+    /** When the correction was written, so its age is visible. */
+    notedOn: string;
+    /** Which version the description stopped being true in, when known. */
+    changedIn?: string;
+    items: string[];
+  }>;
 }
 
 export const releases: ReleaseEntry[] = [
@@ -134,6 +149,17 @@ export const releases: ReleaseEntry[] = [
     date: '2026-07-20',
     codename: 'Nebula',
     channel: 'stable',
+    superseded: [
+      {
+        notedOn: '2026-10-04',
+        changedIn: 'unreleased at time of writing — the version number is the maintainer’s to set',
+        items: [
+          'The three pairing lines above describe how 0.3.4 behaved and are left as written. The bridge no longer auto-confirms pairing: reaching /sse already requires a token, so it records a completed handshake rather than granting one.',
+          'There is no pairing token and no 10-minute expiry any more. The route that issued a caller-chosen token was removed, and each listener now uses a token it generates itself, on every request rather than only at connect time.',
+          'The "security boundary: 127.0.0.1 only" note was the accurate limit at the time, but loopback alone was never an authorization boundary — any page in any browser on the machine can send a request to 127.0.0.1. The bridge also binds 127.0.0.1 by default now, and requires the token either way.',
+        ],
+      },
+    ],
     changes: {
       new: [
         'Token-based Claude Desktop MCP pairing — auto-confirm on local SSE connection, no chat token paste needed',
