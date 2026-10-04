@@ -26,6 +26,7 @@ const { NotificationManager } = require('./notifications');
 const { MobileNotifier } = require('./mobile-notifier');
 const { SleepHandler } = require('./sleep-handler');
 const { IPCHandler } = require('./ipc-service');
+const { resolveServiceHost } = require('./service-bind');
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -201,12 +202,16 @@ async function startHTTPServer() {
     const fs = require('fs');
     const url = require('url');
 
+    // Loopback unless AARTIQ_SERVICE_HOST says otherwise (docs-audit M3).
+    const serviceHost = resolveServiceHost();
+
     httpServer = http.createServer((req, res) => {
         const parsedUrl = url.parse(req.url, true);
         const pathname = parsedUrl.pathname;
 
-        // Set CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // No Access-Control-Allow-Origin header: without it a page open in any
+        // browser on this machine cannot read these responses. The mobile
+        // clients are native HTTP clients and never needed it.
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -252,13 +257,13 @@ async function startHTTPServer() {
     });
 
     return new Promise((resolve, reject) => {
-        httpServer.listen(SERVICE_CONFIG.port, '0.0.0.0', () => {
+        httpServer.listen(SERVICE_CONFIG.port, serviceHost, () => {
             resolve();
         });
         httpServer.on('error', (error) => {
             if (error.code === 'EADDRINUSE') {
                 log('WARN', `Port ${SERVICE_CONFIG.port} in use, trying ${SERVICE_CONFIG.port + 1}`);
-                httpServer.listen(SERVICE_CONFIG.port + 1, '0.0.0.0', () => {
+                httpServer.listen(SERVICE_CONFIG.port + 1, serviceHost, () => {
                     SERVICE_CONFIG.port = SERVICE_CONFIG.port + 1;
                     resolve();
                 });

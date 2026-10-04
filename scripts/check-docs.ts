@@ -12,6 +12,8 @@
  * (h) the feature manifest points at a test, page or sign-off that does not exist
  * (i) a file the manifest cites as evidence has moved since the rows were last
  *     re-read, so the rows cannot be trusted until someone re-reads them
+ * (j) the licence the Windows installer displays, the `license` field, the root
+ *     LICENSE and the SSOT's resolved-flag disagree with each other
  *
  * Exit code 1 on any failure. Warnings print but do not fail the build.
  */
@@ -190,7 +192,8 @@ const LITERALS: Literal[] = [
   { label: "port 3001", pattern: /\b3001\b/, why: "MCP bridge port — from network.servers" },
   { label: "port 3003", pattern: /\b3003\b/, why: "Next.js dev port — from network.devRenderer" },
   { label: "port 3004", pattern: /\b3004\b/, why: "WiFi sync port — from network.servers" },
-  { label: "port 46203", pattern: /\b46203\b/, why: "native bridge / agent-api port — from network.servers" },
+  { label: "port 46203", pattern: /\b46203\b/, why: "native bridge port — from network.servers" },
+  { label: "port 46204", pattern: /\b46204\b/, why: "agent API port — from network.servers" },
   { label: "port 3999", pattern: /\b3999\b/, why: "background service port — from network.servers" },
   { label: "port 3005", pattern: /\b3005\b/, why: "UDP discovery destination — from network.servers" },
   // Bind address.
@@ -1381,6 +1384,89 @@ function readGeneratedShellTiers(): GeneratedShellTiers | null {
   }
 }
 
+/**
+ * (j) The licence the Windows installer displays must be the licence the
+ * repository carries, and the SSOT must say whether that is true.
+ *
+ * Three copies of one fact, each editable on its own: the root `LICENSE`, the
+ * `LICENSE.txt` the NSIS installer shows (`build.nsis.license`), and the
+ * `license` field npm and `gh api` read — plus `legal.licenseConflict` in the
+ * landing SSOT, which used to publish the disagreement as an open conflict.
+ * The 2026-10 decision (aartiq-browser/docs-audit/licence-decision.md) made
+ * them all Apache-2.0; this keeps them that way.
+ */
+function checkLicenceFiles() {
+  const BROWSER = join(REPO, "aartiq-browser");
+  const apache = (text: string) =>
+    /Apache License/.test(text) && /Version 2\.0, January 2004/.test(text);
+
+  let rootOk = false;
+  const rootLicence = join(REPO, "LICENSE");
+  if (!existsSync(rootLicence)) {
+    problems.push("[lic] the repository root LICENSE is missing — every other licence claim is unanchored");
+  } else {
+    rootOk = apache(readFileSync(rootLicence, "utf8"));
+    if (!rootOk) problems.push("[lic] the repository root LICENSE is not the Apache-2.0 text");
+  }
+
+  let browserOk = false;
+  const browserLicence = join(BROWSER, "LICENSE.txt");
+  if (!existsSync(browserLicence)) {
+    problems.push("[lic] aartiq-browser/LICENSE.txt is missing — the Windows installer points at it");
+  } else {
+    browserOk = apache(readFileSync(browserLicence, "utf8"));
+    if (!browserOk) {
+      problems.push(
+        "[lic] aartiq-browser/LICENSE.txt is not the Apache-2.0 text the root LICENSE carries " +
+          "(it is what the Windows installer displays) — see aartiq-browser/docs-audit/licence-decision.md",
+      );
+    }
+  }
+
+  let fieldOk = false;
+  const pkgPath = join(BROWSER, "package.json");
+  if (!existsSync(pkgPath)) {
+    problems.push("[lic] aartiq-browser/package.json is missing");
+    return;
+  }
+  let pkg: { license?: string; build?: { nsis?: { license?: string } } };
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  } catch {
+    problems.push("[lic] aartiq-browser/package.json is not valid JSON");
+    return;
+  }
+  fieldOk = pkg.license === "Apache-2.0";
+  if (!fieldOk) {
+    problems.push(
+      `[lic] aartiq-browser/package.json must declare "license": "Apache-2.0" (found ${JSON.stringify(pkg.license ?? null)})`,
+    );
+  }
+
+  const installerFile = pkg.build?.nsis?.license;
+  if (!installerFile) {
+    problems.push("[lic] aartiq-browser/package.json build.nsis.license no longer points at a licence file");
+  } else {
+    const installerPath = join(BROWSER, installerFile);
+    if (!existsSync(installerPath)) {
+      problems.push(`[lic] the Windows installer points at ${installerFile}, which does not exist`);
+    } else if (!apache(readFileSync(installerPath, "utf8"))) {
+      problems.push(
+        `[lic] the Windows installer displays ${installerFile}, which is not the Apache-2.0 text the root carries`,
+      );
+    }
+  }
+
+  const filesAgree = rootOk && browserOk && fieldOk;
+  if (legal.licenseConflict.resolved !== filesAgree) {
+    problems.push(
+      filesAgree
+        ? "[lic] legal.licenseConflict.resolved is false but the licence files agree (all Apache-2.0) — flip it and run docs:sync"
+        : "[lic] legal.licenseConflict.resolved is true but the licence files disagree — re-open the conflict or fix the files",
+    );
+  }
+}
+
 async function main() {
   checkSsotIntegrity();
   await checkReadmeBlocks();
@@ -1393,6 +1479,7 @@ async function main() {
   checkPublicShadowing();
   checkDistributionClaims();
   checkSecurityDefaultClaims();
+  checkLicenceFiles();
 
   if (warnings.length) {
     console.log(`\n${warnings.length} warning(s):`);

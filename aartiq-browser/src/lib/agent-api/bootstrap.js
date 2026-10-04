@@ -48,43 +48,62 @@ const manager_1 = require("../snapshot/manager");
 const bridge_1 = require("./bridge");
 const server_1 = require("./server");
 const providers_1 = require("./providers");
-function webContentsFor(tabId) {
-    const wins = electron.BrowserWindow.getAllWindows();
-    if (tabId) {
-        for (const w of wins) {
-            if (String(w.webContents.id) === String(tabId))
-                return w.webContents;
-        }
+/** Page webContents only — devtools/background windows are not agent targets. */
+function pageWindows() {
+    const out = [];
+    for (const w of electron.BrowserWindow.getAllWindows()) {
+        if (w.webContents.getType() !== 'window')
+            continue;
+        out.push(w.webContents);
     }
-    return wins[0]?.webContents ?? null;
+    return out;
+}
+/**
+ * Resolve a tab id to its webContents.
+ *
+ * Fails closed. The previous version returned `wins[0]` whenever a tabId was
+ * missing or unknown, so a request naming a closed or misspelt tab silently ran
+ * against whichever window happened to be first — an agent asking to fill a form
+ * in tab 7 could fill the form in a window it was never given. An unknown id is
+ * now an error the caller has to deal with, not a redirect to the wrong page.
+ */
+function requireTab(tabId) {
+    const pages = pageWindows();
+    if (!pages.length)
+        throw new Error('No browser window is open.');
+    if (tabId != null && tabId !== '') {
+        const wanted = String(tabId);
+        for (const wc of pages) {
+            if (String(wc.id) === wanted)
+                return wc;
+        }
+        throw new Error(`Unknown tabId "${tabId}". Call list_tabs to get current ids.`);
+    }
+    // No id at all: the focused window's active tab is the only safe assumption.
+    const win = electron.BrowserWindow.getFocusedWindow();
+    const focused = win && pages.includes(win.webContents) ? win.webContents : undefined;
+    return focused ?? pages[0];
 }
 function buildPageAdapter() {
     return {
         async getAxTree(tabId) {
-            const wc = webContentsFor(tabId);
-            if (!wc)
-                return [];
             const code = manager_1.SnapshotManager.collectorScript();
-            const json = await wc.executeJavaScript(code);
+            const json = await requireTab(tabId).executeJavaScript(code);
             return typeof json === 'string' ? JSON.parse(json) : json;
         },
         async executeInTab(tabId, script) {
-            const wc = webContentsFor(tabId);
-            if (!wc)
-                return null;
-            return wc.executeJavaScript(script);
+            return requireTab(tabId).executeJavaScript(script);
         },
         async navigate(tabId, url) {
-            const wc = webContentsFor(tabId);
-            if (wc)
-                await wc.loadURL(url);
+            await requireTab(tabId).loadURL(url);
         },
         async listTabs() {
-            return electron.BrowserWindow.getAllWindows().map((w) => ({
-                id: String(w.webContents.id),
-                url: w.webContents.getURL(),
-                title: w.webContents.getTitle(),
-            }));
+            return pageWindows().map((wc) => ({ id: String(wc.id), url: wc.getURL(), title: wc.getTitle() }));
+        },
+        async clearMarkers(tabId) {
+            // Best effort: the document may already be gone mid-navigation, and a
+            // failed cleanup must not abort the navigation itself.
+            await requireTab(tabId).executeJavaScript(manager_1.SnapshotManager.clearMarkersScript());
         },
     };
 }
@@ -98,6 +117,7 @@ async function startAgentApi(deps = {}) {
             vault: deps.vault,
             extensions: deps.extensions,
             pageAdapter: buildPageAdapter(),
+            search: deps.search,
         });
         const server = new server_1.AgentApiServer({
             bridge,
@@ -106,6 +126,7 @@ async function startAgentApi(deps = {}) {
             snapshots,
             vault: deps.vault,
             extensions: deps.extensions,
+            search: deps.search,
             config: deps.config ?? (0, providers_1.defaultConfig)(),
         });
         await server.start();

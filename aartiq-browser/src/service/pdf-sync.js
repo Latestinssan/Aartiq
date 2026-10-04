@@ -11,6 +11,7 @@ const http = require('http');
 const { EventEmitter } = require('events');
 const pdfjsLib = require('pdfjs-dist');
 const sharp = require('sharp');
+const { resolveServiceHost } = require('./service-bind');
 
 class PDFSyncService extends EventEmitter {
     constructor(options = {}) {
@@ -39,6 +40,8 @@ class PDFSyncService extends EventEmitter {
     }
 
     async startServer() {
+        // Loopback unless AARTIQ_SERVICE_HOST says otherwise (docs-audit M3).
+        const host = resolveServiceHost();
         return new Promise((resolve, reject) => {
             this.server = http.createServer((req, res) => {
                 this.handleRequest(req, res);
@@ -48,7 +51,7 @@ class PDFSyncService extends EventEmitter {
                 if (error.code === 'EADDRINUSE') {
                     console.warn(`[PDFSync] Port ${this.port} in use, trying ${this.port + 1}`);
                     this.port++;
-                    this.server.listen(this.port, '0.0.0.0', () => {
+                    this.server.listen(this.port, host, () => {
                         resolve();
                     });
                 } else {
@@ -56,7 +59,7 @@ class PDFSyncService extends EventEmitter {
                 }
             });
 
-            this.server.listen(this.port, '0.0.0.0', () => {
+            this.server.listen(this.port, host, () => {
                 this.isRunning = true;
                 resolve();
             });
@@ -64,8 +67,9 @@ class PDFSyncService extends EventEmitter {
     }
 
     handleRequest(req, res) {
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // No Access-Control-Allow-Origin header: without it a page open in any
+        // browser on this machine cannot read these responses. The mobile
+        // clients are native HTTP clients and never needed it.
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range');
         res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');

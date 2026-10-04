@@ -1,7 +1,7 @@
 # Background task service binds 0.0.0.0
 
 **Label:** security
-**Status:** open
+**Status:** open — bind default fixed (loopback + env opt-in, no wildcard CORS); credential (token / `Host` / `Origin`) still missing
 
 ## Summary
 
@@ -39,3 +39,19 @@ gate means deciding how the service receives the credential.
   and not only a state change.
 - Document the answer on the security page's network table either way, so the
   published list of listeners matches the code.
+
+## Resolution
+
+**Bind — fixed.** `src/service/service-bind.js` resolves the host:
+`127.0.0.1` unless `AARTIQ_SERVICE_HOST` says otherwise, and both
+`service-main.js` and `pdf-sync.js` pass it to `listen()`. The wildcard
+`Access-Control-Allow-Origin` header is gone — neither listener sends one at
+all. The default, the opt-in, and the missing header are pinned by
+`tests/network-listener-hardening.test.js`, with the mutation record in
+`docs-audit/mutation-check-network-hardening.txt`. The README network table
+and the landing SSOT were updated in the same change.
+
+**Token / `Host` / `Origin` — still open.** This service is a separate
+Electron app, so the per-process token in `local-server-auth.js` does not
+reach it as written. Deciding how it would receive a credential is a
+maintainer decision and was not made here.

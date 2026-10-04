@@ -26,6 +26,7 @@ import type { SecurityPipeline } from '../guardrails';
 import type { AgentRegistry } from '../agent/agent-registry';
 import type { SnapshotManager } from '../snapshot/manager';
 import type { AutofillVault } from '../autofill/vault';
+import type { SearchProviderLike } from './bridge';
 
 export interface AgentApiDeps {
   bridge: Bridge;
@@ -34,6 +35,7 @@ export interface AgentApiDeps {
   snapshots: SnapshotManager;
   vault?: AutofillVault;
   extensions?: any;
+  search?: SearchProviderLike;
   config?: Partial<AgentApiConfig>;
   pageAdapter?: any;
 }
@@ -63,6 +65,7 @@ export class AgentApiServer {
       snapshots: this.deps.snapshots,
       vault: this.deps.vault,
       extensions: this.deps.extensions,
+      search: this.deps.search,
       config: this.config,
     };
   }

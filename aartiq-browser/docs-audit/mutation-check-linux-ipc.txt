@@ -1,0 +1,30 @@
+Mutation checks for tests/linux-ipc-registration.test.js (PR3, fix B2)
+Recorded 2026-10-04 16:49
+
+What the fix is
+---------------
+setupLinuxIPCHandlers() in src/lib/linux-integration.js registers only the
+five `linux:` channels nothing else owns. The five channels main.js also
+registers (linux:register-protocol, linux:create-shortcut,
+linux:install-gnome-shortcut, linux:create-launcher, linux:notify) were
+removed from this function; main.js's platform-guarded copies survive. On
+Linux the duplicate ipcMain.handle used to throw at module scope and stop the
+process before the window was created.
+
+Runs
+----
+- Suite green before mutation and after revert (6 tests).
+- All mutations were applied to src/lib/linux-integration.js only and reverted
+  byte-for-byte; the Electron stub reproduces Electron's own
+  "Attempted to register a second handler for '<channel>'" message.
+
+Mutations
+---------
+baseline B2: green (tests/linux-ipc-registration.test.js)
+KILLED    B2: linux:notify re-added to setupLinuxIPCHandlers (the pre-fix duplicate)
+          → 3 test(s) failed: the Linux bridge registers no ipcMain channel twice › setting up the module after main.js does not throw; the Linux bridge registers no ipcMain channel twice › the module registers no channel that main.js also registers
+KILLED    B2: linux:start-voice registration deleted (setup no longer owns all five)
+          → 1 test(s) failed: the Linux bridge registers no ipcMain channel twice › the module still owns the five channels only it registers
+KILLED    B2: linux:get-desktop renamed onto a channel main.js owns (linux:desktop:get)
+          → 3 test(s) failed: the Linux bridge registers no ipcMain channel twice › setting up the module after main.js does not throw; the Linux bridge registers no ipcMain channel twice › the module registers no channel that main.js also registers
+post-revert B2: green again

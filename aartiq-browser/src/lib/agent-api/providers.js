@@ -14,7 +14,9 @@ exports.resolveModelEndpoint = resolveModelEndpoint;
 exports.bindHost = bindHost;
 function defaultConfig(overrides = {}) {
     return {
-        port: 46203,
+        // 46204 since the port split: the native macOS bridge keeps 46203, so the
+        // two defaults no longer collide and one silently loses the bind.
+        port: 46204,
         host: '127.0.0.1',
         enableHttp: true,
         enableMcp: true,
@@ -72,7 +74,13 @@ class OpenClawClient {
     }
 }
 exports.OpenClawClient = OpenClawClient;
-/** Resolve the bind host: remote exposes on all interfaces (use Tailscale/LAN). */
+/**
+ * Resolve the bind host: remote exposes on all interfaces (use Tailscale/LAN).
+ *
+ * `remote` must be exactly `true`. A truthy check here would let a hand-edited
+ * settings file containing `"remote": "false"` open the listener to the network,
+ * which is the opposite of what the operator wrote.
+ */
 function bindHost(config) {
-    return config.remote ? '0.0.0.0' : config.host;
+    return config.remote === true ? '0.0.0.0' : config.host;
 }

@@ -172,7 +172,11 @@ function renderBenchmarks(): string {
   return lines.join("\n");
 }
 
-/** License table — published with the unresolved conflict stated, not hidden. */
+/**
+ * Licence table — publishes the conflict while one exists, and the resolution
+ * once the copies agree. Either way it states which of the two it is: a
+ * rendered "resolved" that still showed the warning would be its own mismatch.
+ */
 function renderLicense(): string {
   const c = legal.licenseConflict;
   const lines: string[] = [
@@ -192,6 +196,13 @@ function renderLicense(): string {
     lines.push(
       `>`,
       `> This file does not pick a side. Until the conflict is settled, treat the Apache-2.0 label on this component as unconfirmed.`,
+    );
+  } else {
+    lines.push(
+      ``,
+      `> [!NOTE]`,
+      `> **Licence conflict resolved (2026-10-04).** \`${c.browserLicenseFile.split(" — ")[0]}\` now carries the same Apache-2.0 text as the repository root, the package manifest declares \`Apache-2.0\`, and the Windows installer points at that same file — so installer, manifest and repository agree.`,
+      `> The decision, including the EULA it replaced, is recorded in \`aartiq-browser/docs-audit/licence-decision.md\`. \`docs:check\` rule (j) fails if the copies ever disagree again.`,
     );
   }
   lines.push(
