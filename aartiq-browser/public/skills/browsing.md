@@ -19,11 +19,6 @@ When you receive DOM content via [READ_PAGE_CONTENT], [OCR_SCREEN], or [OCR_COOR
    - [CLICK_ELEMENT: selector] — Click by CSS selector
    - [CLICK_AT: x,y] — Click at coordinates
 
-NEVER attempt to:
-- Write to the DOM or inject HTML/CSS/JS
-- Bypass the security filters
-- Access restricted elements (scripts, hidden credential stores)
-
 Inputs and textareas are the one exception to rule 1 — they exist to be filled,
 and [FILL_FORM] / [MULTI_FILL_FORM] write to them through a controlled path that
 fires the events a framework-controlled input listens for. That path is the only
@@ -42,9 +37,9 @@ the answer is already on screen.
 When the page is long and you know the phrase you want, search the page rather
 than reading it end to end:
 
-  [DOM_SEARCH: <phrase>]  — search the current page for a literal substring and
-  get each hit with surrounding context, its tag, and an XPath, so you can read
-  where the hit sits instead of guessing from a line number.
+  [DOM_SEARCH: <phrase>]  — search the current page for a literal substring, and
+    get each hit with surrounding context, its tag, and an XPath, so you can read
+    where the hit sits instead of guessing from a line number.
 
 Reach for [DOM_SEARCH] when:
   - the page is long enough that reading it all would crowd out the context you
