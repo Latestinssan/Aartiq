@@ -1,64 +1,17 @@
 # Aartiq Browser - Recent Changes
 
-## Unreleased
-
-### Licensing
-
-- `aartiq-browser/LICENSE.txt` now carries Apache-2.0, byte-identical to the repository root `LICENSE`, so the Windows NSIS installer, the `package.json` `license` field, and the repository all present the same licence. The restrictive EULA it replaced is preserved verbatim in `docs-audit/licence-decision.md`. `docs:check` rule (j) and `tests/licence-audit-rename.test.js` keep the copies in agreement.
-
-### Changed
-
-- User-visible files named after Comet are Aartiq now: the permission audit trail migrates `comet-audit.jsonl` → `aartiq-audit.jsonl` on first load (an existing new file is never overwritten), and chat exports default to `aartiq-chat-<timestamp>.txt` / `.pdf`, with the session export using `aartiq-chat-session-<timestamp>.txt`.
-
-### Security
-
-- The background task service (3999) and the PDF sync server now bind `127.0.0.1` by default instead of `0.0.0.0`. `AARTIQ_SERVICE_HOST` is the explicit opt-in for phone/laptop file access. Neither listener sends an `Access-Control-Allow-Origin` header any more — the wildcard is gone. WiFi sync (3004) is untouched and still binds every interface; that stays open (docs-audit/issues/wifi-sync-bind-address.md).
-- The agent API moves to port `46204`; the native macOS bridge keeps `46203`. Both used to default to `46203`, so whichever started second lost the bind and the error was swallowed. `aartiq-mcp` still targets `46203` — its BridgeClient calls only the native bridge's `/native-mac-ui/*` routes.
-- New gate: `tests/network-listener-hardening.test.js` pins the loopback call sites, the env override, the missing CORS headers, and the port split. Mutation record: `docs-audit/mutation-check-network-hardening.txt`.
-- `addAllowedDirectory` now refuses system roots — the filesystem root, the directories the operating system lives in, and Windows drive roots / system directories — and records the refusal in the audit trail instead of writing it to settings. This is exact-match: a path *under* a root is still allowed, so the boundary is visible and deliberate. Flagged for maintainer review (docs-audit issue M12). Gate: `tests/permission-store-system-root.test.js` (12 tests; 10 failed before the fix). Mutation record: `docs-audit/mutation-check-system-roots.txt`.
-
-### Agent tools and research verification
-
-#### Single-page search and DOM control
-- New Agent API tools: `page_find` (search one already-open page, no network request and no other tab touched), `dom_query`, `get_page_text`, `web_search`, `news_search`, `search_providers`.
-- `page_find` defaults to `mode="tree"`, matching accessible name, value, href and role across the whole snapshot and returning refs that `click_ref` / `fill_ref` accept. Nodes nested inside structural wrappers are found, and actionable-only filtering does not hide them. `mode="text"` scans rendered prose and returns context snippets.
-- `search_providers` reports which provider is configured, whether it scrapes, and whether it has a news index — so "why are these results undated" is answerable instead of mysterious.
-
-#### Search prefers APIs and says so when it scrapes
-- Tavily is the recommended single key (1,000 free credits/month, no card). SerpAPI (250/month) and Brave (card + attribution required) also work. Google Custom Search JSON is marked deprecated — closed to new customers, existing keys end 2027-01-01.
-- With no key configured, search still runs by scraping a search engine's HTML. That path is rate-limited, slower, breaks without warning when the markup changes, and returns no publication dates. It is labelled as scraped wherever it is reported rather than presented as equivalent.
-
-#### Form filling split from form submission
-- `fill_form` (verb `input`) fills and never submits. `form_submit` (verb `sideEffecting`) goes through the approval gate. They are separate tools rather than one tool with a `submit` flag, so the side effect cannot be reached by passing a parameter.
-- `autofill_match`, `vault_list` and `vault_unlock` join the Forms category.
-- No field is written that the user did not specify, and a readOnly or disabled field is reported as not filled rather than counted as success.
-- `fillFormScript` no longer falls back to `document.forms[0]`, so a fill cannot land in an arbitrary form, and it no longer submits.
-
-#### Element refs fail loudly instead of addressing the wrong thing
-- Refs bind by a `data-aartiq-ax` stamp the collector writes onto actionable nodes, with `backendNodeId` as first-priority identity. A stale ref now errors instead of scripting whatever element happens to occupy that position after the page shifts.
-- The collector stamps only actionable elements. Blanket stamping perturbed page code that queries the DOM.
-- `SnapshotManager` no longer prunes `depth` after recursing, which had been flattening the tree it returned.
-
-#### Claim-level cross-verification, and last source only when dates are real
-- New `src/lib/research-pipeline.ts` runs a bounded plan → search → fetch → extract → cross-verify → rank → generate job behind Deep Research, with the search provider, page fetcher and progress emitter injected so the whole pipeline tests without network access.
-- Claims are keyed on `subject|verb`, so "450 million dollars" and "450 million euros" remain one claim with two conflicting figures instead of being matched into agreement.
-- Corroboration requires ≥2 distinct domains, and domains are re-derived from each claim's URL rather than trusted from the caller — `news.reuters.com` and `uk.reuters.com` no longer pass as two independent sources.
-- A last source is named only when publication timestamps are reliable. Otherwise the answer is "unknown" with the reason attached, so callers do not retry and guess.
-- Search budget options are per-run with defaults; an absent option takes the default instead of clamping to a minimum.
-- Progress streams to the chat sidebar over `research-progress`, and a "Sources disagree" panel renders unresolved contradictions inline.
-- Known limit, stated rather than hidden: claim extraction surfaces numeric claims with a named subject, so disputed qualitative findings never reach the contradictions panel. A false negative rather than a false positive; the coverage figure reflects numeric agreement specifically.
-
-#### Fixes found by the new tests
-- `typeScript` emitted a bare `clearFirst` identifier, throwing `ReferenceError` on every `type_ref`.
-- Contenteditable detection relied only on `el.isContentEditable`, so `fill_form` reported success on a plain div.
-- The number regex required whitespace after a magnitude, so "raised 100 million." was read as `100` and turned agreement into a false contradiction.
-- Subject extraction keyed on articles and pronouns merged every claim into `the|company`.
-- Terminal pipeline status was keyed on pages attempted rather than pages read.
-
-### Testing
-- `tests/agent-api-bridge-tools.test.js` (35), `tests/page-scripts-forms.test.js` (48), `tests/snapshot-ref-binding.test.js` (23), `tests/web-search-service.test.js` (27), `tests/research-pipeline.test.js` (60), `tests/research-progress-plumbing.test.js` (24).
-
 ## Version 0.3.8 — Local listener authentication and shell approval defaults
+
+### New features after the beta
+
+#### Master PIN, permanent sync auth, dual-gate mobile approvals, unified sessions (#22)
+- Master PIN (PBKDF2-SHA256, 100,000 iterations) stored in the native OS keychain — Electron `safeStorage` → Apple Keychain / Windows DPAPI / Linux Secret Service on desktop, Android Keystore on mobile; only salt and hash cross the sync channel; five consecutive failures trigger a 10-minute lockout.
+- First pairing mints a 256-bit permanent token; Wi-Fi and cloud reconnects validate it without a code or an approval again, and the paired-device ledger survives restarts. Live sessions ride on short-lived tokens (see Security after the beta).
+- The 📱 Mobile button delegates an execution plan to a paired phone — risk tiers with factors and mitigations, authorised only by both gates (Master PIN and Android screen lock / biometrics) — resolved in real time over IPC + WebSocket.
+- Unified session manager: tabs, history, tasks and permission decisions streamed live and persisted atomically to OS application data; native device names and hardware models on both sides.
+
+#### The Firebase device bridge (#22)
+- Each device publishes its P2P id at `devices/<uid>/<deviceId>/p2pId`, the peer reads it back and signals land in `p2p_signals/<uid>/<p2pId>`, so two devices signed into the same Google account need no manual address exchange. Both derive the pairing master key from `pairing/<uid>/masterKey`, and a signal that does not verify against it is dropped, not passed through. Permission requests relay through Firebase when the phone is not on the LAN.
 
 ### Security
 
@@ -124,19 +77,32 @@
 #### Flutter version numbers had stopped moving
 - `pubspec.yaml` had drifted to `0.3.5+10` against a `package.json` at `0.3.7`, and no workflow passed `--build-number`, so `versionCode` stayed pinned at **10** across v0.3.5 to v0.3.7 — which is what turned each Play upload into a fresh version-code conflict. `sync-version.ts` now rewrites pubspec's `version:` from `package.json` and derives the build number from semver, and `auto-tag.yml` fails the release if the two disagree.
 
+#### Approval tickets were hardened further (#17)
+- Ticket ids come from a module-global counter plus the timestamp, so two gate instances built in the same millisecond no longer mint the same id. Inputs hash over a recursive canonical JSON (arrays, numbers, booleans, null): an equivalent input with a different key order still matches, a different input still fails closed. Consumed tickets carry a TTL with periodic cleanup, and a concurrent-consume regression test pins the claim.
+
+#### Closing the desktop control window no longer strands the phone (#22)
+- The pairing code was regenerated on every desktop start, so a phone holding the previous code was answered "Invalid pairing code" after each relaunch, and sync events addressed to the window captured at registration time were what disconnected mobile clients when the control window closed. The pairing code now persists in the app store and handlers resolve the live window at send time.
+
+#### Waiting for AI output could hang forever (#22)
+- `send-prompt` reported success while `remote-ai-prompt` never reached the renderer, so the phone waited for output that could never arrive. Events now follow the live window, and the regression test fails the send when the renderer was never reached.
+
 ### Documentation
 - The risk tier table, test counts and live repository figures published by the docs generator are now read from the same source files the runtime reads, and `npm run docs:check` fails when a published number or a security claim disagrees with the code. The gate is not yet wired into a workflow, so it only protects a commit when someone runs it.
 - The published feature pages had drifted from the source. Eight claims on the Cloud Sync page described behaviour the sync service does not have: a three-tier Read Only / Standard / Trusted permission ladder, mDNS discovery, a 60-second pairing timeout, transfer and per-item size ceilings, an audit trail, automatic conflict resolution, and an encryption guarantee attributed to a `shared-keychain.js` file that does not exist. All eight are corrected, and the true encryption claim is kept and made more precise — the page now says plainly that the local WebSocket is not covered by it.
 - `tests/docs-sync-match-source.test.js` enforces that correction with 17 assertions reading both the rendered page and `src/lib/WiFiSyncService.ts`, stripping comments before matching so documenting a removed claim does not trip the gate. Before the fix **12 of its 15 assertions failed**; the 3 that passed were the true encryption claims.
 - Still unproven and published as such: four features are marked `works` with neither a test nor a signed-off manual check (`apple-intelligence.generate-image`, `apple-intelligence.summary`, `http-api.native-bridge`, `keyboard.global-hotkeys`), one manual check (`siri.appintents`) is unsigned, and 18 further rows await a maintainer decision.
 
+- The audit is published: `docs-audit/` now carries the final report beside `mismatch-inventory.md` — exact counts per pull request, the flagged security behaviour changes, what could not be verified from the repository, and what is left for the maintainer (#21).
+- Corrected landing claims are gated against the source: `tests/docs-listener-claims-match-source.test.js` derives tool counts from `tools.ts` and `server/index.js` at test time, the CHANGELOG listener scope is pinned to "three tokened local listeners", the extension-signature line cites the fail-closed call site and the skipped-suite CI gap, and `release_notes/v0.3.4.md` keeps its historical wording with a correction annotation (#14).
+- The security page was rewritten for this build — the narrowed allowlist and deny list, real biometrics with accurate dialog labels, the Master PIN keychain and the remote-shell ticket flow (#23).
 ### Behaviour changes users may notice
+- Phone/laptop file sync now needs `AARTIQ_SERVICE_HOST=0.0.0.0` (or a LAN address): the background task service and PDF sync listener bind loopback by default (#15).
 - The Claude Desktop config now carries the session token in the `mcp-remote` URL, because `mcp-remote` accepts a bare URL and nothing else. The token changes on every Aartiq start, so a config written by an earlier version is answered with 401 until Auto-Configure is run again.
 
 ### Testing
 - `tests/local-server-auth.test.js` (44 cases, real sockets), `tests/shell-command-tiers.test.js` (193 cases), `tests/shell-approval-defaults.test.js` (61 cases).
 - `tests/approval-gate-concurrency.test.js` (11 cases), `tests/linux-ipc-registration.test.js` (6 cases), `tests/docs-sync-match-source.test.js` (17 cases).
-- Full suite on this tag: **980 passed, 26 skipped, 0 failed**, 35 suites.
+- Full suite on this tag: **1342 passed, 26 skipped, 0 failed**, 57 suites passing (1 skipped) of 1368 declared.
 
 Full detail, including what was deliberately left unfixed, is in
 `release_notes/v0.3.8.md` and `aartiq-browser/docs-audit/security-defaults-verification.md`.
@@ -145,7 +111,7 @@ Full detail, including what was deliberately left unfixed, is in
 
 ### Every change in v0.3.8
 
-11 merged pull requests from `v0.3.7` to the `v0.3.8-beta.1` tag. PR #5 was drafted and closed without merging.
+22 merged pull requests in v0.3.8. The first 11 landed between `v0.3.7` and the `v0.3.8-beta.1` tag (#5 was drafted and closed without merging); the rest landed between that beta and this tag.
 
 | PR | Merged | Title |
 |---|---|---|
@@ -160,6 +126,17 @@ Full detail, including what was deliberately left unfixed, is in
 | #10 | 2026-10-04 | fix(linux): stop registering five IPC channels twice at startup |
 | #11 | 2026-10-04 | fix(approval): make a ticket claim atomic so it cannot be redeemed twice |
 | #12 | 2026-10-04 | docs: complete the v0.3.8 release notes |
+| #13 | 2026-10-04 | docs: rewrite the v0.3.8 notes in the house style |
+| #14 | 2026-10-04 | docs: fix the flagged mismatches and gate the corrected claims |
+| #15 | 2026-10-04 | fix(network): bind file-sync listeners to loopback and split the shared 46203 port [security behavior] |
+| #16 | 2026-10-04 | test(approval,linux): mutation-record the B1/B2 fixes and de-flake the gate test |
+| #17 | 2026-10-04 | fix(approval-gate): prevent double redemption, harden canonicalization |
+| #18 | 2026-10-04 | fix(licence,files): ship Apache-2.0 everywhere and finish the Comet → Aartiq file names |
+| #19 | 2026-10-04 | Agent page tools and claim-level research verification |
+| #20 | 2026-10-04 | fix(permissions): refuse system roots in the directory allowlist (M12) — FLAGGED security behavior change |
+| #21 | 2026-10-04 | docs: add the audit final report |
+| #22 | 2026-10-04 | feat: Master PIN in Native OS Keychain, Permanent Sync Auth, Dual-Gate Mobile Biometrics & Unified Sessions |
+| #23 | 2026-10-04 | fix(security): resolve four security issues (remote shell, allowlist, sync auth, biometrics) |
 
 ### Commits, `v0.3.7..v0.3.8-beta.1`
 
@@ -204,6 +181,75 @@ f6d23a92  docs: README version badge/current-release/release-notes -> v0.3.7
 4b168473  ci: fix Windows AppContainer AVE + full-suite hang/ESM and automation availability
 5a6fbacd  ci: jest tests manual-only via workflow_dispatch (no push/PR triggers)
 ```
+
+### Licensing
+
+- `aartiq-browser/LICENSE.txt` now carries Apache-2.0, byte-identical to the repository root `LICENSE`, so the Windows NSIS installer, the `package.json` `license` field, and the repository all present the same licence. The restrictive EULA it replaced is preserved verbatim in `docs-audit/licence-decision.md`. `docs:check` rule (j) and `tests/licence-audit-rename.test.js` keep the copies in agreement.
+
+### Changed
+
+- User-visible files named after Comet are Aartiq now: the permission audit trail migrates `comet-audit.jsonl` → `aartiq-audit.jsonl` on first load (an existing new file is never overwritten), and chat exports default to `aartiq-chat-<timestamp>.txt` / `.pdf`, with the session export using `aartiq-chat-session-<timestamp>.txt`.
+
+### Security after the beta
+
+- The background task service (3999) and the PDF sync server now bind `127.0.0.1` by default instead of `0.0.0.0`. `AARTIQ_SERVICE_HOST` is the explicit opt-in for phone/laptop file access. Neither listener sends an `Access-Control-Allow-Origin` header any more — the wildcard is gone. WiFi sync (3004) is untouched and still binds every interface; that stays open (docs-audit/issues/wifi-sync-bind-address.md).
+- The agent API moves to port `46204`; the native macOS bridge keeps `46203`. Both used to default to `46203`, so whichever started second lost the bind and the error was swallowed. `aartiq-mcp` still targets `46203` — its BridgeClient calls only the native bridge's `/native-mac-ui/*` routes.
+- New gate: `tests/network-listener-hardening.test.js` pins the loopback call sites, the env override, the missing CORS headers, and the port split. Mutation record: `docs-audit/mutation-check-network-hardening.txt`.
+- `addAllowedDirectory` now refuses system roots — the filesystem root, the directories the operating system lives in, and Windows drive roots / system directories — and records the refusal in the audit trail instead of writing it to settings. This is exact-match: a path *under* a root is still allowed, so the boundary is visible and deliberate. Flagged for maintainer review (docs-audit issue M12). Gate: `tests/permission-store-system-root.test.js` (12 tests; 10 failed before the fix). Mutation record: `docs-audit/mutation-check-system-roots.txt`.
+
+#### Remote-origin shell commands require approval (#23)
+- `execute-shell-command` was registered with `requiresApproval: 'never'`, so a remote-origin call skipped the approval tickets and executed directly. It now registers explicit origin policies `{ local: 'never', remote: 'always' }`, the capability controller rejects any attempt to register it `never` for remote callers, and remote execution requires a single-use, input-hash-bound ticket redeemed over QR + PIN. `tests/remote-shell-approval.test.js` (9/9).
+
+#### Default allowlist narrowed; sensitive paths denied unconditionally (#23)
+- The default seeded `home`, `Desktop`, `Documents` and `Downloads` as read-write. It is now a single dedicated workspace (`~/.aartiq/sandbox-workspace`) plus `/tmp`, and `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, browser profiles, password managers, keychains, shell history and `.env` files are denied even when a parent directory is allowed — mirrored into the OS sandbox profiles (Seatbelt, bubblewrap, AppContainer).
+
+#### Sync sessions use short-lived, device-bound tokens (#23)
+- The permanent pairing token is no longer the wire credential: 15-minute access tokens with 7-day device-bound refresh tokens, `unpairDevice` revokes and disconnects immediately, every WebSocket sync action and PDF sync HTTP endpoint requires authentication, PDF sync validates `Host` (DNS rebinding), five failed pairing attempts trigger a 15-minute lockout, and new pairing or token refresh from a new network raises a security notification. `tests/sync-auth-tokens.test.js` (15/15).
+
+#### Approval dialogs tell the truth; biometrics are real (#23)
+- The buttons claimed "Approve with Touch ID" with no biometric API ever called and the `requireBiometric*` flags ignored. They are now honestly `['Deny', 'Approve']`, real verification is implemented (macOS LocalAuthentication, Windows Hello, Linux polkit/fprintd), and the flags are enforced fail-closed: unsupported or cancelled verification denies the action. `tests/native-approval-biometrics.test.js` (7/7).
+
+### Agent tools and research verification
+
+#### Single-page search and DOM control
+- New Agent API tools: `page_find` (search one already-open page, no network request and no other tab touched), `dom_query`, `get_page_text`, `web_search`, `news_search`, `search_providers`.
+- `page_find` defaults to `mode="tree"`, matching accessible name, value, href and role across the whole snapshot and returning refs that `click_ref` / `fill_ref` accept. Nodes nested inside structural wrappers are found, and actionable-only filtering does not hide them. `mode="text"` scans rendered prose and returns context snippets.
+- `search_providers` reports which provider is configured, whether it scrapes, and whether it has a news index — so "why are these results undated" is answerable instead of mysterious.
+
+#### Search prefers APIs and says so when it scrapes
+- Tavily is the recommended single key (1,000 free credits/month, no card). SerpAPI (250/month) and Brave (card + attribution required) also work. Google Custom Search JSON is marked deprecated — closed to new customers, existing keys end 2027-01-01.
+- With no key configured, search still runs by scraping a search engine's HTML. That path is rate-limited, slower, breaks without warning when the markup changes, and returns no publication dates. It is labelled as scraped wherever it is reported rather than presented as equivalent.
+
+#### Form filling split from form submission
+- `fill_form` (verb `input`) fills and never submits. `form_submit` (verb `sideEffecting`) goes through the approval gate. They are separate tools rather than one tool with a `submit` flag, so the side effect cannot be reached by passing a parameter.
+- `autofill_match`, `vault_list` and `vault_unlock` join the Forms category.
+- No field is written that the user did not specify, and a readOnly or disabled field is reported as not filled rather than counted as success.
+- `fillFormScript` no longer falls back to `document.forms[0]`, so a fill cannot land in an arbitrary form, and it no longer submits.
+
+#### Element refs fail loudly instead of addressing the wrong thing
+- Refs bind by a `data-aartiq-ax` stamp the collector writes onto actionable nodes, with `backendNodeId` as first-priority identity. A stale ref now errors instead of scripting whatever element happens to occupy that position after the page shifts.
+- The collector stamps only actionable elements. Blanket stamping perturbed page code that queries the DOM.
+- `SnapshotManager` no longer prunes `depth` after recursing, which had been flattening the tree it returned.
+
+#### Claim-level cross-verification, and last source only when dates are real
+- New `src/lib/research-pipeline.ts` runs a bounded plan → search → fetch → extract → cross-verify → rank → generate job behind Deep Research, with the search provider, page fetcher and progress emitter injected so the whole pipeline tests without network access.
+- Claims are keyed on `subject|verb`, so "450 million dollars" and "450 million euros" remain one claim with two conflicting figures instead of being matched into agreement.
+- Corroboration requires ≥2 distinct domains, and domains are re-derived from each claim's URL rather than trusted from the caller — `news.reuters.com` and `uk.reuters.com` no longer pass as two independent sources.
+- A last source is named only when publication timestamps are reliable. Otherwise the answer is "unknown" with the reason attached, so callers do not retry and guess.
+- Search budget options are per-run with defaults; an absent option takes the default instead of clamping to a minimum.
+- Progress streams to the chat sidebar over `research-progress`, and a "Sources disagree" panel renders unresolved contradictions inline.
+- Known limit, stated rather than hidden: claim extraction surfaces numeric claims with a named subject, so disputed qualitative findings never reach the contradictions panel. A false negative rather than a false positive; the coverage figure reflects numeric agreement specifically.
+
+#### Fixes found by the new tests
+- `typeScript` emitted a bare `clearFirst` identifier, throwing `ReferenceError` on every `type_ref`.
+- Contenteditable detection relied only on `el.isContentEditable`, so `fill_form` reported success on a plain div.
+- The number regex required whitespace after a magnitude, so "raised 100 million." was read as `100` and turned agreement into a false contradiction.
+- Subject extraction keyed on articles and pronouns merged every claim into `the|company`.
+- Terminal pipeline status was keyed on pages attempted rather than pages read.
+
+### Testing after the beta
+- `tests/agent-api-bridge-tools.test.js` (35), `tests/page-scripts-forms.test.js` (48), `tests/snapshot-ref-binding.test.js` (24), `tests/web-search-service.test.js` (30), `tests/research-pipeline.test.js` (60), `tests/research-progress-plumbing.test.js` (24).
+- B1 and B2 are mutation-recorded, not just tested: removing the atomic claim is killed by four tests, moving it below the await (the original bug shape) by three; the `consumedTickets.add` mutation **survived**, and the record says so instead of papering over it (#16).
 
 ## Version 0.3.7 — Windows AppContainer OS-Level Sandboxing
 
