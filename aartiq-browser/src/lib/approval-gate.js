@@ -128,20 +128,30 @@ class ApprovalGate {
       return { valid: false, error: ERRORS.APPROVAL_SCOPE_MISMATCH };
     }
 
+    // Claim the ticket synchronously, before the first await.
+    //
+    // JavaScript runs a run of synchronous statements without interleaving
+    // another async caller, so deleting the ticket here is the atomic claim: a
+    // concurrent consumeTicket now finds no ticket at all and fails. This must
+    // not move below the hash check — the only await in this method sat between
+    // the consumed-check and the consumed-mark, which let every simultaneous
+    // redemption pass the check and then all report success.
+    tickets.delete(ticketId);
+
     // Verify input hash matches
     const inputStr = typeof input === 'object' ? canonicalJSON(input) : String(input);
     const hashInput = `${actionType}:${inputStr}`;
     const inputHash = await sha256(hashInput);
 
     if (inputHash !== ticket.inputHash) {
-      tickets.delete(ticketId);
+      // Already removed above, so a tampered attempt fails closed and leaves
+      // nothing redeemable behind.
       return { valid: false, error: ERRORS.APPROVAL_SCOPE_MISMATCH };
     }
 
     // Mark consumed (one-time use)
     ticket.consumed = true;
     consumedTickets.add(ticketId);
-    tickets.delete(ticketId);
 
     return { valid: true };
   }
