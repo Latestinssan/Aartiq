@@ -3308,6 +3308,36 @@ Do NOT perform a single broad search for the whole request.`
           setResearchState(createResearchState(researchId, drQuery));
 
           const drStepId = addThinkingStep(`Researching "${drQuery}"...`);
+
+          // Run the bounded pipeline for the evidence. It searches, reads pages,
+          // and cross-verifies claims across independent domains, streaming
+          // progress into the execution card as it goes. The LLM's own
+          // WEB_SEARCH cycles still follow for synthesis — this supplies the
+          // checked-up-on material, not the prose.
+          const startPipeline = async () => {
+            try {
+              const result = await window.electronAPI?.runResearch?.({
+                researchId,
+                query: drQuery,
+              });
+              if (result && result.success === false) {
+                setResearchState((prev) => applyResearchProgress(prev, {
+                  researchId, stage: 'error', status: 'failed', error: result.error,
+                }));
+              }
+              return result;
+            } catch (err: any) {
+              setResearchState((prev) => applyResearchProgress(prev, {
+                researchId, stage: 'error', status: 'failed', error: err?.message || String(err),
+              }));
+              return null;
+            }
+          };
+
+          // Detached on purpose: the command handler continues to the LLM turn,
+          // and the pipeline's own events drive the card from here.
+          void startPipeline();
+
           output = `Research workflow initiated for: "${drQuery}". Now follow the Research Skill v2 guide: decompose the query into targeted subtopics, run multiple [WEB_SEARCH] + [NAVIGATE] + [READ_PAGE_CONTENT] cycles, validate facts across 2+ sources, maintain coverage above 80%, and synthesize a structured evidence-grounded report with a ## Sources section listing every URL you visited.`;
           resolveThinkingStep(drStepId, 'done', `Research workflow started for "${drQuery}"`);
           break;
@@ -6709,6 +6739,26 @@ I've successfully executed the following real tasks:
     return cleanup;
   }, []);
 
+  /**
+   * Feed research progress from the main process into the reducer.
+   *
+   * `activeResearchPipelineIdRef` guards against a late event from a job the user
+   * already moved on from painting itself over the current one — the sidebar is
+   * single-job, so an unfiltered subscription would cross two runs' steps into
+   * one card.
+   */
+  useEffect(() => {
+    if (!window.electronAPI?.onResearchProgress) return;
+    const cleanup = window.electronAPI.onResearchProgress((event: any) => {
+      if (!event) return;
+      const activeId = activeResearchPipelineIdRef.current;
+      const eventId = event.researchId || event.pipelineId;
+      if (activeId && eventId && eventId !== activeId) return;
+      setResearchState((prev) => applyResearchProgress(prev, event));
+    });
+    return cleanup;
+  }, []);
+
   useEffect(() => {
     if (!window.electronAPI?.onNativeMacPrompt) return;
     const cleanup = window.electronAPI.onNativeMacPrompt((payload: { prompt: string }) => {
@@ -7921,6 +7971,34 @@ I've successfully executed the following real tasks:
               />
               {researchState.sources.length > 0 && (
                 <ResearchSourceCarousel sources={researchState.sources} />
+              )}
+              {(researchState.contradictions as any[] | undefined)?.length > 0 && (
+                <div className="rounded-xl border border-amber-500/15 bg-amber-500/5 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-amber-500/10 flex items-center gap-2">
+                    <span className="text-sm">⚠️</span>
+                    <span className="text-sm font-semibold text-amber-300">
+                      Sources disagree
+                    </span>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    {(researchState.contradictions as any[]).map((c, i) => (
+                      <div key={i} className="space-y-1">
+                        <div className="text-[10px] font-medium text-amber-400/80 uppercase tracking-wider">
+                          {String(c?.type || 'conflict').replace(/_/g, ' ')}
+                        </div>
+                        <div className="text-xs text-zinc-400">
+                          <span className="text-zinc-300">{c?.claim1?.source}</span>: &ldquo;{c?.claim1?.text}&rdquo;
+                        </div>
+                        <div className="text-xs text-zinc-400">
+                          <span className="text-zinc-300">{c?.claim2?.source}</span>: &ldquo;{c?.claim2?.text}&rdquo;
+                        </div>
+                        {c?.ratio && (
+                          <div className="text-[10px] text-amber-400/60">Discrepancy: {c.ratio}x</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

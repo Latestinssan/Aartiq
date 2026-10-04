@@ -241,6 +241,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { getP2PSync } = require('./src/lib/P2PFileSyncService.js'); // Import the P2P service
 const { getWiFiSync } = require('./src/lib/WiFiSyncService.js');
+const { masterPinService } = require('./src/lib/MasterPINService.js');
+const { unifiedSessionManager } = require('./src/lib/UnifiedSessionManager.js');
+const { permissionRelayService } = require('./src/lib/PermissionRelayService.js');
 
 // ERROR-PROOFING: Global error handlers for uncaught exceptions
 // Only exit the process for truly fatal errors; log and continue for recoverable ones
@@ -6613,6 +6616,50 @@ if (isPackaged && process.platform === 'darwin') {
       },
       info: webSearchProvider.getProviderInfo(),
     };
+  });
+
+  /**
+   * Run a bounded research job and stream its progress to the sidebar.
+   *
+   * Progress goes out over `research-progress` rather than the return value, so a
+   * long job shows what it is doing instead of a spinner. The budget is the user's
+   * consent boundary: it caps searches and page fetches before either spends a
+   * credit, and anything the budget excluded is named in `stoppedReason` rather
+   * than quietly dropped.
+   */
+  ipcMain.handle('research-run', async (_event, payload = {}) => {
+    const { runResearch } = require('./src/lib/research-pipeline');
+    const { fetchPageContent } = require('./src/lib/web-extractor');
+
+    const researchId = payload.researchId || `research-${Date.now().toString(36)}`;
+    const sender = _event?.sender;
+    const emit = (event) => {
+      if (!sender || sender.isDestroyed?.()) return;
+      sender.send('research-progress', event);
+    };
+
+    try {
+      const outcome = await runResearch(
+        {
+          searchNews: (query, count, opts) => webSearchProvider.searchNewsDetailed(query, count, opts),
+          fetchPage: (url, maxChars) => fetchPageContent(url, maxChars),
+          emit,
+        },
+        { query: String(payload.query || ''), queries: payload.queries, budget: payload.budget, researchId },
+      );
+      // Dates cross IPC as strings; re-hydrate so callers get the same shape they
+      // would have got from the module directly.
+      return {
+        success: true,
+        outcome: {
+          ...outcome,
+          lastSource: { ...outcome.lastSource, publishedAt: outcome.lastSource.publishedAt?.toISOString() ?? null },
+        },
+      };
+    } catch (error) {
+      emit({ researchId, stage: 'error', status: 'failed', error: error.message });
+      return { success: false, error: error.message };
+    }
   });
 
   // Web Search RAG Helper with Caching + auto page content
