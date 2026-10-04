@@ -79,6 +79,10 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | File | Purpose |
 |------|---------|
 | `Security.ts` / `SecurityValidator.js` | Command validation, risk levels, injection detection |
+| `MasterPINService.ts` / `MasterPINSetup.tsx` | Master PIN (PBKDF2-SHA256, 100k rounds) stored in Native OS Keychain (Apple Keychain/DPAPI/Secret Service) + 5-attempt lockout |
+| `UnifiedSessionManager.ts` | Unified past/live session aggregator (tabs, history, tasks, permissions, sync snapshots) |
+| `PermissionRelayService.ts` | Dual-gate permission relay (Master PIN + Android Screen Lock) for remote & high-risk approvals |
+| `DeviceIdentifier.ts` | Native OS friendly computer name and hardware model detection |
 | `AIChatSidebar.tsx` | Main AI chat interface |
 | `AICommandParser.ts` | Parses AI output into executable commands |
 | `YouTubePlayer.tsx` | Inline YouTube iframe video player component |
@@ -114,7 +118,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | Protocol / Service | Port | Notes |
 | --- | --- | --- |
 | HTTP (Next.js, dev) | 3003 | Next.js dev server. Development only — never started in a packaged build. |
-| MCP browser bridge | 3001 | mcp-bridge — binds `all interfaces (0.0.0.0 / ::)` |
+| MCP browser bridge | 3001 | mcp-bridge — binds `127.0.0.1` |
 | WiFi sync (desktop ↔ mobile) | 3004 | wifi-sync — binds `all interfaces (0.0.0.0 / ::)` |
 | Native macOS / CLI bridge | 46203 | native-bridge — binds `127.0.0.1` |
 | Agent API tool server | 46203 | agent-api — binds `127.0.0.1` |
