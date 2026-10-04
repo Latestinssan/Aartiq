@@ -401,6 +401,18 @@ function normalizeCommandPattern(command) {
 /**
  * Whether "Allow Always" may be offered for a command, and why not if it may
  * not. Returns `{ eligible, reason }`.
+ *
+ * The rule is allow-list, not deny-list: a permanent grant requires a binary we
+ * have classified. `NEVER_ALWAYS_ELIGIBLE` alone let anything absent from it
+ * through, including a binary nobody has heard of — which is exactly the one
+ * whose behaviour cannot be described to the user before they grant it forever.
+ * Such a command is `medium` because we know nothing about it, and the same
+ * ignorance is why "Allow Once" is the strongest answer available for it.
+ *
+ * Membership in the tier table is what establishes that we know what a binary
+ * does. It is a weaker signal than knowing a binary is safe, and a `medium` entry
+ * can still be granted: `cp`, `mv`, `mkdir` and `touch` keep exact-match permanent
+ * grants, because the effect of repeating them is visible in the dialog text.
  */
 function alwaysApprovalEligibility(command) {
   const binary = extractBaseBinary(command);
@@ -413,6 +425,9 @@ function alwaysApprovalEligibility(command) {
   }
   if (containsDestructivePattern(command)) {
     return { eligible: false, reason: 'destructive-pattern' };
+  }
+  if (!isKnownShellCommand(binary)) {
+    return { eligible: false, reason: `unrecognised-binary:${binary}` };
   }
   return { eligible: true, reason: null };
 }
