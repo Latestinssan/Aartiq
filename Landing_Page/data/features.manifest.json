@@ -1,0 +1,1479 @@
+{
+  "$comment": "Hand-authored feature reality manifest. Every feature the public docs claim is listed here exactly once. `status` is what the code does today; `tests` is the authoritative list of test ids that prove it (empty means unproven, and no docs page may render the feature as available). A test id is `path#exact test name`, and check-docs.ts fails if the file is absent. A test in `tests` proves the docs agree with the source unless the row carries a `coverage` note saying otherwise; proving the source behaves as documented is what `plannedTestIds` tracks. A row with `manualCheck` cannot be settled by CI at all and names the sign-off that did. Validated by scripts/check-docs.ts (checkFeatureManifest) and by the gate suites under aartiq-browser/tests/. The human-readable companion is aartiq-browser/docs-audit/feature-triage.md.",
+  "version": 1,
+  "baseline": {
+    "commit": "63baa5ee",
+    "branch": "docs/feature-reality-gate",
+    "note": "Rows are derived by reading source, and the four gate suites (Genmoji, shortcuts, deep links, platform integration) re-derive their facts from source on every run, so they cannot go stale silently. Verified against 0c2da24d: all 94 gate tests pass against main's code and npm run docs:check is clean apart from three standing warnings. One row's evidence had genuinely moved and was corrected - http-api.native-bridge cites a single bridgeApp.use middleware calling checkLocalRequest with requireToken: true (main.js:1259-1272), because there are zero per-route call sites; the claim itself always held. Line-number pointers were re-pinned against main. The Linux duplicate-registration finding and both bridge tables are asserted by tests/docs-platform-integration-match-source.test.js, which passes against main unchanged.",
+    "verifiedAgainst": "0c2da24d"
+  },
+  "statusValues": {
+    "works": "A real entry point exists and behaves as documented. Still requires a passing test before docs may call it available.",
+    "partial": "Something real happens, but not what the docs say, or only on one platform, or only the UI half exists.",
+    "missing": "No entry point, or the documented entry point is never wired to anything.",
+    "unsafe-by-design": "The documented behaviour would let an external origin act without approval. Do not implement as documented; remove the parameter/claim and gate it."
+  },
+  "decisionValues": {
+    "implement": "Keep the documented feature and make the code match it, behind a failing test.",
+    "remove-from-docs": "The claim cannot be made safely or truthfully. Delete it from the docs page; do not build it.",
+    "maintainer-decides": "Blocked on a maintainer decision. Do not implement and do not delete until answered."
+  },
+  "riskTiers": [
+    "none",
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "features": [
+    {
+      "id": "deeplink.dispatch.macos",
+      "title": "aartiq:// dispatch on macOS",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/deep-links:35-58",
+        "docs/apple-integration:99"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/main.js:2869 app.on('open-url')",
+        "aartiq-browser/main.js:2894 scheme dispatch (aartiq:// and comet://)"
+      ],
+      "tests": [
+        "tests/docs-deep-links-match-source.test.js#every published status matches the declared contract",
+        "tests/docs-deep-links-match-source.test.js#a dead command is genuinely unreachable in the source",
+        "tests/docs-deep-links-match-source.test.js#a prepares command does nothing but open the chat and type into it",
+        "tests/docs-deep-links-match-source.test.js#a works command either reaches something other than chat text, or executes"
+      ],
+      "plannedTestIds": [
+        "tests/deeplink-dispatch.test.js#dispatches-aartiq-scheme"
+      ],
+      "decision": "implement",
+      "riskTier": "medium",
+      "requiredApproval": "none",
+      "notes": "The only platform where the scheme is actually delivered to the app. Electron emits open-url on macOS only."
+    },
+    {
+      "id": "deeplink.dispatch.windows",
+      "title": "aartiq:// dispatch on Windows",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:99-240",
+        "docs/deep-links:479-486"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2869 app.on('open-url') is macOS-only",
+        "aartiq-browser/main.js: no app.on('second-instance') handler",
+        "aartiq-browser/main.js:2850 process.argv is read only to register the protocol, never parsed for a deep link",
+        "aartiq-browser/src/lib/windows-integration.js:423 handleURLSchemeEvent is exported and imported at main.js:738 but never called"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-dispatch.test.js#windows-parses-argv-or-second-instance"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "Windows launches the app with the URL in argv; nothing reads argv, and no second-instance lock exists, so every Windows deep-link row in the docs is currently inert."
+    },
+    {
+      "id": "deeplink.dispatch.linux",
+      "title": "aartiq:// dispatch on Linux",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:136-147",
+        "docs/deep-links:479-486"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:449 handleLinuxURLScheme is imported at main.js:749 but never called",
+        "aartiq-browser/main.js: no second-instance handler, no argv parsing"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-dispatch.test.js#linux-parses-argv-or-second-instance"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "Same gap as Windows. handleLinuxShortcutAction is only reachable from the renderer IPC, not from a URL."
+    },
+    {
+      "id": "deeplink.unknown-passthrough",
+      "title": "Unknown aartiq:// action is forwarded to the renderer as an IPC channel name",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/main.js:2932 const ipcCommand = commandMap[command] || command;",
+        "aartiq-browser/main.js:2933 target.webContents.send(ipcCommand, params)"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-dispatch.test.js#unknown-action-is-rejected"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "critical",
+      "requiredApproval": "n/a",
+      "notes": "Undocumented, so nothing to remove from the docs; the code must change. An unknown action becomes a renderer channel name with attacker-controlled params. Inert today only because no listener exists for those names; it becomes live the moment one is added. Replace the fallback with an explicit reject."
+    },
+    {
+      "id": "deeplink.chat",
+      "title": "aartiq://chat",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:100-106",
+        "docs/windows-integration:100-108",
+        "docs/linux-integration:137"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:139 executeShortcutAction chat/ask-ai sends execute-shortcut + ai-chat-input-text"
+      ],
+      "tests": [
+        "tests/docs-deep-links-match-source.test.js#every published status matches the declared contract",
+        "tests/docs-deep-links-match-source.test.js#a works command either reaches something other than chat text, or executes"
+      ],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#chat-opens-chat-and-injects-prompt"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Works via the Siri path. The primary-path send to channel 'open-ai-chat' at main.js:2900 has no listener and is dead."
+    },
+    {
+      "id": "deeplink.search",
+      "title": "aartiq://search",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:107-113",
+        "docs/windows-integration:109-118"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:163 executeShortcutAction search opens an encoded google.com/search URL via add-new-tab"
+      ],
+      "tests": [
+        "tests/docs-deep-links-match-source.test.js#every published status matches the declared contract",
+        "tests/docs-deep-links-match-source.test.js#a works command either reaches something other than chat text, or executes"
+      ],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#search-url-is-encoded"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "The docs call this an AI-powered search; the code opens a plain Google query. Correct the description."
+    },
+    {
+      "id": "deeplink.navigate",
+      "title": "aartiq://navigate",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:114-119",
+        "docs/windows-integration:119-128"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:92 normalizeNavigationTarget",
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:155 executeShortcutAction navigate"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#navigate-rejects-non-http-schemes"
+      ],
+      "decision": "implement",
+      "riskTier": "medium",
+      "requiredApproval": "none",
+      "notes": "normalizeNavigationTarget accepts any scheme matching /^[a-zA-Z][a-zA-Z\\d+\\-.]*:/, so file:, data: and arbitrary registered handlers all pass through from a URL parameter. Restrict to http/https."
+    },
+    {
+      "id": "deeplink.create-pdf",
+      "title": "aartiq://create-pdf",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:120-132"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:172 executeShortcutAction create-pdf only injects a chat prompt"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#create-pdf-produces-a-file"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Produces no PDF; it types a request into the chat box and returns success. Either wire it to the document engine or downgrade the doc claim to 'queues a request'."
+    },
+    {
+      "id": "deeplink.create-doc",
+      "title": "aartiq://create-doc",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:186-193"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2904 'create-doc': 'ai:create-pdf' — channel has no renderer listener",
+        "'create-doc' is not in the siriActions list at main.js:2922"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#create-doc-reaches-document-engine"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Documented with format/topic params that nothing reads. Apple-only in the docs while chat, search and navigate are documented on all three."
+    },
+    {
+      "id": "deeplink.run-command",
+      "title": "aartiq://run-command",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:133-142",
+        "docs/linux-integration:141",
+        "docs/windows-integration:129-138"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:182 executeShortcutAction run-command only injects 'Run this shell command: <cmd>' into the chat",
+        "aartiq-browser/main.js:2905 'run-command': 'shell:execute' — channel has no listener anywhere"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#run-command-requires-approval"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "capability ticket (approval-gate)",
+      "notes": "The docs advertise a confirm=true auto-confirm parameter. That parameter is a skip-confirmation switch and must be removed from the docs and from APP_SHORTCUTS, not implemented."
+    },
+    {
+      "id": "deeplink.open-app",
+      "title": "aartiq://open-app",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:160-166",
+        "docs/windows-integration:139-147",
+        "docs/linux-integration:142"
+      ],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:216 await execPromise(`open -a \"${appName}\"`)"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#open-app-uses-argv-not-shell-string"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "appName is interpolated unescaped into a shell string, so a URL parameter can append arbitrary commands. Must move to execFile with an argv array."
+    },
+    {
+      "id": "deeplink.screenshot",
+      "title": "aartiq://screenshot",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:167-171",
+        "docs/windows-integration:148-156"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2907 'screenshot': 'system:screenshot' — no renderer listener",
+        "'screenshot' is not in the siriActions list at main.js:2922"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#screenshot-captures"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Capture exists in the app (desktopCapturer / screen capture services) but is not reachable from the URL. Also missing from the Linux page's own action table while being listed in its shortcut templates."
+    },
+    {
+      "id": "deeplink.volume",
+      "title": "aartiq://volume",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:152-159",
+        "docs/linux-integration:144",
+        "docs/windows-integration:157-165"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:201 executeShortcutAction volume clamps to 0-100 then runs osascript"
+      ],
+      "tests": [
+        "tests/docs-deep-links-match-source.test.js#every published status matches the declared contract",
+        "tests/docs-deep-links-match-source.test.js#the two commands that shell out are the two the page calls macOS-only"
+      ],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#volume-clamps-level"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Value is clamped and parsed as an integer before interpolation, so this is safe as written."
+    },
+    {
+      "id": "deeplink.schedule",
+      "title": "aartiq://schedule",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:143-151",
+        "docs/windows-integration:166-175",
+        "docs/linux-integration:145"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:191 executeShortcutAction schedule injects a chat prompt"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#schedule-registers-a-task"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "in-app dialog",
+      "notes": "Does not schedule anything. The docs mark cron as required; several examples give a 4-field expression where the app's scheduler expects 5 fields."
+    },
+    {
+      "id": "deeplink.ask-ai",
+      "title": "aartiq://ask-ai",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/linux-integration:146",
+        "docs/windows-integration:176-184"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:139 executeShortcutAction chat/ask-ai share one branch"
+      ],
+      "tests": [
+        "tests/docs-deep-links-match-source.test.js#every published status matches the declared contract",
+        "tests/docs-deep-links-match-source.test.js#a works command either reaches something other than chat text, or executes"
+      ],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#ask-ai-opens-chat-and-injects-prompt"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Alias of chat. The primary-path channel 'ai:ask-speaking' at main.js:2910 has no listener."
+    },
+    {
+      "id": "deeplink.voice-chat",
+      "title": "aartiq://voice-chat",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:222-228"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:148 executeShortcutAction voice-chat only opens the chat view"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#voice-chat-starts-listening"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Opens the chat panel; never starts listening or speaking. The docs list it under Continuous Voice."
+    },
+    {
+      "id": "deeplink.set-model",
+      "title": "aartiq://set-model",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:177-181"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2912 'set-model': 'ai:set-model' — no renderer listener",
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js has no set-model branch"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#set-model-changes-active-model"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "in-app dialog",
+      "notes": "Switching the active model changes what every later prompt costs and which provider sees the data; it should not be settable from a URL without a prompt."
+    },
+    {
+      "id": "deeplink.browse",
+      "title": "aartiq://browse",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2913 'browse': 'open-quick-browse' — no renderer listener"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Undocumented. Nothing on the docs pages claims it, so there is nothing to build."
+    },
+    {
+      "id": "deeplink.ocr",
+      "title": "aartiq://ocr",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2914 'ocr': 'trigger-screen-ocr' — no renderer listener"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Undocumented in the deep-link tables; OCR is documented through the native API instead."
+    },
+    {
+      "id": "deeplink.pdf",
+      "title": "aartiq://pdf",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2915 'pdf': 'open-pdf-creator' — no renderer listener"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Undocumented. Overlaps create-pdf; collapse the two names or document both."
+    },
+    {
+      "id": "deeplink.automation",
+      "title": "aartiq://automation",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/deep-links:129",
+        "docs/deep-links:138"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2916 'automation': 'open-automation-panel' — no renderer listener"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#automation-opens-panel"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Used twice in the deep-links page examples. The automation panel exists in the app; only the channel is missing."
+    },
+    {
+      "id": "deeplink.settings",
+      "title": "aartiq://settings",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/deep-links:130"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2917 'settings': 'open-settings' — no listener on that channel",
+        "aartiq-browser/src/app/ClientOnlyPage.tsx:1374 handles 'open-settings' only as an execute-shortcut action, not as a channel of the same name"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/deeplink-actions.test.js#settings-opens-settings"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "One-line fix: route settings through the same execute-shortcut path the menu item uses."
+    },
+    {
+      "id": "deeplink.index",
+      "title": "aartiq://index",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/main.js:2918 'index': 'open-main' — no renderer listener"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Undocumented, but it is the default when no command can be parsed, so it silently swallows malformed links."
+    },
+    {
+      "id": "deeplink.auth-callback",
+      "title": "aartiq-browser:// OAuth callback passthrough",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/main.js:2886-2888 forwards the whole URL to the renderer as auth-callback",
+        "aartiq-browser/src/app/layout.tsx:51 and src/components/SettingsPanel.tsx:89 listen on auth-callback",
+        "aartiq-browser/preload.js:205 onAuthCallback"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "Undocumented, so it needs a decision rather than a docs fix: the callback URL reaches the renderer unvalidated, which is the shape an OAuth code-injection takes."
+    },
+    {
+      "id": "siri.appintents",
+      "title": "Siri / Shortcuts AppIntents (20 intents + phrase provider)",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:63-90",
+        "docs/apple-integration:331"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/native-panels/AppIntents.swift:83-529 twenty AppIntent structs",
+        "aartiq-browser/src/lib/native-panels/AppIntents.swift:532 AartiqShortcutsProvider.appShortcuts phrase list"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/siri-appintents.test.js#every-documented-phrase-has-an-intent"
+      ],
+      "decision": "implement",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "Real Swift, but not automatable: it needs macOS, a signed build and Shortcuts installed. Manual check only — it can never be 'Verified' by CI alone. RunAartiqCommandIntent (AppIntents.swift:373) is the one intent that carries a shell command; it must go through the approval gate.",
+      "manualCheck": {
+        "signoff": "aartiq-browser/docs-audit/manual-checks/siri-appintents.md",
+        "reason": "The intents are Swift, compiled into a signed macOS build, and invoked by Siri or the Shortcuts app. No CI runner can invoke them, so the reachable/unreachable split the page publishes is checked against the AppIntents.swift source and confirmed by hand."
+      }
+    },
+    {
+      "id": "siri.shortcuts-library",
+      "title": "Prebuilt Shortcuts library (APP_SHORTCUTS templates)",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:92-193"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:12-79 APP_SHORTCUTS (11 templates)",
+        "aartiq-browser/src/lib/SiriShortcutsIntegration.js:41 run-command template carries confirm=true"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/siri-shortcuts.test.js#no-template-advertises-skip-confirmation"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "capability ticket (approval-gate)",
+      "notes": "The templates ship an auto-confirm parameter on run-command. Remove it from the template, do not wire it up. Search is listed twice in the docs table with identical text."
+    },
+    {
+      "id": "voice.wake-word",
+      "title": "\"Hey Aartiq\" wake word",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:176-196",
+        "docs/apple-integration:196-238"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep for 'wake word'/'wakeword' across src/ and main.js returns nothing",
+        "aartiq-browser/src/lib/voice-input-handler.js:189 macOSSpeechRecognitionCommands has no wake-word state at all"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/voice-commands.test.js#wake-word-phrases-match-the-manifest"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "Always-listening wake word means the microphone runs outside any user gesture, on a browser that is also a general web browser. Needs a maintainer scope decision before anything is built; do not implement on the strength of the docs page."
+    },
+    {
+      "id": "voice.macos-phrases",
+      "title": "macOS voice command phrases",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:222-238"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/voice-input-handler.js:189-199 nine triggers, all built on the name 'comet'",
+        "aartiq-browser/src/lib/voice-input-handler.js:201 parseVoiceCommand defaults to chat for anything unmatched"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/voice-commands.test.js#comet-phrases-parse-to-documented-actions"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "The implemented trigger set is 'hey comet' / 'comet ai' / 'ask comet' / 'aartiq search' / 'comet find' / 'comet create' / 'comet make' / 'comet schedule' / 'comet remind'. Decide whether the shipped name or the documented name wins, then make one of them true. Also: unmatched speech is treated as a chat message, so any ambient speech is sent to the model."
+    },
+    {
+      "id": "voice.windows-commands",
+      "title": "Windows voice commands (\"Hey Aartiq\" + 12 shortcuts)",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:176-196",
+        "docs/windows-integration:513-535"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/windows-integration.js:229 handleVoiceAction only supports command=listen|speak",
+        "aartiq-browser/src/lib/windows-integration.js:253 startVoiceRecognition uses System.Speech DictationGrammar and returns raw text with no phrase parsing"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/voice-commands.test.js#windows-recognizer-parses-phrases"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "The implementation is honest dictation; the docs describe a phrase grammar plus shortcuts that do not exist. The docs snippets themselves are also broken: Install-Module SpeechRecognition and Start-SpeechRecognition -Callback are not real cmdlets, and SAPI.SpSharedRecognizer is not a valid ProgID. Replace them with the System.Speech code that actually ships, executed in a test."
+    },
+    {
+      "id": "voice.linux-tts",
+      "title": "Linux text-to-speech (espeak)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:78-96"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:254 speakText calls espeak with an argv array"
+      ],
+      "tests": [
+        "tests/docs-platform-integration-match-source.test.js#the Linux page no longer claims dictation works",
+        "tests/docs-platform-integration-match-source.test.js#every published reach value is the one derived from source"
+      ],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#speak-uses-argv-array"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "The one voice path built correctly — argv array, no shell string."
+    },
+    {
+      "id": "voice.linux-stt",
+      "title": "Linux offline speech-to-text (pocketsphinx)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:84-86"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep 'pocketsphinx' across src/ returns nothing"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "Listed as an optional requirement with no code behind it."
+    },
+    {
+      "id": "apple-intelligence.summary",
+      "title": "Apple Intelligence — on-device text summarization",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:307-322",
+        "docs/native-api:202",
+        "docs/api-reference:166"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/apple-intelligence.swift:315 case \"summary\"",
+        "aartiq-browser/src/lib/native-panels/ViewModel.swift:333 POST /native-mac-ui/apple-intelligence/summary"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/apple-intelligence.test.js#summary-handler-rejects-non-macos"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Docs invoke it as window.electron.invoke('apple-intelligence-summary') while the Apple page's other examples use window.electronAPI.* — pick one and make the tests use it. Docs corrected 2026-10-04: the Apple page claimed macOS 15.0 for all Apple Intelligence commands. The Swift gates summary behind #available(macOS 26.0, *) and reports \"Summaries require macOS 26 with Foundation Models.\" when it cannot run."
+    },
+    {
+      "id": "apple-intelligence.generate-image",
+      "title": "Apple Intelligence — Image Playground image generation",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:324-334",
+        "docs/native-api:203",
+        "docs/api-reference:167"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/apple-intelligence.swift:374 case \"image\"",
+        "aartiq-browser/src/lib/native-panels/ViewModel.swift:344 POST /native-mac-ui/apple-intelligence/image"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/apple-intelligence.test.js#image-handler-reports-unavailable-os"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Gated on macOS 15.4+; the Swift side already returns a structured unavailable reason."
+    },
+    {
+      "id": "apple-intelligence.genmoji",
+      "title": "Apple Intelligence — Genmoji",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:apple-intelligence (Genmoji row, macOS 15.4+)",
+        "docs/apple-integration:voiceControl (window.electronAPI.generateGenmoji)",
+        "docs/native-api:apple (apple-intelligence-genmoji)",
+        "docs/api-reference:apple (apple-intelligence-genmoji, genmojiAvailable/genmojiReason)"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/apple-intelligence.swift:435 case \"genmoji\", gated #available(macOS 15.4, *)",
+        "aartiq-browser/src/lib/apple-intelligence.js:generateGenmoji -> runAppleIntelligenceCommand(\"genmoji\", { prompt })",
+        "aartiq-browser/main.js:350 ipcMain.handle(\"apple-intelligence-genmoji\")",
+        "aartiq-browser/preload.js:12 generateGenmoji on the electronAPI bridge"
+      ],
+      "tests": [
+        "tests/apple-intelligence-genmoji.test.js#generateGenmoji is a real export, not an alias of the image path",
+        "tests/apple-intelligence-genmoji.test.js#generateGenmoji sends exactly one genmoji command with the prompt",
+        "tests/apple-intelligence-genmoji.test.js#Apple Intelligence refuses off macOS before doing any work",
+        "tests/apple-intelligence-genmoji.test.js#the renderer reaches the command through one agreed channel name",
+        "tests/apple-intelligence-genmoji.test.js#the Swift helper gates genmoji the way the docs must describe it",
+        "tests/apple-intelligence-genmoji.test.js#the docs describe the command and its real OS floor"
+      ],
+      "plannedTestIds": [],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "Completed. The command shipped undocumented; the docs also stated one OS floor (macOS 15.0) for all three Apple Intelligence commands when the Swift gates them differently: summary 26.0, Image Playground 15.1, Genmoji 15.4. Docs now state each floor. Status is \"works\" for the automatable surface — export, payload, off-macOS refusal, IPC agreement, Swift gate — which the suite proves. That an emoji actually renders needs macOS 15.4+ on Apple silicon and a human; it is tracked in docs-audit/manual-checks/apple-intelligence-genmoji.md and stays unverified until that file carries a dated sign-off. Seven mutations of the implementation were applied and all seven were caught; see docs-audit/mutation-check-apple-intelligence-genmoji.txt."
+    },
+    {
+      "id": "apple-intelligence.writing-tools",
+      "title": "Apple Intelligence — Writing Tools",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:51"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/native-panels/AppleIntelligencePanelView.swift:721 writingToolsView — a SwiftUI section label inside Aartiq's own panel",
+        "no WritingTools API is called anywhere"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "The only 'Writing Tools' in the codebase is a view title for a rewrite panel Aartiq draws itself. That is not the OS Writing Tools feature the page implies. Decide: document the in-app panel honestly, or remove the row."
+    },
+    {
+      "id": "apple-intelligence.priority-notifications",
+      "title": "Apple Intelligence — Priority Notifications",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:52"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep for 'priority notification' across src/, main.js and the Swift panels returns nothing"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "Rendered on the Apple page as a shipped feature with no counterpart anywhere in the code, and absent from native-api. BackgroundNotifications.tsx shows completed task events; that is a different thing and should not be relabelled to cover this row."
+    },
+    {
+      "id": "copilot.open",
+      "title": "aartiq://copilot — open Microsoft Copilot",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:242-245"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/windows-integration.js:229 handleCopilotAction opens com.microsoft.copilot:\\ then falls back to copilot.microsoft.com"
+      ],
+      "tests": [
+        "tests/docs-platform-integration-match-source.test.js#the actions that reach a system API are the ones the source really executes",
+        "tests/docs-platform-integration-match-source.test.js#no action is published as working when its channel has no listener"
+      ],
+      "plannedTestIds": [
+        "tests/copilot.test.js#open-copilot-uses-shell-openPath"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Launches Copilot; it does not talk to it. Say so in the docs. It ignores params.command, so a prompt is silently dropped."
+    },
+    {
+      "id": "copilot.panel",
+      "title": "aartiq://copilot-panel — Copilot sidebar (Ctrl+Shift+C)",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:243"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep 'copilot-panel' across src/ and main.js returns nothing"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "Sits in a table of eight Copilot actions of which this is one. Ask whether Aartiq wants an embedded Copilot sidebar at all before writing it."
+    },
+    {
+      "id": "copilot.dual-chat",
+      "title": "aartiq://dual-chat — chat with Aartiq and Copilot together (Ctrl+D)",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:249"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep 'dual-chat' across src/ and main.js returns nothing"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "This sends the same prompt to two providers, so it is a data-egress decision, not a UI one. It also collides with Ctrl+D as a browser bookmark shortcut."
+    },
+    {
+      "id": "copilot.compare",
+      "title": "aartiq://compare — compare Aartiq and Copilot answers (Ctrl+Shift+P)",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:250"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep for a 'compare' action returns only an unrelated id in src/lib/homeIntelligence.ts:274"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "Ctrl+Shift+P is also the standard print accelerator on Windows."
+    },
+    {
+      "id": "copilot.shortcuts",
+      "title": "Copilot keyboard shortcuts (Ctrl+Shift+C, Ctrl+Alt+E/R/T/D, Ctrl+D, Ctrl+Shift+P)",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:242-251",
+        "docs/keyboard-shortcuts:55-63"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/constants.ts:1 shortcutDefinitions contains none of these accelerators",
+        "aartiq-browser/main.js:8870 defaultShortcuts contains none of these accelerators"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/keyboard-shortcuts.test.js#documented-accelerators-exist-in-code"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "Six shortcuts, none registered. Several collide with existing Windows bindings. Remove the shortcut column rather than claim bindings that would override the user's own."
+    },
+    {
+      "id": "copilot.vscode",
+      "title": "VS Code Copilot Chat integration",
+      "platforms": [
+        "windows"
+      ],
+      "doc": [
+        "docs/windows-integration:513-535"
+      ],
+      "status": "missing",
+      "evidence": [
+        "the PowerShell snippets reference no Aartiq surface at all"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "The snippets call Get-EventLog (PowerShell 7 / renamed cmdlet) and a nonexistent SpeechRecognition module. Nothing here is Aartiq. Remove or replace."
+    },
+    {
+      "id": "http-api.port-3000",
+      "title": "Local HTTP API on port 3000 / Power Automate connector",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/windows-integration:477",
+        "docs/windows-integration:835-847",
+        "docs/deep-links:139"
+      ],
+      "status": "missing",
+      "evidence": [
+        "no listener on 3000 anywhere; grep for 3000 finds only timeouts and one UI placeholder at src/components/McpSettings.tsx:474",
+        "aartiq-browser/src/lib/url-utils.js:20 mentions 3000 in a comment only"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/local-api-surface.test.js#no-listener-on-the-documented-port"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "critical",
+      "requiredApproval": "n/a",
+      "notes": "The whole Power Automate / local-API section describes a service that has never existed. The real local surfaces are 46203 (native bridge + agent API, loopback, per-process token), 3001 (MCP) and 3004 (WiFi sync). Rewriting the section to describe 46203 is a bigger change than removing it; that is a maintainer call."
+    },
+    {
+      "id": "http-api.native-bridge",
+      "title": "Local HTTP bridge on 46203 (native panels + CLI + agent API)",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/native-api:377",
+        "docs/apple-integration"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/main.js:1245 startNativeMacUiBridge()",
+        "aartiq-browser/main.js:1259-1272 bridgeApp.use middleware calls checkLocalRequest with requireToken: true, so it runs for every route on the listener rather than per route",
+        "aartiq-browser/src/lib/local-server-auth.js checkLocalRequest / extractToken / isHostAllowed / isOriginAllowed",
+        "aartiq-browser/src/lib/agent-api/server.ts:74 resolveAgent, :82 callTool",
+        "aartiq-browser/src/lib/agent-api/server.ts:98 the agent API authenticates each request the same way"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/local-bridge-auth.test.js#every-route-requires-the-token"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "The one real local HTTP surface, and it is already token-gated and loopback-bound. This is the section the port-3000 docs should be rewritten from. Note resolveAgent auto-registers unknown agents with config.defaultTrust. The manifest previously pointed at docs/mcp-settings:239, a page that no longer exists; until the Apple page was rewritten, nothing on the live site documented this bridge by port. Re-read 2026-10-04 against 8033d541 after docs:check reported that two cited evidence files had changed. The token gate still holds, but it moved: it used to be per-route calls to checkLocalRequest(requireToken: true) and is now a single bridgeApp.use middleware (main.js:1297) that covers every route on the listener. extractToken now also accepts X-Aartiq-Native-Token, which is the header scripts/aartiq-cli.js and the Swift panels already send; without it every CLI and native-panel request would 401.",
+      "coverage": "Verified by reading against 8033d541 and by the existing tests/local-server-auth.test.js, which exercises checkLocalRequest directly. No test asserts that the middleware is actually mounted on the listener, so a future refactor could drop the app.use and the suite would stay green. tests/local-bridge-auth.test.js#every-route-requires-the-token is still owed."
+    },
+    {
+      "id": "cli.aartiq",
+      "title": "aartiq CLI",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/native-api:191-207"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/scripts/aartiq-cli.js:22 PORT/HOST from AARTIQ_NATIVE_MAC_UI_PORT, default 46203 on 127.0.0.1",
+        "aartiq-browser/scripts/aartiq-cli.js:161-169 hardcoded fallback token"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/cli.test.js#cli-fails-closed-without-the-token-file"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "Works when ~/.aartiq-token exists, but the hardcoded fallback token must go: the bridge now rejects every request without the real per-process token, so the fallback is dead code that reads like a backdoor. Also undocumented as a user-facing feature on any docs page — decide whether to document it."
+    },
+    {
+      "id": "raycast.extension",
+      "title": "Raycast extension (Search Tabs)",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:239-304"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/raycast-extension/package.json declares exactly one command, search-tabs",
+        "aartiq-browser/raycast-extension/src/search-tabs.tsx:15 targets http://127.0.0.1:9877/raycast",
+        "aartiq-browser/main.js:1061 RAYCAST_PORT 9877 is declared and never read; no listener exists",
+        "AGENTS.md protocols table: Raycast HTTP API 9877 retired"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/raycast.test.js#declared-commands-have-an-implementation"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "The single declared command targets a port nothing listens on, so the one shipped Raycast command does not work. Either give the extension a real transport (the 46203 bridge) or say in the docs that it is unpublished."
+    },
+    {
+      "id": "raycast.commands",
+      "title": "Raycast commands (AI Chat, Search, Create PDF, ...) documented as shipped",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [
+        "docs/apple-integration:239-304"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/raycast-extension/package.json commands array has one entry",
+        "aartiq-browser/src/lib/raycast-integration.js:16 setupDefaultCommands registers 12 handlers but they are reachable only from the renderer IPC 'raycast:protocol'"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/raycast.test.js#documented-commands-exist"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "medium",
+      "requiredApproval": "n/a",
+      "notes": "The handler layer exists; the extension surface does not. The docs list these as available with no caveat about the extension being unpublished."
+    },
+    {
+      "id": "raycast.run-command",
+      "title": "raycast://run-command executes a shell command with no approval",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/src/lib/raycast-integration.js:177 handleRunCommand calls execPromise(command) with a 30s timeout and no permission check",
+        "aartiq-browser/src/lib/raycast-integration.js:31 handleProtocol is exposed to the renderer as ipcMain 'raycast:protocol' via preload.js:853"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/raycast.test.js#run-command-requires-approval"
+      ],
+      "decision": "implement",
+      "riskTier": "critical",
+      "requiredApproval": "capability ticket (approval-gate)",
+      "notes": "Undocumented, so this is a code fix: route it through checkShellPermission or delete the handler. It bypasses validateCommand, checkShellPermission, the capability controller and the approval gate in one hop."
+    },
+    {
+      "id": "raycast.open",
+      "title": "raycast://open launches an app via a shell string",
+      "platforms": [
+        "macos"
+      ],
+      "doc": [],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/src/lib/raycast-integration.js:66-71 handleOpen builds an `open -a` shell string from params"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/raycast.test.js#open-uses-argv-not-shell-string"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "Same interpolation defect as deeplink.open-app; the two should share one fixed helper."
+    },
+    {
+      "id": "linux.url-scheme-actions",
+      "title": "Linux aartiq:// action table (10 rows)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:136-147"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:81 handleLinuxShortcutAction has 12 handlers",
+        "aartiq-browser/src/lib/linux-integration.js:449 handleLinuxURLScheme is never called (see deeplink.dispatch.linux)"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#url-scheme-is-wired-to-open-url-or-argv"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "Handler layer exists, dispatch does not. Also: screenshot is in the shortcut templates but missing from the action table; four examples put an unencoded & in a URL parameter value."
+    },
+    {
+      "id": "linux.notify",
+      "title": "aartiq://notify — desktop notifications",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:147"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:228 handleNotifyAction",
+        "aartiq-browser/src/lib/linux-integration.js:234 GNOME branch interpolates title/message/icon into a shell string",
+        "aartiq-browser/src/lib/linux-integration.js:36 executeCommand uses exec(command, args) — with an empty args array the string goes through a shell"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#notify-uses-argv-array"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "in-app dialog",
+      "notes": "Notification text arriving from a URL into a shell string is a spoofing primitive. The KDE and fallback branches already use argv correctly; make GNOME match."
+    },
+    {
+      "id": "linux.open-app",
+      "title": "aartiq://open-app — launch a desktop app",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:142"
+      ],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:156-167 handleOpenAppAction builds `gtk-launch ${appName} 2>/dev/null || kioclient exec ${appName}` with no quoting"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#open-app-uses-argv-array"
+      ],
+      "decision": "implement",
+      "riskTier": "critical",
+      "requiredApproval": "in-app dialog",
+      "notes": "appName comes straight from the URL and lands in a shell string with no quoting at all — the worst injection surface in the audited set. Note the `||` fallback means a failing launch still tries a second command."
+    },
+    {
+      "id": "linux.run-command",
+      "title": "aartiq://run-command on Linux has no confirmation gate",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:141"
+      ],
+      "status": "unsafe-by-design",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:146 handleShellCommandAction sends ai:run-command unconditionally",
+        "aartiq-browser/src/lib/windows-integration.js:116 is the Windows equivalent, which at least gates on confirm === 'true'"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#run-command-requires-approval"
+      ],
+      "decision": "implement",
+      "riskTier": "high",
+      "requiredApproval": "capability ticket (approval-gate)",
+      "notes": "Channel ai:run-command has no listener, so the command currently goes nowhere. When the channel is wired up it must go through checkShellPermission. The Windows confirm === 'true' gate is itself a skip-confirmation switch and must be removed rather than ported."
+    },
+    {
+      "id": "linux.volume",
+      "title": "Linux volume control (pactl / KMix)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:117-134"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:177 handleVolumeAction uses argv arrays for both gnome and kde branches"
+      ],
+      "tests": [
+        "tests/docs-platform-integration-match-source.test.js#every published reach value is the one derived from source",
+        "tests/docs-platform-integration-match-source.test.js#the actions that reach a system API are the ones the source really executes"
+      ],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#volume-uses-argv-array"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "Implemented properly. The docs should say GNOME and KDE only — the function returns an error for every other desktop."
+    },
+    {
+      "id": "linux.screenshots",
+      "title": "Linux screenshots via scrot / import",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:131"
+      ],
+      "status": "missing",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:169 handleScreenshotAction only sends ai:screenshot to the renderer",
+        "no scrot or ImageMagick call exists in src/lib/linux-integration.js"
+      ],
+      "tests": [],
+      "plannedTestIds": [],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "Names a specific tool that is never invoked, and sends to a channel with no listener."
+    },
+    {
+      "id": "linux.gnome-integration",
+      "title": "GNOME integration (notifications, keybindings, app launcher, system tray)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:38-56"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:70 detectDesktop and :228 notifications are real",
+        "aartiq-browser/src/lib/linux-integration.js installGNOMEShortcut creates a .desktop file — that is the app launcher, not a keybinding",
+        "grep for tray icon / StatusNotifierItem in src/lib/linux-integration.js returns nothing"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#gnome-launcher-is-written"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "Notifications and the launcher are real. Keybindings and the system tray are not, and a global keybinding daemon is a separate feature from the app's own shortcuts. Split the card: keep the two true rows, drop the two aspirational ones."
+    },
+    {
+      "id": "linux.kde-integration",
+      "title": "KDE Plasma integration (KDialog, KRunner, system tray, KMix)",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:58-76"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js:236 KDE branch uses kdialog with an argv array — real",
+        "aartiq-browser/src/lib/linux-integration.js:184 KMix volume via qdbus — real",
+        "grep for 'KRunner' returns nothing; no tray code exists"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#kde-notification-uses-argv-array"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "KDialog and KMix work. KRunner and the tray do not exist. Same split as the GNOME card."
+    },
+    {
+      "id": "linux.desktop-shortcuts",
+      "title": "Linux .desktop launcher + GNOME shortcut templates",
+      "platforms": [
+        "linux"
+      ],
+      "doc": [
+        "docs/linux-integration:98-115",
+        "docs/linux-integration:149-159"
+      ],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/src/lib/linux-integration.js installGNOMEShortcut",
+        "aartiq-browser/src/lib/linux-integration.js createDesktopLauncher",
+        "aartiq-browser/main.js:753 registerLinuxProto installs the aartiq:// handler"
+      ],
+      "tests": [
+        "tests/docs-platform-integration-match-source.test.js#every Linux channel the bridge invokes has a handler",
+        "tests/docs-platform-integration-match-source.test.js#the overlap is exactly the five channels the page lists"
+      ],
+      "plannedTestIds": [
+        "tests/linux-integration.test.js#desktop-entry-is-valid"
+      ],
+      "decision": "implement",
+      "riskTier": "low",
+      "requiredApproval": "none",
+      "notes": "The file generation and protocol registration are real. It installs a handler for a scheme the app never reads (see deeplink.dispatch.linux), so the shortcut launches the app and drops the link.",
+      "coverage": "Partial. The gate proves the eleven bridge channels are registered and names the five that are registered twice. It does not parse a generated .desktop file, so the file contents remain unproven and tests/linux-integration.test.js#desktop-entry-is-valid is still owed."
+    },
+    {
+      "id": "keyboard.docs-table",
+      "title": "Keyboard shortcuts documentation table",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/keyboard-shortcuts:40-100"
+      ],
+      "status": "partial",
+      "evidence": [
+        "aartiq-browser/src/lib/constants.ts:1 shortcutDefinitions is the real table",
+        "aartiq-browser/main.js:8870 defaultShortcuts is the real global-shortcut set",
+        "aartiq-browser/src/components/KeyboardShortcutSettings.tsx:4 renders shortcutDefinitions"
+      ],
+      "tests": [
+        "tests/docs-shortcuts-match-source.test.js#the docs list every shortcut and nothing else",
+        "tests/docs-shortcuts-match-source.test.js#the docs do not publish shortcuts that are not registered",
+        "tests/docs-shortcuts-match-source.test.js#no duplicate label+accelerator pair is published"
+      ],
+      "plannedTestIds": [
+        "tests/keyboard-shortcuts.test.js#docs-table-matches-shortcut-definitions"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "The docs cite src/lib/KeyboardShortcutService.ts, which does not exist. Eight rows are not key combinations at all (AI Command, QR Code, Brightness, Schedule, Daily, Weekly, Mobile QR). Shift+Tab is listed twice. The docs table shares almost no accelerator with shortcutDefinitions. Replace the hand-written table with values generated from the code. Docs page rebuilt 2026-10-04 from shortcutDefinitions in src/lib/constants.ts. The previous table listed Ctrl/Cmd+R, Alt+Left/Right and Ctrl+Tab (none registered), mislabelled Cmd+L (it is Focus AI Prompt), cited a nonexistent src/lib/KeyboardShortcutService.ts, and listed Shift+Tab twice as a generic \"approve medium-risk action\" key. tests/docs-shortcuts-match-source.test.js now fails if the published table drifts from the source."
+    },
+    {
+      "id": "keyboard.shift-tab-approval",
+      "title": "Shift+Tab approves a medium-risk action / Mobile QR approves a high-risk action",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [
+        "docs/keyboard-shortcuts:58",
+        "docs/keyboard-shortcuts:94"
+      ],
+      "status": "missing",
+      "evidence": [
+        "grep 'Shift' + Tab across src/ returns no approval binding",
+        "aartiq-browser/src/lib/approval-gate.js issues SHA-256 input-bound one-time tickets; there is no keybinding that consumes one"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/keyboard-shortcuts.test.js#no-keyboard-shortcut-approves-a-gated-action"
+      ],
+      "decision": "remove-from-docs",
+      "riskTier": "high",
+      "requiredApproval": "n/a",
+      "notes": "Approval is bound to an exact input hash on purpose. A keystroke that approves by risk level is not that design and should not be added to make the row true. Approve via the dialog, Touch ID / Windows Hello, or the QR ticket."
+    },
+    {
+      "id": "keyboard.global-hotkeys",
+      "title": "Global hotkeys (spotlight search, pop search, print, kill switch, Apple Intelligence summary/image)",
+      "platforms": [
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "doc": [],
+      "status": "works",
+      "evidence": [
+        "aartiq-browser/main.js:8865 function registerGlobalShortcuts",
+        "aartiq-browser/main.js:8942 const savedShortcuts",
+        "aartiq-browser/src/app/ClientOnlyPage.tsx:1360 window.electronAPI.onShortcut switch"
+      ],
+      "tests": [],
+      "plannedTestIds": [
+        "tests/keyboard-shortcuts.test.js#default-hotkeys-are-registered"
+      ],
+      "decision": "maintainer-decides",
+      "riskTier": "low",
+      "requiredApproval": "n/a",
+      "notes": "Real and undocumented. Decide whether to document it (it is the honest replacement for the keyboard-shortcuts page) or leave it internal."
+    }
+  ],
+  "openQuestions": [
+    "voice.wake-word, voice.macos-phrases, voice.windows-commands: is the shipped trigger set ('comet') or the documented one ('Hey Aartiq') the product? Wake-word listening is a scope decision, not a bug fix.",
+    "copilot.panel, copilot.dual-chat, copilot.compare: does Aartiq want to ship an embedded Copilot surface at all? dual-chat is also a data-egress decision.",
+    "apple-intelligence.genmoji: document the handler that exists, or leave it undocumented?",
+    "apple-intelligence.writing-tools: document the in-app rewrite panel honestly, or remove the row?",
+    "apple-intelligence.priority-notifications: remove the row?",
+    "http-api.port-3000: remove the Power Automate section, or rewrite it against the real 46203 bridge?",
+    "raycast.extension, raycast.commands: give the extension a real transport, or mark it unpublished?",
+    "deeplink.create-pdf, deeplink.create-doc, deeplink.schedule, deeplink.screenshot, deeplink.set-model, deeplink.voice-chat: wire these to their real implementations, or downgrade the docs to what actually happens?",
+    "deeplink.auth-callback: the OAuth callback URL reaches the renderer unvalidated. Add origin validation, or restrict the scheme to the auth flow only?"
+  ]
+}
