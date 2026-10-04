@@ -8,6 +8,47 @@
 - The agent API moves to port `46204`; the native macOS bridge keeps `46203`. Both used to default to `46203`, so whichever started second lost the bind and the error was swallowed. `aartiq-mcp` still targets `46203` — its BridgeClient calls only the native bridge's `/native-mac-ui/*` routes.
 - New gate: `tests/network-listener-hardening.test.js` pins the loopback call sites, the env override, the missing CORS headers, and the port split. Mutation record: `docs-audit/mutation-check-network-hardening.txt`.
 
+### Agent tools and research verification
+
+#### Single-page search and DOM control
+- New Agent API tools: `page_find` (search one already-open page, no network request and no other tab touched), `dom_query`, `get_page_text`, `web_search`, `news_search`, `search_providers`.
+- `page_find` defaults to `mode="tree"`, matching accessible name, value, href and role across the whole snapshot and returning refs that `click_ref` / `fill_ref` accept. Nodes nested inside structural wrappers are found, and actionable-only filtering does not hide them. `mode="text"` scans rendered prose and returns context snippets.
+- `search_providers` reports which provider is configured, whether it scrapes, and whether it has a news index — so "why are these results undated" is answerable instead of mysterious.
+
+#### Search prefers APIs and says so when it scrapes
+- Tavily is the recommended single key (1,000 free credits/month, no card). SerpAPI (250/month) and Brave (card + attribution required) also work. Google Custom Search JSON is marked deprecated — closed to new customers, existing keys end 2027-01-01.
+- With no key configured, search still runs by scraping a search engine's HTML. That path is rate-limited, slower, breaks without warning when the markup changes, and returns no publication dates. It is labelled as scraped wherever it is reported rather than presented as equivalent.
+
+#### Form filling split from form submission
+- `fill_form` (verb `input`) fills and never submits. `form_submit` (verb `sideEffecting`) goes through the approval gate. They are separate tools rather than one tool with a `submit` flag, so the side effect cannot be reached by passing a parameter.
+- `autofill_match`, `vault_list` and `vault_unlock` join the Forms category.
+- No field is written that the user did not specify, and a readOnly or disabled field is reported as not filled rather than counted as success.
+- `fillFormScript` no longer falls back to `document.forms[0]`, so a fill cannot land in an arbitrary form, and it no longer submits.
+
+#### Element refs fail loudly instead of addressing the wrong thing
+- Refs bind by a `data-aartiq-ax` stamp the collector writes onto actionable nodes, with `backendNodeId` as first-priority identity. A stale ref now errors instead of scripting whatever element happens to occupy that position after the page shifts.
+- The collector stamps only actionable elements. Blanket stamping perturbed page code that queries the DOM.
+- `SnapshotManager` no longer prunes `depth` after recursing, which had been flattening the tree it returned.
+
+#### Claim-level cross-verification, and last source only when dates are real
+- New `src/lib/research-pipeline.ts` runs a bounded plan → search → fetch → extract → cross-verify → rank → generate job behind Deep Research, with the search provider, page fetcher and progress emitter injected so the whole pipeline tests without network access.
+- Claims are keyed on `subject|verb`, so "450 million dollars" and "450 million euros" remain one claim with two conflicting figures instead of being matched into agreement.
+- Corroboration requires ≥2 distinct domains, and domains are re-derived from each claim's URL rather than trusted from the caller — `news.reuters.com` and `uk.reuters.com` no longer pass as two independent sources.
+- A last source is named only when publication timestamps are reliable. Otherwise the answer is "unknown" with the reason attached, so callers do not retry and guess.
+- Search budget options are per-run with defaults; an absent option takes the default instead of clamping to a minimum.
+- Progress streams to the chat sidebar over `research-progress`, and a "Sources disagree" panel renders unresolved contradictions inline.
+- Known limit, stated rather than hidden: claim extraction surfaces numeric claims with a named subject, so disputed qualitative findings never reach the contradictions panel. A false negative rather than a false positive; the coverage figure reflects numeric agreement specifically.
+
+#### Fixes found by the new tests
+- `typeScript` emitted a bare `clearFirst` identifier, throwing `ReferenceError` on every `type_ref`.
+- Contenteditable detection relied only on `el.isContentEditable`, so `fill_form` reported success on a plain div.
+- The number regex required whitespace after a magnitude, so "raised 100 million." was read as `100` and turned agreement into a false contradiction.
+- Subject extraction keyed on articles and pronouns merged every claim into `the|company`.
+- Terminal pipeline status was keyed on pages attempted rather than pages read.
+
+### Testing
+- `tests/agent-api-bridge-tools.test.js` (35), `tests/page-scripts-forms.test.js` (48), `tests/snapshot-ref-binding.test.js` (23), `tests/web-search-service.test.js` (27), `tests/research-pipeline.test.js` (60), `tests/research-progress-plumbing.test.js` (24).
+
 ## Version 0.3.8 — Local listener authentication and shell approval defaults
 
 ### Security

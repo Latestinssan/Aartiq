@@ -89,6 +89,9 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | `SiriShortcutsIntegration.ts` | macOS Siri and Shortcuts bridge |
 | `tesseract-service.js` | OCR via Tesseract.js |
 | `plugin-manager.js` | Dynamic plugin loading |
+| `agent-api/` | External agent tools over HTTP + MCP (verb gate → tab lock → handler) |
+| `research-pipeline.ts` | Bounded search/fetch/verify job behind Deep Research |
+| `researchState.ts` | Reduces streamed `research-progress` events into chat UI state |
 | `BackgroundNotifications.tsx` | Shows completed background task events on re-open |
 | `AutomationPlanApproval.tsx` | Pre-execution plan with risk assessment + permission gates |
 | `AutomationSettings.tsx` (enhanced) | Directory allowlisting for background automations |
