@@ -9,11 +9,13 @@
  * (e) a risk-tier table disagrees between README and the landing site
  * (f) a file in `public/` shadows an app route, so the route never reaches users
  * (g) a distribution claim names an artifact, store or listing the build does not produce
+ * (h) the feature manifest points at a test, page or sign-off that does not exist
  *
  * Exit code 1 on any failure. Warnings print but do not fail the build.
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative, resolve, dirname, extname } from "node:path";
 import {
   version,
@@ -618,6 +620,322 @@ function checkSsotIntegrity() {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// The manifest describes a commit. Say whether that commit is still the code.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every row in the manifest was derived by reading code at one commit. The
+ * `baseline` field records which. Nothing stops the repository from moving on,
+ * and when it does the manifest does not notice: it keeps asserting facts about
+ * code it has never been re-read against, in the same authoritative tone.
+ *
+ * So compare, rather than trust:
+ *
+ *   - `baseline.commit` must exist and must be an ancestor of HEAD. A baseline on
+ *     a diverged branch is a problem, not a warning: the manifest describes a
+ *     line of development that is no longer this one.
+ *   - `baseline.commit` behind HEAD is a warning naming the distance.
+ *   - for each file an `evidence` entry points at, whether that file changed
+ *     between the baseline and HEAD. This is the useful one. It answers "which
+ *     manifest rows need re-reading after this merge?" without anybody having to
+ *     remember to look, and it is per-row rather than a blanket re-triage.
+ *
+ * Nothing here is a failure. A feature manifest that has to be re-read on every
+ * commit is one nobody maintains, and a warning nobody can act on is noise. The
+ * baseline moving is information.
+ */
+function checkManifestBaseline(
+  baseline:
+    | { commit: string; branch: string; note?: string; verifiedAgainst?: string }
+    | undefined,
+  features: { id: string; evidence: string[] }[],
+) {
+  if (!baseline?.commit) {
+    problems.push("[manifest] baseline.commit is absent, so no one can tell which code was triaged");
+    return;
+  }
+
+  // `commit` is where the triage was originally taken and never moves; it is
+  // provenance. `verifiedAgainst` is the commit the rows were last re-read
+  // against, and it is what staleness is measured from. Folding the two into one
+  // field would mean either a permanently warning gate or a gate that cannot say
+  // when the manifest was last checked.
+  const against = baseline.verifiedAgainst ?? baseline.commit;
+
+  /**
+   * Exit status and output are kept apart. `git cat-file -e` and
+   * `git merge-base --is-ancestor` both succeed silently, so a helper that
+   * returns the trimmed stdout and tests it for truth reads success as failure —
+   * which is what the first version of this function did, and why it reported a
+   * commit that demonstrably exists as missing.
+   */
+  const git = (args: string[]) => {
+    try {
+      return { ok: true, out: execFileSync("git", args, { cwd: REPO, encoding: "utf8" }).trim() };
+    } catch {
+      return { ok: false, out: "" };
+    }
+  };
+
+  const head = git(["rev-parse", "--short", "HEAD"]).out;
+  if (!git(["cat-file", "-e", `${against}^{commit}`]).ok) {
+    problems.push(`[manifest] baseline.verifiedAgainst ${against} is not in this repository`);
+    return;
+  }
+  if (!git(["merge-base", "--is-ancestor", against, "HEAD"]).ok) {
+    problems.push(
+      `[manifest] baseline.verifiedAgainst ${against} is not an ancestor of HEAD (${head}) — the manifest describes a branch that is no longer this one`,
+    );
+    return;
+  }
+
+  // Which files did the rows' own evidence point at? Only those can make a row
+  // stale, so only those are worth diffing.
+  const cited = new Set<string>();
+  for (const feature of features) {
+    for (const item of feature.evidence ?? []) {
+      // "aartiq-browser/main.js:2922" or "aartiq-browser/src/lib/x.js" — but not
+      // prose such as "grep for X returns nothing", which cites no file.
+      const at = /^([\w./-]+\.(?:js|ts|tsx|jsx|swift|json|yml|yaml|sh))(?::|\b)/.exec(item);
+      if (at) cited.add(at[1]);
+    }
+  }
+
+  const stale = git([
+    "diff",
+    "--name-only",
+    `${against}..HEAD`,
+    "--",
+    ...[...cited].sort(),
+  ]).out
+    .split("\n")
+    .filter(Boolean);
+
+  if (stale.length > 0) {
+    const rows = features
+      .filter((f) =>
+        (f.evidence ?? []).some((item) =>
+          stale.some((file) => item.startsWith(file)),
+        ),
+      )
+      .map((f) => f.id);
+    warnings.push(
+      `${stale.length} file(s) cited as manifest evidence changed since the manifest was last re-read (${against}) and HEAD (${head}). ` +
+        `Re-read ${rows.length} row(s) before trusting them: ${rows.sort().join(", ")}. Changed: ${stale.sort().join(", ")}`,
+    );
+  } else if (!against.startsWith(head)) {
+    warnings.push(
+      `${head} is ahead of the last manifest re-read (${against}) but none of the ` +
+        `${cited.size} cited evidence files changed, so the rows still hold.`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The feature reality manifest must keep pointing at things that exist
+// ---------------------------------------------------------------------------
+
+/**
+ * `Landing_Page/data/features.manifest.json` is the hand-authored list of every
+ * feature the public docs claim, and it is what this honesty pass rests on: a
+ * page may only present a feature as available if the manifest row says `works`
+ * and names a test that proves it.
+ *
+ * A manifest that points at files which were renamed, deleted, or never existed
+ * is worse than no manifest, because it is authoritative in tone. So every
+ * pointer is resolved:
+ *
+ *   - `tests`         → the file must exist AND contain that exact test name.
+ *                       A typo fails; so does a renamed test.
+ *   - `plannedTestIds`→ the file must NOT exist. A plan whose file is already
+ *                       written must be promoted to `tests`, or it reads as
+ *                       permanently owed.
+ *   - `doc`           → the docs page must exist in the site repository.
+ *   - `manualCheck`   → the sign-off document must exist, so "checked by hand"
+ *                       names the document that was signed.
+ *
+ * Line numbers inside `doc` are not checked. They are a reading aid, and a page
+ * gaining or losing a paragraph would otherwise fail the build for no reason.
+ * The page's existence is the claim that has to hold.
+ *
+ * One rule is deliberately a warning rather than a failure: a `works` row with
+ * no `tests` and no `manualCheck` is an unproven feature, and there are
+ * fourteen of them. Failing would block every unrelated docs edit until fourteen
+ * tests were written — that is the maintainer's queue, not this gate's. The
+ * warning names them so the queue stays visible.
+ */
+function checkFeatureManifest() {
+  const file = join(REPO, "Landing_Page", "data", "features.manifest.json");
+  if (!existsSync(file)) {
+    problems.push("[manifest] Landing_Page/data/features.manifest.json is missing — it is the SSOT");
+    return;
+  }
+
+  type Row = {
+    id: string;
+    title: string;
+    doc: string[];
+    status: string;
+    evidence: string[];
+    tests: string[];
+    plannedTestIds: string[];
+    decision: string;
+    riskTier: string;
+    manualCheck?: { signoff: string; reason: string };
+    coverage?: string;
+  };
+
+  let manifest: {
+    baseline?: { commit: string; branch: string; note?: string };
+    statusValues: Record<string, string>;
+    decisionValues: Record<string, string>;
+    riskTiers: string[];
+    features: Row[];
+  };
+  try {
+    manifest = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    problems.push(`[manifest] does not parse: ${(error as Error).message}`);
+    return;
+  }
+
+  const APP = join(REPO, "aartiq-browser");
+  const DOCS = join(LANDING, "src/app/docs");
+
+  /** A test id is `path#exact test name`. Resolve both halves. */
+  const checkTestId = (id: string, where: string) => {
+    const hash = id.indexOf("#");
+    if (hash === -1) {
+      problems.push(`[manifest] ${where}: test id "${id}" has no #test-name suffix`);
+      return;
+    }
+    const rel = id.slice(0, hash);
+    const name = id.slice(hash + 1);
+    const abs = join(APP, rel);
+    if (!existsSync(abs)) {
+      problems.push(`[manifest] ${where}: test file ${rel} does not exist`);
+      return;
+    }
+    if (!readFileSync(abs, "utf8").includes(name)) {
+      problems.push(
+        `[manifest] ${where}: ${rel} has no test named "${name}" — the id drifted from the suite`,
+      );
+    }
+  };
+
+  const seen = new Set<string>();
+  const unproven: string[] = [];
+  const unsigned: string[] = [];
+
+  for (const row of manifest.features) {
+    const where = `feature ${row.id || "(no id)"}`;
+    if (!row.id || !row.title) {
+      problems.push(`[manifest] ${where}: a row needs both an id and a title`);
+      continue;
+    }
+    if (seen.has(row.id)) {
+      problems.push(`[manifest] duplicate feature id "${row.id}" — a feature is listed exactly once`);
+    }
+    seen.add(row.id);
+
+    if (!(row.status in manifest.statusValues)) {
+      problems.push(
+        `[manifest] ${where}: status "${row.status}" is not one of ${Object.keys(manifest.statusValues).join(" | ")}`,
+      );
+    }
+    if (!(row.decision in manifest.decisionValues)) {
+      problems.push(
+        `[manifest] ${where}: decision "${row.decision}" is not one of ${Object.keys(manifest.decisionValues).join(" | ")}`,
+      );
+    }
+    if (!manifest.riskTiers.includes(row.riskTier)) {
+      problems.push(
+        `[manifest] ${where}: riskTier "${row.riskTier}" is not one of ${manifest.riskTiers.join(" | ")}`,
+      );
+    }
+    if (!Array.isArray(row.evidence) || row.evidence.length === 0) {
+      problems.push(`[manifest] ${where}: no evidence — a row with nothing to point at is an opinion`);
+    }
+
+    for (const target of row.doc ?? []) {
+      if (target === "-") continue;
+      const slug = target.split(":")[0].replace(/^docs\//, "");
+      if (!existsSync(join(DOCS, slug, "page.tsx"))) {
+        problems.push(
+          `[manifest] ${where}: doc target docs/${slug} does not exist in Aartiq-Landing-Page`,
+        );
+      }
+    }
+
+    for (const id of row.tests ?? []) checkTestId(id, where);
+
+    for (const id of row.plannedTestIds ?? []) {
+      const rel = id.split("#")[0];
+      if (existsSync(join(APP, rel))) {
+        problems.push(
+          `[manifest] ${where}: plannedTestIds points at ${rel}, which exists — move it to tests[] or the plan reads as permanently owed`,
+        );
+      }
+    }
+
+    if (row.manualCheck) {
+      const signoff = join(REPO, row.manualCheck.signoff);
+      if (!existsSync(signoff)) {
+        problems.push(
+          `[manifest] ${where}: manualCheck.signoff "${row.manualCheck.signoff}" does not exist — a hand check must name the document it produced`,
+        );
+      } else {
+        // Existing is not the same as done. The sign-off declares its own status
+        // on a `- status:` line, and an unsigned one is a warning rather than a
+        // failure: the feature really is real, it is the confirmation that is
+        // owed, and blocking every docs edit until somebody with a Mac runs it
+        // would not make it true any sooner.
+        const status = readFileSync(signoff, "utf8").match(/^- status: *(\S+)/m)?.[1];
+        if (!status) {
+          problems.push(
+            `[manifest] ${where}: ${row.manualCheck.signoff} has no "- status:" line, so it does not say whether the check was run`,
+          );
+        } else if (status !== "signed") {
+          unsigned.push(`${where} (${row.manualCheck.signoff} — status: ${status})`);
+        }
+      }
+    } else if (row.status === "works" && (row.tests ?? []).length === 0) {
+      unproven.push(row.id);
+    }
+  }
+
+  checkManifestBaseline(manifest.baseline, manifest.features);
+
+  if (unproven.length > 0) {
+    warnings.push(
+      `${unproven.length} feature(s) are marked "works" with no test and no manual check, so no page may present them as available: ` +
+        unproven.sort().join(", "),
+    );
+  }
+
+  if (unsigned.length > 0) {
+    warnings.push(
+      `${unsigned.length} manual check(s) have not been signed off: ${unsigned.join(", ")}`,
+    );
+  }
+
+  // The manifest is a published document. The maintainer is pseudonymous and the
+  // brand has an origin the public site does not name.
+  const raw = readFileSync(file, "utf8");
+  for (const pattern of [/ponsri/i, /Latestinssan/i]) {
+    if (pattern.test(raw)) {
+      problems.push(
+        `[manifest] matches ${pattern} — a real name or the project-origin brand must not ship in a public document`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Duplicate copies must not drift from the file they were copied from
 // ---------------------------------------------------------------------------
 
@@ -627,12 +945,20 @@ function checkSsotIntegrity() {
  * silently — the copy there still described a seven-layer model and a different
  * release than the live file. A copy either matches its original or it is not a
  * copy.
+ *
+ * `data/` is exempt, and deliberately so. `features.manifest.json` is not a copy
+ * of anything: it is authored here, read by `checkFeatureManifest`, and
+ * transcribed by the site rather than imported, because webpack cannot reach
+ * outside its own root. Treating it as a residual copy produced a warning with
+ * no way to satisfy it, and the fix for that warning is not to delete the
+ * manifest.
  */
 function checkDuplicateDocs() {
   const residual = join(REPO, "Landing_Page");
   if (!existsSync(residual)) return;
   for (const file of walk(residual)) {
     const relPath = relative(residual, file).replace(/\\/g, "/");
+    if (relPath.startsWith("data/")) continue;
     const original = join(LANDING, relPath);
     if (!existsSync(original)) {
       warnings.push(`Landing_Page/${relPath} has no counterpart in Aartiq-Landing-Page/ — delete it or explain it.`);
@@ -818,6 +1144,7 @@ async function main() {
   checkBenchmarks();
   checkRiskTables();
   checkLinks();
+  checkFeatureManifest();
   checkDuplicateDocs();
   checkPublicShadowing();
   checkDistributionClaims();

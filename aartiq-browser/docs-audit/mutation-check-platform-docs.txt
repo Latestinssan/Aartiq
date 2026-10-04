@@ -1,0 +1,22 @@
+=== mutation check: docs-platform-integration-match-source ===
+  killed     publish a dead Linux action as working (chat)
+  killed     publish a working Linux action as dead (notify)
+  killed     publish every Windows action as working
+  killed     remove the Linux duplicate-registration section
+  killed     drop one duplicated channel from the Linux page list
+  killed     re-claim that Linux bridge methods have no handler
+  killed     add a second-instance handler, falsifying the delivery caveat
+  killed     delete the Linux screenshot row
+  killed     double-escape the rendered Windows registry snippet
+  killed     restore the wake word as a supported phrase
+  killed     remove a duplicated Linux channel from the module
+  killed     add a preload invoke with no handler behind it
+  killed     let main.js register a Windows bridge channel too
+  killed     make Windows volume stop calling PowerShell
+  killed     give a dead Windows channel a renderer listener
+
+mutations attempted: 15
+killed:              15
+survived:            0
+failed to apply:     0
+PASS: every mutation was caught

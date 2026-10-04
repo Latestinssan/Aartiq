@@ -1,0 +1,56 @@
+# CODEOWNERS — who reviews what, and which files may not drift silently.
+#
+# This file exists because of the 2026-10 documentation-honesty pass. Its finding
+# was not that the docs were wrong in isolation, but that nothing made them
+# wrong. Sixty-one features were described on eight pages, four of the pages
+# described an integration surface larger than the one in the code, and no test
+# compared any published claim against the source. Documentation drifted because
+# drifting was free.
+#
+# So the files that decide whether a claim is allowed to exist are owned:
+#
+#   - the feature manifest, which says what the code actually does
+#   - the gate suites under aartiq-browser/tests/, which fail when a page stops
+#     matching the source
+#   - the docs checker, which resolves every pointer in the manifest
+#
+# A page can still be edited freely. What is owned is the machinery that decides
+# whether the page is telling the truth, so that a well-meant edit cannot quietly
+# reintroduce a feature that is not there.
+#
+# Ownership here means "review required". It does not mean the maintainer writes
+# every test.
+
+# Default owner for everything not matched below.
+*                                       @Latestinssan
+
+# The single source of truth for what the code does versus what the docs claim.
+# Every test id, docs-page pointer and sign-off path in it is resolved by
+# `npm run docs:check`; an unresolvable pointer fails the build.
+/Landing_Page/data/features.manifest.json   @Latestinssan
+
+# The gates that compare published claims to source. These read the unit under
+# test for real rather than mocking it, so a change to the source that the docs
+# have not caught up with fails here rather than in a bug report.
+/aartiq-browser/tests/docs-*.test.js        @Latestinssan
+/aartiq-browser/tests/apple-intelligence-genmoji.test.js  @Latestinssan
+
+# The checker and the manifest harness that keep the manifest honest.
+/scripts/check-docs.ts                      @Latestinssan
+/scripts/mutation-check-manifest.js         @Latestinssan
+
+# Mutation harnesses. A gate nobody has seen fail is a gate nobody can rely on,
+# so the harnesses that prove the gates bite are owned alongside them.
+/aartiq-browser/scripts/mutation-check-*.js @Latestinssan
+/aartiq-browser/scripts/mutation-check-*.sh @Latestinssan
+/aartiq-browser/scripts/mutate-once.js      @Latestinssan
+
+# Hand-check records. These are the only proof available for features CI cannot
+# reach, so an edit to one must not silently drop a signed result.
+/aartiq-browser/docs-audit/manual-checks/   @Latestinssan
+
+# The triage table the manifest is the machine-readable form of, and the evidence
+# the gates produced.
+/aartiq-browser/docs-audit/feature-triage.md  @Latestinssan
+/aartiq-browser/docs-audit/mutation-check-*.txt  @Latestinssan
+/aartiq-browser/docs-audit/red-evidence/    @Latestinssan
