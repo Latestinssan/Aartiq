@@ -64,11 +64,20 @@ class DirectoryPermissionBridge extends EventEmitter {
         command,
       });
 
+      const { canonicalizePath } = require('./directory-allowlist');
+      const canonicalPaths = blockedPaths.map(p => {
+        const { canonical } = canonicalizePath(p);
+        return canonical || require('path').resolve(p);
+      });
+      const resolvedPrimary = canonicalPaths[0] || primaryPath;
+
       if (this._mainWindow && !this._mainWindow.isDestroyed()) {
         this._mainWindow.webContents.send('directory-permission-request', {
           requestId,
-          blockedPath: primaryPath,
-          blockedPaths,
+          blockedPath: resolvedPrimary,
+          blockedPaths: canonicalPaths,
+          resolvedPath: resolvedPrimary,
+          defaultAccess: 'read',
           command,
         });
       } else {

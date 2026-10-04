@@ -8,17 +8,13 @@ const {
   isAutoApproveEligibleTier,
 } = require('./shell-command-tiers');
 
-const PERM_LEVELS = ['read', 'interact', 'write', 'execute', 'send'];
+const {
+  DEFAULT_ALLOWED_DIRECTORIES,
+  isSensitivePath,
+  canonicalizePath,
+} = require('../core/directory-allowlist');
 
-const DEFAULT_ALLOWED_DIRECTORIES = [
-  { path: os.homedir(), recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
-  { path: path.join(os.homedir(), 'Desktop'), recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
-  { path: path.join(os.homedir(), 'Documents'), recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
-  { path: path.join(os.homedir(), 'Downloads'), recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
-  { path: '/tmp', recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
-  { path: '/Applications', recursive: true, access: 'read', grantedAt: 0, grantedVia: 'default' },
-  { path: '/System/Applications', recursive: true, access: 'read', grantedAt: 0, grantedVia: 'default' },
-];
+const PERM_LEVELS = ['read', 'interact', 'write', 'execute', 'send'];
 
 /**
  * System roots addAllowedDirectory must not grant (mismatch-inventory M12).
@@ -90,10 +86,14 @@ class PermissionStore {
 
   async load() {
     if (this.loaded) return;
-    const userDataPath = app.getPath('userData');
-    this.storePath = path.join(userDataPath, 'comet-permissions.json');
-    this.settingsPath = path.join(userDataPath, 'comet-security-settings.json');
-    this.auditPath = path.join(userDataPath, 'aartiq-audit.jsonl');
+    const userDataPath = (app && typeof app.getPath === 'function')
+      ? app.getPath('userData')
+      : (this.storePath ? path.dirname(this.storePath) : os.tmpdir());
+    if (!this.storePath) {
+      this.storePath = path.join(userDataPath, 'comet-permissions.json');
+      this.settingsPath = path.join(userDataPath, 'comet-security-settings.json');
+      this.auditPath = path.join(userDataPath, 'aartiq-audit.jsonl');
+    }
 
     // Migration: the audit trail was comet-audit.jsonl until the Comet → Aartiq
     // rename (mismatch-inventory M16). Rename on first load so an existing
@@ -123,6 +123,9 @@ class PermissionStore {
         this._syncAutoApprovedCommands();
         this._migrateLegacyAutoApprovedCommands();
         this._syncAutoApprovedActions();
+        this._checkBroadGrantsMigration();
+      } else {
+        this._checkBroadGrantsMigration();
       }
     } catch (e) {
       console.warn('[PermissionStore] Failed to load:', e.message);
@@ -290,6 +293,10 @@ class PermissionStore {
       this.logAudit(`directory-allowlist.add.rejected system-root: ${resolved}`);
       return false;
     }
+    if (isSensitivePath(resolved)) {
+      this.logAudit(`directory-allowlist.add.rejected sensitive-path: ${resolved}`);
+      return false;
+    }
     if (!Array.isArray(this.settings.allowedDirectories)) {
       this.settings.allowedDirectories = [...DEFAULT_ALLOWED_DIRECTORIES];
     }
@@ -308,13 +315,89 @@ class PermissionStore {
     this.settings.allowedDirectories.push({
       path: resolved,
       recursive: options.recursive !== false,
-      access: options.access === 'read' ? 'read' : 'read-write',
+      access: options.access === 'read-write' ? 'read-write' : 'read',
       grantedAt: Date.now(),
       grantedVia: options.grantedVia || 'settings',
     });
     this._saveSettings();
-    this.logAudit(`directory-allowlist.add: ${resolved} (${options.access || 'read-write'}, recursive=${options.recursive !== false})`);
+    this.logAudit(`directory-allowlist.add: ${resolved} (${options.access === 'read-write' ? 'read-write' : 'read'}, recursive=${options.recursive !== false})`);
     return true;
+  }
+
+  _checkBroadGrantsMigration() {
+    if (this.settings.hasSeenBroadGrantWarning) return;
+
+    const broadTargets = [
+      os.homedir(),
+      path.join(os.homedir(), 'Desktop'),
+      path.join(os.homedir(), 'Documents'),
+      path.join(os.homedir(), 'Downloads'),
+    ].map(p => path.resolve(p));
+
+    const currentDirs = Array.isArray(this.settings.allowedDirectories)
+      ? this.settings.allowedDirectories
+      : [];
+
+    const foundBroad = [];
+    for (const d of currentDirs) {
+      const p = typeof d === 'string' ? d : d?.path;
+      if (!p) continue;
+      const resolved = path.resolve(p.replace(/^~(?=\/|\\|$)/, os.homedir()));
+      if (broadTargets.includes(resolved)) {
+        foundBroad.push(resolved);
+      }
+    }
+
+    if (foundBroad.length > 0) {
+      this.broadGrantWarning = {
+        warning: 'Broad directory grants detected. For improved security, consider narrowing access to a dedicated workspace folder.',
+        broadGrants: foundBroad,
+        suggestedAction: 'narrow',
+      };
+      this.logAudit(`directory-allowlist.broad-grants-warning: ${foundBroad.join(', ')}`);
+    }
+  }
+
+  getBroadGrantWarning() {
+    return this.broadGrantWarning || null;
+  }
+
+  narrowBroadGrants() {
+    const broadTargets = new Set([
+      os.homedir(),
+      path.join(os.homedir(), 'Desktop'),
+      path.join(os.homedir(), 'Documents'),
+      path.join(os.homedir(), 'Downloads'),
+    ].map(p => path.resolve(p)));
+
+    const currentDirs = Array.isArray(this.settings.allowedDirectories)
+      ? this.settings.allowedDirectories
+      : [];
+
+    const kept = currentDirs.filter(d => {
+      const p = typeof d === 'string' ? d : d?.path;
+      if (!p) return false;
+      const resolved = path.resolve(p.replace(/^~(?=\/|\\|$)/, os.homedir()));
+      return !broadTargets.has(resolved);
+    });
+
+    const defaultWorkspace = DEFAULT_ALLOWED_DIRECTORIES[0].path;
+    if (!kept.some(d => path.resolve(typeof d === 'string' ? d : d.path) === defaultWorkspace)) {
+      kept.unshift(DEFAULT_ALLOWED_DIRECTORIES[0]);
+    }
+
+    this.settings.allowedDirectories = kept;
+    this.settings.hasSeenBroadGrantWarning = true;
+    this.broadGrantWarning = null;
+    this._saveSettings();
+    this.logAudit('directory-allowlist.narrowed-broad-grants');
+    return true;
+  }
+
+  dismissBroadGrantWarning() {
+    this.settings.hasSeenBroadGrantWarning = true;
+    this.broadGrantWarning = null;
+    this._saveSettings();
   }
 
   updateAllowedDirectory(dirPath, updates) {

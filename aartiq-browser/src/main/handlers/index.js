@@ -72,6 +72,7 @@ function registerAllHandlers(ipcMain, handlers) {
     'file-move','file-copy','file-open','file-print','file-check-access',
     'request-directory-access',
     'directory-allowlist-get','directory-allowlist-add','directory-allowlist-remove',
+    'directory-get-broad-grants-warning','directory-narrow-broad-grants','directory-dismiss-broad-grants-warning',
     'plugins:list','plugins:get','plugins:install','plugins:uninstall','plugins:update',
     'plugins:enable','plugins:disable','plugins:get-commands','plugins:execute-command',
     'plugins:update-config','plugins:get-dir','plugins:scan',

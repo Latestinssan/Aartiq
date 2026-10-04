@@ -645,6 +645,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDirectoryAllowlist: () => ipcRenderer.invoke('directory-allowlist-get'),
   addDirectoryToAllowlist: (dirPath, options) => ipcRenderer.invoke('directory-allowlist-add', { dirPath, ...options }),
   removeDirectoryFromAllowlist: (dirPath) => ipcRenderer.invoke('directory-allowlist-remove', { dirPath }),
+  getBroadGrantsWarning: () => ipcRenderer.invoke('directory-get-broad-grants-warning'),
+  narrowBroadGrants: () => ipcRenderer.invoke('directory-narrow-broad-grants'),
+  dismissBroadGrantsWarning: () => ipcRenderer.invoke('directory-dismiss-broad-grants-warning'),
 
   // Directory permission request panel — fired by main when a blocked path is encountered
   onDirectoryPermissionRequest: (callback) => {

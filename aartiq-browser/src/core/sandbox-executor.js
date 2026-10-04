@@ -70,7 +70,12 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { canonicalizePath, getSandboxDirs } = require('./directory-allowlist');
+const {
+  canonicalizePath,
+  getSandboxDirs,
+  isSensitivePath,
+  getSensitiveDirectories,
+} = require('./directory-allowlist');
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -162,6 +167,9 @@ function validateAllowlist(allowlist) {
     }
     if (!fs.existsSync(canonical)) {
       throw new SandboxError('SANDBOX_POLICY_INVALID', `Allowlisted path does not exist: ${entry.path}`);
+    }
+    if (isSensitivePath(canonical)) {
+      throw new SandboxError('SANDBOX_POLICY_INVALID', `Allowlisted path is a sensitive security location: ${entry.path}`);
     }
     const access = entry.access || 'read';
     if (access === 'read-write') {
@@ -309,6 +317,9 @@ function generateSeatbeltProfile(options = {}) {
     .map((d) => `(deny file-write* (subpath "${seatbeltQuote(d)}"))`)
     .join('\n');
 
+  const sensitiveDirs = getSensitiveDirectories();
+  const sensitiveDenyBlock = sensitiveDirs.map(sub).join('\n');
+
   const execBlock = [
     ...SYSTEM_EXEC_PATHS.map(sub),
     sub(workspaceCanonical),
@@ -345,6 +356,14 @@ ${writeBlock}
 
 ; Read-only allowlist entries can never be written.
 ${carveOuts}
+
+; Explicit deny list for sensitive credential/security paths (wins over any broader allow)
+(deny file-read*
+${sensitiveDenyBlock}
+)
+(deny file-write*
+${sensitiveDenyBlock}
+)
 
 ; Process execution confined to system + allowlisted paths. Executable
 ; mappings are equally confined so JIT/loaders cannot map in payloads from
@@ -513,6 +532,13 @@ function buildBubblewrapArgs(command, args, options = {}) {
   for (const dir of readDirs) {
     if (!writeDirs.includes(dir)) {
       bwrapArgs.push('--ro-bind', dir, dir);
+    }
+  }
+
+  // Mask sensitive paths with private tmpfs to isolate credentials/profiles
+  for (const sDir of getSensitiveDirectories()) {
+    if (fs.existsSync(sDir)) {
+      bwrapArgs.push('--tmpfs', sDir);
     }
   }
 
@@ -691,6 +717,7 @@ function createWindowsSandbox(command, args, options = {}) {
       workspace,
       readDirs,
       writeDirs,
+      denyDirs: getSensitiveDirectories(),
     },
   };
 
@@ -1199,6 +1226,7 @@ module.exports = {
   parseWindowsHelperOutput,
   // Env / errors
   buildSafeEnv,
+  validateAllowlist,
   SandboxError,
   createFailure,
   DEFAULT_WORKSPACE,

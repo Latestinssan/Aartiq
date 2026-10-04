@@ -209,8 +209,8 @@ exports.execShellCommand = async function(rawCommand, preApproved, reason, riskL
         } catch (e) {
           dirToAdd = nodePath.dirname(p);
         }
-        store.addAllowedDirectory(dirToAdd, { access: 'read-write', recursive: true });
-        store.logAudit(`directory-allowlist.granted-via-panel: ${dirToAdd} for command: ${command}`);
+        store.addAllowedDirectory(dirToAdd, { access: 'read', recursive: true });
+        store.logAudit(`directory-allowlist.granted-via-panel: ${dirToAdd} for command: ${command} (read-only)`);
       }
     }
   } catch (e) {

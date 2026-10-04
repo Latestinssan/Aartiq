@@ -21,26 +21,134 @@ const os = require('os');
 // Constants
 // ---------------------------------------------------------------------------
 
-// Cross-platform default: only the Aartiq Browser data directory, not the entire home
+// Cross-platform dedicated workspace: app-owned sandbox-workspace folder
+const DEFAULT_WORKSPACE_PATH = path.join(os.homedir(), '.aartiq', 'sandbox-workspace');
+
 function _getDefaultDirectories() {
-  let appDataDir;
-  if (process.platform === 'darwin') {
-    appDataDir = path.join(os.homedir(), 'Library', 'Application Support', 'aartiq');
-  } else if (process.platform === 'win32') {
-    appDataDir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'aartiq');
-  } else {
-    appDataDir = path.join(os.homedir(), '.config', 'aartiq');
-  }
   // Windows has no POSIX /tmp; use the real temp directory so default
   // allowlist entries resolve to existing paths (fail-closed validation).
   const tmpDefault = process.platform === 'win32' ? os.tmpdir() : '/tmp';
   return [
-    { path: appDataDir, recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
+    { path: DEFAULT_WORKSPACE_PATH, recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
     { path: tmpDefault, recursive: true, access: 'read-write', grantedAt: 0, grantedVia: 'default' },
   ];
 }
 
 const DEFAULT_ALLOWED_DIRECTORIES = _getDefaultDirectories();
+
+// ---------------------------------------------------------------------------
+// Sensitive Path Deny List (security-critical: credential and profile isolation)
+// ---------------------------------------------------------------------------
+
+const SENSITIVE_BASENAMES = new Set([
+  '.bash_history',
+  '.zsh_history',
+  '.history',
+  '.sh_history',
+  '.zhistory',
+  '.node_repl_history',
+  '.python_history',
+  '.netrc',
+  '.git-credentials',
+  '.npmrc',
+  '.pypirc',
+  'id_rsa',
+  'id_ed25519',
+  'id_ecdsa',
+  'id_dsa',
+  'id_xmss',
+  'known_hosts',
+  'authorized_keys',
+]);
+
+function getSensitiveDirectories() {
+  const home = os.homedir();
+  const dirs = [
+    path.join(home, '.ssh'),
+    path.join(home, '.gnupg'),
+    path.join(home, '.gpg'),
+    path.join(home, '.aws'),
+    path.join(home, '.config', 'gcloud'),
+    path.join(home, '.gcloud'),
+    path.join(home, '.azure'),
+    path.join(home, '.kube'),
+    path.join(home, '.config', '1Password'),
+    path.join(home, '.config', 'Bitwarden'),
+    path.join(home, '.password-store'),
+  ];
+
+  if (process.platform === 'darwin') {
+    dirs.push(
+      path.join(home, 'Library', 'Keychains'),
+      '/Library/Keychains',
+      path.join(home, 'Library', 'Safari'),
+      path.join(home, 'Library', 'Application Support', 'Google', 'Chrome'),
+      path.join(home, 'Library', 'Application Support', 'Firefox'),
+      path.join(home, 'Library', 'Application Support', 'Microsoft Edge'),
+      path.join(home, 'Library', 'Application Support', 'BraveSoftware'),
+      path.join(home, 'Library', 'Application Support', '1Password'),
+      path.join(home, 'Library', 'Application Support', 'Bitwarden'),
+    );
+  } else if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    dirs.push(
+      path.join(localAppData, 'Microsoft', 'Credentials'),
+      path.join(localAppData, 'Google', 'Chrome'),
+      path.join(appData, 'Google', 'Chrome'),
+      path.join(appData, 'Mozilla', 'Firefox'),
+      path.join(localAppData, 'Microsoft', 'Edge'),
+      path.join(localAppData, 'BraveSoftware'),
+      path.join(appData, '1Password'),
+      path.join(appData, 'Bitwarden'),
+    );
+  } else {
+    dirs.push(
+      path.join(home, '.config', 'google-chrome'),
+      path.join(home, '.mozilla', 'firefox'),
+      path.join(home, '.config', 'microsoft-edge'),
+      path.join(home, '.config', 'BraveSoftware'),
+    );
+  }
+
+  return dirs.map(d => path.normalize(d));
+}
+
+/**
+ * Check if a path points to a sensitive credential or browser profile location.
+ * Uses realpath resolution to prevent symlink bypass.
+ *
+ * @param {string} targetPath - Path to inspect
+ * @returns {boolean}
+ */
+function isSensitivePath(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return false;
+
+  const { canonical } = canonicalizePath(targetPath);
+  const pathToTest = canonical || path.resolve(targetPath.replace(/^~(?=\/|\\|$)/, os.homedir()));
+  const normalized = path.normalize(pathToTest);
+  const base = path.basename(normalized);
+
+  // 1. .env files
+  if (base === '.env' || base.startsWith('.env.')) {
+    return true;
+  }
+
+  // 2. Sensitive filenames / credentials / keychains
+  if (SENSITIVE_BASENAMES.has(base) || base.endsWith('.kdbx') || base.endsWith('.keychain') || base.endsWith('.keychain-db')) {
+    return true;
+  }
+
+  // 3. Sensitive directories and subpaths
+  const sensitiveDirs = getSensitiveDirectories();
+  for (const sDir of sensitiveDirs) {
+    if (normalized === sDir || normalized.startsWith(sDir + path.sep)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Path Canonicalization (§2 — security-critical)
@@ -110,6 +218,16 @@ function isPathAllowed(requestedPath, allowlist, operation = 'read') {
     return { allowed: false, reason: 'Failed to resolve path', matchedEntry: null };
   }
 
+  // Sensitive paths are ALWAYS denied, even if allowed by user or parent dir
+  if (isSensitivePath(requestedPath) || isSensitivePath(canonical)) {
+    return {
+      allowed: false,
+      reason: `Access denied: path "${requestedPath}" is in a sensitive security/credential location.`,
+      matchedEntry: null,
+      isSensitive: true,
+    };
+  }
+
   for (const entry of allowlist) {
     if (!entry || !entry.path) continue;
 
@@ -157,6 +275,7 @@ function getSandboxDirs(allowlist) {
     if (!entry || !entry.path) continue;
     const { canonical } = canonicalizePath(entry.path);
     if (!canonical) continue;
+    if (isSensitivePath(canonical)) continue; // Never allow sensitive paths in sandbox
 
     if (entry.access === 'read-write') {
       writeDirs.add(canonical);
@@ -178,8 +297,11 @@ function getSandboxDirs(allowlist) {
 }
 
 module.exports = {
+  DEFAULT_WORKSPACE_PATH,
   DEFAULT_ALLOWED_DIRECTORIES,
   canonicalizePath,
   isPathAllowed,
   getSandboxDirs,
+  isSensitivePath,
+  getSensitiveDirectories,
 };
