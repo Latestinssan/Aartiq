@@ -149,8 +149,24 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
   });
 
   ipcMain.handle('sync-remove-device', (event, deviceId) => {
-    if (wifiSyncService) wifiSyncService.disconnectDevice(deviceId);
+    if (wifiSyncService) {
+      if (typeof wifiSyncService.unpairDevice === 'function') {
+        wifiSyncService.unpairDevice(deviceId);
+      } else if (typeof wifiSyncService.removeKnownDevice === 'function') {
+        wifiSyncService.removeKnownDevice(deviceId);
+      }
+    }
     return { success: true };
+  });
+
+  ipcMain.handle('unpair-wifi-sync-device', (event, deviceId) => {
+    if (wifiSyncService) {
+      if (typeof wifiSyncService.unpairDevice === 'function') {
+        return { success: wifiSyncService.unpairDevice(deviceId) };
+      }
+      return { success: wifiSyncService.removeKnownDevice(deviceId) };
+    }
+    return { success: false };
   });
 
   // Flutter Bridge Handlers
@@ -401,6 +417,36 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
 
     wifiSyncService.on('client-connected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: true }); });
     wifiSyncService.on('client-disconnected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: false }); });
+    wifiSyncService.on('new-device-paired', (info) => {
+      const w = liveWindow();
+      if (w) w.webContents.send('wifi-sync-new-device', info);
+      try {
+        const { Notification } = require('electron');
+        if (Notification && Notification.isSupported()) {
+          new Notification({
+            title: 'New Device Paired',
+            body: `${info.deviceName || 'A mobile device'} (${info.ip || 'local network'}) was paired with Aartiq.`,
+          }).show();
+        }
+      } catch (_) {}
+    });
+    wifiSyncService.on('network-location-changed', (info) => {
+      const w = liveWindow();
+      if (w) w.webContents.send('wifi-sync-location-change', info);
+      try {
+        const { Notification } = require('electron');
+        if (Notification && Notification.isSupported()) {
+          new Notification({
+            title: 'Paired Device IP Changed',
+            body: `${info.deviceName || 'Paired device'} reconnected from a new address: ${info.newIp || 'unknown'}.`,
+          }).show();
+        }
+      } catch (_) {}
+    });
+    wifiSyncService.on('device-unpaired', ({ deviceId }) => {
+      const w = liveWindow();
+      if (w) w.webContents.send('wifi-sync-device-unpaired', { deviceId });
+    });
   }
 
   // Cloud Sync Event Listeners

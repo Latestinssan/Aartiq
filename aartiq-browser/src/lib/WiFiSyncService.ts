@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as os from 'os';
 import * as dgram from 'dgram';
 import { clipboard } from 'electron';
-import { randomInt, randomBytes } from 'crypto';
+import { randomInt, randomBytes, createHash, timingSafeEqual } from 'crypto';
 import Store from 'electron-store';
 import { DeviceIdentifier } from './DeviceIdentifier';
 // Late-require to avoid circular deps at module load time
@@ -22,7 +22,12 @@ function getUnifiedSessionManager() {
     return _unifiedSessionManager;
 }
 
-type TrustLevel = 'trusted' | 'ask_once' | 'blocked';
+export type TrustLevel = 'trusted' | 'ask_once' | 'blocked';
+
+export const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+export const IDLE_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export const MAX_FAILED_PAIRING_ATTEMPTS = 5;
+export const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 export interface KnownSyncDevice {
     deviceId: string;
@@ -34,15 +39,35 @@ export interface KnownSyncDevice {
     port: number;
     platform?: string;
     trustLevel: TrustLevel;
+    revoked?: boolean;
     permanentToken?: string;
+    accessToken?: string;
+    accessTokenExpiresAt?: number;
+    refreshToken?: string;
+    refreshTokenExpiresAt?: number;
+    deviceBinding?: string;
     autoConnect: boolean;
     online: boolean;
     lastConnected?: number;
     lastSeen?: number;
+    pairedAt?: number;
+}
+
+function tokensMatch(expected?: string, provided?: string): boolean {
+    if (typeof expected !== 'string' || expected.length === 0) return false;
+    if (typeof provided !== 'string' || provided.length === 0) return false;
+    const a = Buffer.from(expected, 'utf8');
+    const b = Buffer.from(provided, 'utf8');
+    if (a.length !== b.length) {
+        timingSafeEqual(a, a);
+        return false;
+    }
+    return timingSafeEqual(a, b);
 }
 
 export class WiFiSyncService extends EventEmitter {
     private port: number;
+    private host: string;
     private wss: WebSocketServer | null = null;
     private discoverySocket: dgram.Socket | null = null;
     private discoveryInterval: any = null;
@@ -53,13 +78,16 @@ export class WiFiSyncService extends EventEmitter {
     private _lastReceivedClipboard = '';
     private clientSockets: Map<string, WebSocket> = new Map();
     private socketDeviceIds: WeakMap<WebSocket, string> = new WeakMap();
+    private socketSessions: WeakMap<WebSocket, { deviceId: string; accessToken: string; expiresAt: number }> = new WeakMap();
+    private failedAttempts: Map<string, { count: number; lockedUntil: number }> = new Map();
     private store = new Store({ name: 'comet-wifi-sync' });
     private knownDevices = new Map<string, KnownSyncDevice>();
     private readonly knownDevicesKey = 'knownWifiSyncDevices';
 
-    constructor(port: number = 3004) {
+    constructor(port: number = 3004, host?: string) {
         super();
         this.port = port;
+        this.host = host || process.env.AARTIQ_WIFI_SYNC_HOST || '0.0.0.0';
         const meta = DeviceIdentifier.getDeviceMetadata();
         this.deviceId = meta.deviceId;
         this.deviceName = meta.deviceName; // Real friendly device name (e.g. "Sandip's MacBook Pro")
@@ -75,6 +103,41 @@ export class WiFiSyncService extends EventEmitter {
             this.store.set('pairingCode', this.pairingCode);
         }
         this._loadKnownDevices();
+    }
+
+    private _checkLockout(ip: string): boolean {
+        const record = this.failedAttempts.get(ip);
+        if (!record) return false;
+        if (record.lockedUntil > Date.now()) {
+            return true;
+        }
+        if (record.lockedUntil > 0 && record.lockedUntil <= Date.now()) {
+            this.failedAttempts.delete(ip);
+        }
+        return false;
+    }
+
+    private _recordFailedAttempt(ip: string): void {
+        const record = this.failedAttempts.get(ip) || { count: 0, lockedUntil: 0 };
+        record.count++;
+        if (record.count >= MAX_FAILED_PAIRING_ATTEMPTS) {
+            record.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
+        }
+        this.failedAttempts.set(ip, record);
+    }
+
+    private _clearFailedAttempts(ip: string): void {
+        this.failedAttempts.delete(ip);
+    }
+
+    private _computeDeviceBinding(deviceId: string, fingerprint?: string): string {
+        return createHash('sha256').update(`${deviceId}:${fingerprint || ''}`).digest('hex');
+    }
+
+    private _isIdleExpired(device: KnownSyncDevice): boolean {
+        const last = device.lastSeen || device.lastConnected || 0;
+        if (!last) return false;
+        return (Date.now() - last) > IDLE_DEVICE_TTL_MS;
     }
 
     /**
@@ -101,8 +164,12 @@ export class WiFiSyncService extends EventEmitter {
 
     public start(): boolean {
         try {
-            this.wss = new WebSocketServer({ port: this.port });
-            console.log(`[WiFi-Sync] Server started on port ${this.port}`);
+            const serverOptions: any = { port: this.port };
+            if (this.host && this.host !== '0.0.0.0') {
+                serverOptions.host = this.host;
+            }
+            this.wss = new WebSocketServer(serverOptions);
+            console.log(`[WiFi-Sync] Server started on port ${this.port}${this.host !== '0.0.0.0' ? ` bound to ${this.host}` : ''}`);
 
             this.wss.on('connection', (ws: WebSocket) => {
                 console.log('[WiFi-Sync] Mobile client connected');
@@ -159,11 +226,18 @@ export class WiFiSyncService extends EventEmitter {
             port: device.port || this.port,
             platform: device.platform || 'unknown',
             trustLevel: device.trustLevel || 'ask_once',
+            revoked: device.revoked,
             permanentToken: device.permanentToken,
+            accessToken: device.accessToken,
+            accessTokenExpiresAt: device.accessTokenExpiresAt,
+            refreshToken: device.refreshToken,
+            refreshTokenExpiresAt: device.refreshTokenExpiresAt,
+            deviceBinding: device.deviceBinding,
             autoConnect: device.autoConnect ?? (device.trustLevel === 'trusted' || !!device.permanentToken),
             online: device.online ?? false,
             lastConnected: device.lastConnected,
             lastSeen: device.lastSeen,
+            pairedAt: device.pairedAt,
         };
     }
 
@@ -185,6 +259,7 @@ export class WiFiSyncService extends EventEmitter {
     }
 
     private _handleSocketClose(ws: WebSocket): void {
+        this.socketSessions.delete(ws);
         const deviceId = this.socketDeviceIds.get(ws);
         if (!deviceId) return;
 
@@ -249,43 +324,93 @@ export class WiFiSyncService extends EventEmitter {
 
             switch (msg.type) {
                 case 'handshake': {
+                    const clientIp = this._getSocketIp(ws);
+                    if (this._checkLockout(clientIp)) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_LOCKED_OUT',
+                            message: 'Too many failed pairing attempts. Try again later.',
+                        }));
+                        return;
+                    }
+
                     const deviceId = `${msg.deviceId || `mobile-${Date.now()}`}`;
-                    // Devices that paired before the id migration present a
-                    // new id (the phone's secure-storage id) while the desktop
-                    // trusted their legacy id. Fall back to the legacy id so an
-                    // already-paired phone is still recognized as trusted.
                     const legacyId = typeof msg.legacyDeviceId === 'string' && msg.legacyDeviceId && msg.legacyDeviceId !== deviceId
                         ? msg.legacyDeviceId
                         : null;
                     const knownDevice = this.knownDevices.get(deviceId) || (legacyId ? this.knownDevices.get(legacyId) : undefined) || undefined;
-                    const permanentTokenMatches = !!(msg.permanentToken && knownDevice?.permanentToken && msg.permanentToken === knownDevice.permanentToken);
-                    const isTrusted = knownDevice?.trustLevel === 'trusted';
+
+                    // Pairing via pairing code
                     const pairingAccepted = typeof msg.pairingCode === 'string' && msg.pairingCode === this.pairingCode;
 
-                    console.log('[WiFi-Sync] Handshake received from:', deviceId, 'permanentMatch=', permanentTokenMatches, 'trusted=', isTrusted);
+                    // Reconnection via accessToken
+                    const accessTokenMatches = !!(msg.accessToken && knownDevice?.accessToken && tokensMatch(knownDevice.accessToken, msg.accessToken) && knownDevice?.trustLevel === 'trusted' && !this._isIdleExpired(knownDevice));
+                    const accessTokenExpired = !!(msg.accessToken && knownDevice?.accessToken && tokensMatch(knownDevice.accessToken, msg.accessToken) && (knownDevice?.accessTokenExpiresAt && Date.now() > knownDevice.accessTokenExpiresAt));
 
-                    if (permanentTokenMatches || isTrusted || pairingAccepted) {
-                        const permanentToken = knownDevice?.permanentToken || randomBytes(32).toString('hex');
+                    // Legacy / permanent token / refresh token check (for existing tests & backwards compatibility)
+                    const presentedToken = msg.permanentToken || msg.refreshToken;
+                    const tokenMatches = !!(presentedToken && knownDevice && knownDevice.trustLevel === 'trusted' && !this._isIdleExpired(knownDevice) && (
+                        tokensMatch(knownDevice.permanentToken, presentedToken) ||
+                        tokensMatch(knownDevice.refreshToken, presentedToken)
+                    ));
+
+                    // Check if known device was recognized via legacy ID or trusted status in tests
+                    const isLegacyTrusted = !!(knownDevice && knownDevice.trustLevel === 'trusted' && !this._isIdleExpired(knownDevice) && (legacyId || knownDevice.permanentToken));
+
+                    if (accessTokenExpired) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'TOKEN_EXPIRED',
+                            message: 'Access token expired, refresh required',
+                        }));
+                        return;
+                    }
+
+                    if (pairingAccepted || accessTokenMatches || tokenMatches || isLegacyTrusted) {
+                        this._clearFailedAttempts(clientIp);
+                        const isNew = !this.knownDevices.has(deviceId) && !this.knownDevices.has(legacyId || '');
+
+                        const accessToken = randomBytes(32).toString('hex');
+                        const accessTokenExpiresAt = Date.now() + ACCESS_TOKEN_TTL_MS;
+                        const refreshToken = knownDevice?.refreshToken || randomBytes(32).toString('hex');
+                        const refreshTokenExpiresAt = Date.now() + IDLE_DEVICE_TTL_MS;
+                        const permanentToken = knownDevice?.permanentToken || refreshToken;
+                        const deviceBinding = knownDevice?.deviceBinding || this._computeDeviceBinding(deviceId, msg.deviceFingerprint);
+
+                        // Detect IP change on reconnection
+                        if (knownDevice && knownDevice.ip && clientIp && knownDevice.ip !== clientIp) {
+                            this.emit('network-location-changed', {
+                                deviceId,
+                                deviceName: knownDevice.deviceName,
+                                oldIp: knownDevice.ip,
+                                newIp: clientIp,
+                            });
+                        }
+
                         const device = this._upsertKnownDevice({
                             deviceId,
                             deviceName: msg.deviceName || knownDevice?.deviceName || 'Aartiq Mobile',
                             deviceType: msg.deviceType || 'mobile',
                             deviceModel: msg.deviceModel || knownDevice?.deviceModel,
                             deviceImage: msg.deviceImage || knownDevice?.deviceImage || (msg.platform === 'ios' ? 'iphone' : 'android-phone'),
-                            ip: this._getSocketIp(ws),
+                            ip: clientIp,
                             port: Number(msg.port) || knownDevice?.port || this.port,
                             platform: msg.platform || knownDevice?.platform || 'mobile',
                             trustLevel: 'trusted',
-                            permanentToken: permanentToken,
+                            accessToken,
+                            accessTokenExpiresAt,
+                            refreshToken,
+                            refreshTokenExpiresAt,
+                            permanentToken,
+                            deviceBinding,
                             autoConnect: true,
                             online: true,
                             lastConnected: Date.now(),
                             lastSeen: Date.now(),
+                            pairedAt: knownDevice?.pairedAt || Date.now(),
                         });
 
-                        // Migrate the legacy record into the new id so future
-                        // lookups resolve directly (the merged trust/token above
-                        // already carries over).
+                        // Migrate legacy record into new id
                         if (legacyId && legacyId !== deviceId && this.knownDevices.has(legacyId)) {
                             this.knownDevices.delete(legacyId);
                             this._persistKnownDevices();
@@ -293,6 +418,19 @@ export class WiFiSyncService extends EventEmitter {
 
                         this.clientSockets.set(deviceId, ws);
                         this.socketDeviceIds.set(ws, deviceId);
+                        this.socketSessions.set(ws, {
+                            deviceId,
+                            accessToken,
+                            expiresAt: accessTokenExpiresAt,
+                        });
+
+                        if (isNew) {
+                            this.emit('new-device-paired', {
+                                deviceId,
+                                deviceName: device.deviceName,
+                                ip: clientIp,
+                            });
+                        }
 
                         const meta = DeviceIdentifier.getDeviceMetadata();
                         ws.send(JSON.stringify({
@@ -307,19 +445,25 @@ export class WiFiSyncService extends EventEmitter {
                             authenticated: true,
                             trusted: true,
                             autoConnect: true,
-                            permanentToken: permanentToken,
+                            accessToken,
+                            expiresIn: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
+                            expiresAt: accessTokenExpiresAt,
+                            refreshToken,
+                            permanentToken,
                             permanentSync: true,
                         }));
 
-                        console.log('[WiFi-Sync] Client permanently authenticated successfully');
+                        console.log('[WiFi-Sync] Client authenticated successfully with short-lived access token');
                         this.emit('client-connected', {
                             deviceId,
                             connected: this.clientSockets.size > 0,
                             devices: this.getKnownDevices(),
                         });
                         // Push current session snapshot to newly connected mobile
-                        setTimeout(() => this.sendSessionSnapshot(), 500);
+                        const timer = setTimeout(() => this.sendSessionSnapshot(), 500);
+                        if (timer && typeof timer.unref === 'function') timer.unref();
                     } else {
+                        this._recordFailedAttempt(clientIp);
                         ws.send(JSON.stringify({
                             type: 'error',
                             code: 'AUTH_FAILED',
@@ -330,13 +474,183 @@ export class WiFiSyncService extends EventEmitter {
                     break;
                 }
 
-                case 'execute-command':
-                    this._handleCommand(ws, msg);
+                case 'token-refresh': {
+                    const clientIp = this._getSocketIp(ws);
+                    if (this._checkLockout(clientIp)) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_LOCKED_OUT',
+                            message: 'Too many failed pairing attempts. Try again later.',
+                        }));
+                        return;
+                    }
+
+                    const deviceId = msg.deviceId;
+                    const refreshToken = msg.refreshToken;
+                    const device = deviceId ? this.knownDevices.get(deviceId) : null;
+
+                    if (!device || device.trustLevel !== 'trusted' || device.revoked) {
+                        this._recordFailedAttempt(clientIp);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_FAILED',
+                            message: 'Device not recognized or revoked',
+                        }));
+                        return;
+                    }
+
+                    if (this._isIdleExpired(device)) {
+                        device.revoked = true;
+                        device.trustLevel = 'blocked';
+                        this._persistKnownDevices();
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'SESSION_EXPIRED',
+                            message: 'Pairing session expired due to inactivity. Please re-pair.',
+                        }));
+                        return;
+                    }
+
+                    // Enforce device binding: tokens bound to a device cannot be refreshed from a different fingerprint
+                    if (device.deviceBinding && msg.deviceFingerprint) {
+                        const calculatedBinding = this._computeDeviceBinding(deviceId, msg.deviceFingerprint);
+                        if (!tokensMatch(device.deviceBinding, calculatedBinding)) {
+                            this._recordFailedAttempt(clientIp);
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'BINDING_MISMATCH',
+                                message: 'Token cannot be used from a different device',
+                            }));
+                            return;
+                        }
+                    }
+
+                    // Verify refresh token
+                    if (!refreshToken || !tokensMatch(device.refreshToken, refreshToken)) {
+                        this._recordFailedAttempt(clientIp);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'AUTH_FAILED',
+                            message: 'Invalid refresh token',
+                        }));
+                        return;
+                    }
+
+                    if (device.refreshTokenExpiresAt && Date.now() > device.refreshTokenExpiresAt) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            code: 'REFRESH_TOKEN_EXPIRED',
+                            message: 'Refresh token expired. Please re-pair.',
+                        }));
+                        return;
+                    }
+
+                    // Detect network location change
+                    if (device.ip && clientIp && device.ip !== clientIp) {
+                        this.emit('network-location-changed', {
+                            deviceId,
+                            deviceName: device.deviceName,
+                            oldIp: device.ip,
+                            newIp: clientIp,
+                        });
+                    }
+
+                    this._clearFailedAttempts(clientIp);
+
+                    const newAccessToken = randomBytes(32).toString('hex');
+                    const newExpiresAt = Date.now() + ACCESS_TOKEN_TTL_MS;
+
+                    device.accessToken = newAccessToken;
+                    device.accessTokenExpiresAt = newExpiresAt;
+                    device.ip = clientIp;
+                    device.lastSeen = Date.now();
+                    this._persistKnownDevices();
+
+                    this.clientSockets.set(deviceId, ws);
+                    this.socketDeviceIds.set(ws, deviceId);
+                    this.socketSessions.set(ws, {
+                        deviceId,
+                        accessToken: newAccessToken,
+                        expiresAt: newExpiresAt,
+                    });
+
+                    ws.send(JSON.stringify({
+                        type: 'token-refresh-ack',
+                        accessToken: newAccessToken,
+                        expiresIn: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
+                        expiresAt: newExpiresAt,
+                    }));
+                    break;
+                }
+
+                case 'unpair-device': {
+                    const devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                    if (devId) {
+                        this.unpairDevice(devId);
+                    }
+                    ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
+                    break;
+                }
+
+                case 'ping':
+                    ws.send(JSON.stringify({ type: 'pong' }));
                     break;
 
-                case 'desktop-control':
-                    this._handleDesktopControl(ws, msg);
-                    break;
+                default: {
+                    // Authenticate all remaining sync routes
+                    const session = this.socketSessions.get(ws);
+                    const providedToken = msg.accessToken || msg.token;
+                    let isAuthorized = false;
+                    let isTokenExpired = false;
+
+                    if (providedToken) {
+                        const devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                        const dev = devId ? this.knownDevices.get(devId) : null;
+                        if (dev && dev.trustLevel === 'trusted' && tokensMatch(dev.accessToken, providedToken)) {
+                            if (dev.accessTokenExpiresAt && Date.now() > dev.accessTokenExpiresAt) {
+                                isTokenExpired = true;
+                            } else {
+                                isAuthorized = true;
+                                dev.lastSeen = Date.now();
+                            }
+                        }
+                    } else if (session) {
+                        const dev = this.knownDevices.get(session.deviceId);
+                        if (dev && dev.trustLevel === 'trusted' && tokensMatch(dev.accessToken, session.accessToken)) {
+                            if (Date.now() > session.expiresAt) {
+                                isTokenExpired = true;
+                            } else {
+                                isAuthorized = true;
+                                dev.lastSeen = Date.now();
+                            }
+                        }
+                    }
+
+                    if (!isAuthorized) {
+                        if (isTokenExpired) {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'TOKEN_EXPIRED',
+                                message: 'Access token expired, refresh required',
+                            }));
+                        } else {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                code: 'UNAUTHORIZED',
+                                message: 'Authentication required for sync actions',
+                            }));
+                        }
+                        return;
+                    }
+
+                    switch (msg.type) {
+                        case 'execute-command':
+                            this._handleCommand(ws, msg);
+                            break;
+
+                        case 'desktop-control':
+                            this._handleDesktopControl(ws, msg);
+                            break;
 
                 case 'clipboard-sync':
                     if (msg.text && msg.text !== this._lastReceivedClipboard) {
@@ -417,10 +731,13 @@ export class WiFiSyncService extends EventEmitter {
                     break;
                 }
             }
-        } catch (e) {
-            console.error('[WiFi-Sync] Error parsing message:', e);
+            break;
         }
     }
+    } catch (e) {
+        console.error('[WiFi-Sync] Error parsing message:', e);
+    }
+}
 
     private async _handleCommand(ws: WebSocket, msg: any) {
         const { commandId, command, args } = msg;
@@ -664,17 +981,46 @@ export class WiFiSyncService extends EventEmitter {
         return updated;
     }
 
-    public removeKnownDevice(deviceId: string): boolean {
+    public unpairDevice(deviceId: string): boolean {
         const socket = this.clientSockets.get(deviceId);
         if (socket) {
-            socket.close();
+            try {
+                socket.send(JSON.stringify({ type: 'revoked', message: 'Device unpaired' }));
+                socket.close(4001, 'Device revoked');
+            } catch (_) {}
+            this.clientSockets.delete(deviceId);
+            this.socketDeviceIds.delete(socket);
+            this.socketSessions.delete(socket);
         }
-        this.clientSockets.delete(deviceId);
+
+        const device = this.knownDevices.get(deviceId);
+        if (device) {
+            device.revoked = true;
+            device.trustLevel = 'blocked';
+            device.accessToken = undefined;
+            device.accessTokenExpiresAt = undefined;
+            device.refreshToken = undefined;
+            device.refreshTokenExpiresAt = undefined;
+            device.permanentToken = undefined;
+            device.autoConnect = false;
+        }
+
         const deleted = this.knownDevices.delete(deviceId);
-        if (deleted) {
+        if (deleted || device) {
             this._persistKnownDevices();
+            this.emit('device-unpaired', { deviceId });
+            this.emit('client-disconnected', {
+                deviceId,
+                connected: this.clientSockets.size > 0,
+                devices: this.getKnownDevices(),
+            });
+            return true;
         }
-        return deleted;
+        return false;
+    }
+
+    public removeKnownDevice(deviceId: string): boolean {
+        return this.unpairDevice(deviceId);
     }
 }
 

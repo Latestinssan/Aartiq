@@ -588,6 +588,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWifiSyncDevices: () => ipcRenderer.invoke('get-wifi-sync-devices'),
   setWifiSyncDeviceTrust: (payload) => ipcRenderer.invoke('set-wifi-sync-device-trust', payload),
   removeWifiSyncDevice: (deviceId) => ipcRenderer.invoke('remove-wifi-sync-device', deviceId),
+  unpairWifiSyncDevice: (deviceId) => ipcRenderer.invoke('unpair-wifi-sync-device', deviceId),
+  onWifiSyncNewDevice: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('wifi-sync-new-device', subscription);
+    return () => ipcRenderer.removeListener('wifi-sync-new-device', subscription);
+  },
+  onWifiSyncLocationChange: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('wifi-sync-location-change', subscription);
+    return () => ipcRenderer.removeListener('wifi-sync-location-change', subscription);
+  },
   onWifiSyncStatus: (callback) => {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('wifi-sync-status', subscription);
