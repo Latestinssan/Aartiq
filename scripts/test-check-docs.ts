@@ -27,7 +27,7 @@ const NAVBAR = join(LANDING, "src", "components", "Navbar.tsx");
 const FSOT = join(LANDING, "src", "data", "project-facts.ts");
 const SHELL_TIERS = join(LANDING, "src", "data", "shell-tiers.generated.json");
 
-function run() {
+function run(landingDir = LANDING) {
   try {
     execFileSync("node", [join(REPO, "scripts", "check-docs.ts")], {
       cwd: REPO,
@@ -35,7 +35,7 @@ function run() {
       // Passed through so the child checks the same landing tree this harness
       // mutates. Without it the child follows the sibling path and, in a
       // worktree, reads a different repository than the one being edited.
-      env: { ...process.env, AARTIQ_LANDING_DIR: LANDING },
+      env: { ...process.env, AARTIQ_LANDING_DIR: landingDir },
     });
     return { ok: true, out: "" };
   } catch (e) {
@@ -339,6 +339,30 @@ if (expectFailureWithSetup(
   }
 }
 
+// A missing landing checkout must fail loudly and say which variable to set.
+//
+// This is the exact case the CI workflow guards against. The landing site is a
+// separate repository, so a job that checked out only Aartiq would leave the gate
+// comparing the published pages against nothing — and an earlier version of this
+// harness reported success in that state, which is how the site kept advertising a
+// startup shell grant that had already been removed. The test asserts both the
+// exit code and that the message is actionable rather than a Node stack trace.
+{
+  const missing = join(LANDING, "..", "no-such-landing-checkout");
+  const res = run(missing);
+  if (res.ok) {
+    console.log("✗ (i) missing landing checkout — docs:check PASSED but should have failed");
+  } else if (!res.out.includes("AARTIQ_LANDING_DIR")) {
+    console.log("✗ (i) missing landing checkout — failed, but the message does not name AARTIQ_LANDING_DIR:");
+    console.log(res.out.split("\n").filter(Boolean).slice(-6).join("\n          "));
+  } else if (res.out.includes("ERR_MODULE_NOT_FOUND")) {
+    console.log("✗ (i) missing landing checkout — still dying on a raw module-resolution error");
+  } else {
+    console.log("✓ (i) missing landing checkout fails with an actionable message");
+    pass++;
+  }
+}
+
 // The clean tree must pass.
 const clean = run();
 if (clean.ok) {
@@ -350,7 +374,7 @@ if (clean.ok) {
 
 // Counted as cases are added rather than hand-maintained: a stale denominator
 // makes a newly failing rule look like a shrinking suite.
-const total = cases.length + hCases.length + 4;
+const total = cases.length + hCases.length + 5;
 console.log(`\n${pass}/${total} checks behaved as expected`);
 if (pass !== total) process.exitCode = 1;
 if (pass !== cases.length + 3) process.exit(1);

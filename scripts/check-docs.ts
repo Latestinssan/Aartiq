@@ -32,6 +32,28 @@ const REPO = join(import.meta.dirname, "..");
  */
 const LANDING = process.env.AARTIQ_LANDING_DIR ?? join(REPO, "..", "Aartiq-Landing-Page");
 
+// Fail here, with the variable to set, rather than letting the import below throw.
+// The most likely cause is a CI job that checked out only this repository: the
+// gate would otherwise die with ERR_MODULE_NOT_FOUND and a Node stack trace,
+// which says nothing about which path was wrong or how to point at the right one.
+// Every rule below walks the landing site, so continuing without it is not an
+// option — and silently continuing is what this check exists to prevent.
+if (!existsSync(join(LANDING, "src", "data", "project-facts.ts"))) {
+  console.error(
+    `\n✗ docs:check cannot run — the landing repository is not at\n` +
+      `    ${LANDING}\n\n` +
+      `Aartiq-Landing-Page is a separate repository and the gate reads it directly:\n` +
+      `the risk tier table, the test counts and every published security claim are\n` +
+      `compared against it. Without it this check would pass while verifying nothing\n` +
+      `about the pages users actually read.\n\n` +
+      `Fix it by either\n` +
+      `  - cloning Aartiq-Landing-Page beside this repository (the default path), or\n` +
+      `  - setting AARTIQ_LANDING_DIR to an existing checkout, e.g.\n` +
+      `      AARTIQ_LANDING_DIR=../Aartiq-Landing-Page npm run docs:check\n`,
+  );
+  process.exit(1);
+}
+
 // The facts module is loaded dynamically rather than with a static `import`,
 // because a static specifier is resolved against this file's own location at load
 // time and cannot be pointed at AARTIQ_LANDING_DIR. The `import type` above keeps
