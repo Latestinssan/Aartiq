@@ -1,0 +1,32 @@
+# Mutation check — the feature manifest gate
+
+Captured: 2026-10-04T07:06:04Z
+Baseline: 6e925001
+Harness:  scripts/mutation-check-manifest.js
+
+A mutation that leaves the gate green is a hole in the gate, not a pass.
+Problems and warnings both count as noticed.
+
+=== mutation check: the feature manifest gate ===
+
+  killed     a test id names a test file that does not exist
+  killed     a test id names a test name the suite does not contain
+  killed     a test id has no #test-name suffix
+  killed     a planned test is promoted in name only, while its file exists
+  killed     a doc pointer names a page that does not exist
+  killed     a manual-check sign-off names a document that does not exist
+  killed     a manual-check document has no status line
+  killed     a status is not one the manifest defines
+  killed     a decision is not one the manifest defines
+  killed     a risk tier is not one the manifest defines
+  killed     the same feature is listed twice
+  killed     a row claims to work with no evidence at all
+  warned     a row is published as available with no test and no manual check
+  killed     the baseline names a commit that does not exist
+  warned     a cited evidence file moved since the manifest was last re-read
+  killed     the manifest carries the project-origin brand name
+
+mutations attempted: 16
+noticed:             16
+missed:              0
+PASS: every mutation was noticed

@@ -1,0 +1,30 @@
+# RED EVIDENCE — apple-intelligence-genmoji
+
+Captured: 2026-10-04T04:26:26Z
+Baseline: 63baa5ee (docs/align-security-defaults)
+Command: npx jest tests/apple-intelligence-genmoji.test.js
+
+Result: 5 failed / 18 passed / 23 total. Every failure is a documentation
+assertion that is currently false; the 18 code assertions already hold, which is
+recorded here rather than hidden.
+
+```
+  ● the docs describe the command and its real OS floor › native-api lists apple-intelligence-genmoji
+  ● the docs describe the command and its real OS floor › api-reference lists apple-intelligence-genmoji
+  ● the docs describe the command and its real OS floor › the Apple page no longer claims one OS floor for all three commands
+  ● the docs describe the command and its real OS floor › no docs page calls a bridge that does not exist
+  ● the docs describe the command and its real OS floor › the Apple page drops features with no implementation behind them
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 18 passed, 23 total
+```
+
+## Why each failure is the right reason
+
+- native-api / api-reference do not list `apple-intelligence-genmoji` — the command ships
+  (main.js:350, preload.js:12, apple-intelligence.swift:435) and is simply undocumented.
+- the Apple page states one `macOS 15.0 or later` floor; the Swift gates summary at
+  26.0, Image Playground at 15.1 and Genmoji at 15.4.
+- three pages call `window.electron.invoke(...)`; no preload exposes `window.electron`,
+  so every one of those examples throws on copy-paste.
+- `Priority Notifications` is rendered as a shipped Apple Intelligence feature with
+  zero matches anywhere in src/, main.js or the Swift panels.

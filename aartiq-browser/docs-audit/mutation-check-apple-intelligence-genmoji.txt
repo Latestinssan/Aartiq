@@ -1,0 +1,45 @@
+# Mutation check — apple-intelligence-genmoji
+
+Captured: 2026-10-04T07:09:17Z
+Baseline: 6ad1b5a0
+Suite:    tests/apple-intelligence-genmoji.test.js
+
+A mutation that leaves the suite green is a hole in the tests, not a pass.
+Every mutation below is reverted immediately after it is measured, and the
+run aborts loudly if a mutation fails to apply rather than reporting a
+misleading pass.
+
+## 1. Drop the non-macOS guard — Apple Intelligence on any platform
+  Tests:       3 failed, 21 passed, 24 total
+  KILLED:   Apple Intelligence becomes reachable off macOS
+
+## 2. Route genmoji through the image command
+  Tests:       2 failed, 22 passed, 24 total
+  KILLED:   generateGenmoji sends command: image
+
+## 3. Remove the genmoji arm from the Swift helper
+  Tests:       3 failed, 21 passed, 24 total
+  KILLED:   helper stops handling genmoji
+
+## 4. Rename the IPC channel in preload only
+  Tests:       2 failed, 22 passed, 24 total
+  KILLED:   preload and main disagree on the channel name
+
+## 5. Lower the Genmoji OS floor from 15.4 to 15.0
+  Tests:       1 failed, 23 passed, 24 total
+  KILLED:   helper would run genmoji on an OS it cannot support
+
+## 6. Hand the helper a shell instead of piping JSON
+  Tests:       1 failed, 23 passed, 24 total
+  KILLED:   helper is spawned through a shell
+
+## 7. Expose generateGenmoji to remote web pages
+  Tests:       1 failed, 23 passed, 24 total
+  KILLED:   view_preload.js gains an Apple Intelligence entry point
+
+## Result
+
+killed:   7
+survived: 0
+
+Every mutation was detected.

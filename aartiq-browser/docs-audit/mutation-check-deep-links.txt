@@ -1,0 +1,27 @@
+# Mutation check — docs-deep-links-match-source
+
+Captured: 2026-10-04T07:05:46Z
+Baseline: 6e925001
+Harness:  scripts/mutation-check-deeplinks.js
+
+A mutation that leaves the suite green is a hole in the tests, not a pass.
+
+=== mutation check: docs-deep-links-match-source ===
+  killed     publish a dead command as working (index)
+  killed     publish a prepares command as working (run-command)
+  killed     drop the create-doc row from the docs
+  killed     add an unregistered command to the handler
+  killed     make create-pdf actually build a document
+  killed     give a dead command a real renderer listener
+  killed     subscribe the renderer to ai:request-speak-response
+  killed     document a parameter the handler never reads
+  killed     re-advertise the invented pdf-viewer route
+  killed     add a second-instance handler, falsifying the macOS-only claim
+  killed     delete the macOS-only caveat from the page
+  killed     re-add Firebase Dynamic Links as a supported mechanism
+
+mutations attempted: 12
+killed:              12
+survived:            0
+failed to apply:     0
+PASS: every mutation was caught
