@@ -34,7 +34,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │ main.js      │  │ Next.js UI   │  │ Background       │   │
 │  │ (IPC, window │◄─┤ (React/TS)   │  │ Service          │   │
-│  │  management) │  │ Port 3003    │  │ (scheduler,      │   │
+│  │  management) │  │ dev server   │  │ (scheduler,      │   │
 │  └──────┬───────┘  └──────┬───────┘  │  notifications)  │   │
 │         │                 │           └──────────────────┘   │
 │         ▼                 ▼                                   │
@@ -49,7 +49,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 │  │  - SiriShortcutsProvider, AppleIntelligence       │        │
 │  └──────────────────────────────────────────────────┘        │
 └──────────────────┬──────────────────────────────────────────┘
-                   │ WebSocket (port 3004)
+                   │ WebSocket (WiFi sync — see Communication Protocols)
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │               flutter_browser_app (Mobile)                   │
@@ -70,7 +70,9 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | `aartiq-browser/src/service/` | Background task scheduler |
 | `aartiq-browser/scripts/` | Build and service installation scripts |
 | `flutter_browser_app/` | Flutter mobile companion |
-| `Landing_Page/` | Documentation site (Next.js) |
+| `Landing_Page/` | Residual copy of two docs carried over from before the site moved out (`AI-GUIDE.md`, `src/lib/release-notes.ts`). The live site is the separate `Aartiq-Landing-Page` repository |
+| `aartiq-browser/docs-audit/` | Phase-0 consistency audit: verified fact table, evidence log |
+| `scripts/` | `gen-test-facts.ts`, `gen-repo-facts.ts`, `sync-docs.ts`, `check-docs.ts` (`npm run docs:check`) |
 
 ## Key Services (src/lib/)
 
@@ -105,16 +107,28 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 
 ## Communication Protocols
 
-| Protocol | Port | Purpose |
-|----------|------|---------|
-| HTTP (Next.js) | 3003 | Frontend UI |
-| WebSocket | 3004 | Desktop-mobile sync |
-| UDP | 3005 | Device discovery |
-| HTTP (Nexus bridge) | 9922 | Nexus-AI integration |
+<!-- SSOT:START protocols -->
+| Protocol / Service | Port | Notes |
+| --- | --- | --- |
+| HTTP (Next.js, dev) | 3003 | Next.js dev server. Development only — never started in a packaged build. |
+| MCP browser bridge | 3001 | mcp-bridge — binds `all interfaces (0.0.0.0 / ::)` |
+| WiFi sync (desktop ↔ mobile) | 3004 | wifi-sync — binds `all interfaces (0.0.0.0 / ::)` |
+| Native macOS / CLI bridge | 46203 | native-bridge — binds `127.0.0.1` |
+| Agent API tool server | 46203 | agent-api — binds `127.0.0.1` |
+| Background task service (separate Electron app) | 3999 | background-service — binds `0.0.0.0` |
+| UDP discovery | 3005 | UDP broadcast destination, not a listener. The discovery socket binds an ephemeral port. |
+| Nexus bridge | 9922 | retired — Not present. A dead variable remains in main.js. |
+| Raycast HTTP API | 9877 | retired — Not present. Port constant is declared and never read. |
+| Flutter bridge | 9876 | retired — Implemented and correctly token-gated, but never instantiated. |
+<!-- SSOT:END protocols -->
 
 ## CI/CD
 
-14 GitHub Actions workflows handle multi-platform builds. All workflows are triggered manually or by tag push. See `.github/workflows/` for details.
+<!-- SSOT:START workflows -->
+13 GitHub Actions workflows live in `.github/workflows/`. release.yml fires on version tag push, sync-component-docs.yml fires on push to main for a path filter, and the remaining eleven are workflow_dispatch.
+
+The test suite (`.github/workflows/jest.yml`) is one of the manual ones: Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
+<!-- SSOT:END workflows -->
 
 ## Dependencies
 

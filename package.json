@@ -1,0 +1,19 @@
+{
+  "name": "aartiq-monorepo-docs",
+  "private": true,
+  "description": "Documentation tooling for the Aartiq monorepo. Owns the generated facts that the README and the landing site both read.",
+  "type": "module",
+  "scripts": {
+    "docs:test-facts": "node scripts/gen-test-facts.ts",
+    "docs:test-facts:from-ci": "node scripts/gen-test-facts.ts --ci-artifact 34769503518",
+    "docs:repo-facts": "node scripts/gen-repo-facts.ts",
+    "docs:facts": "npm run docs:repo-facts && npm run docs:test-facts",
+    "docs:sync": "node scripts/sync-docs.ts",
+    "docs:check": "node scripts/check-docs.ts",
+    "docs:test": "node scripts/test-check-docs.ts",
+    "docs:refresh": "npm run docs:facts && npm run docs:sync && npm run docs:check && npm run docs:test"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}
