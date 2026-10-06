@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Server, Plus, Trash2, Globe, Activity, Shield, Link as LinkIcon, Terminal, Key, Zap, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store/useAppStore';
-import { buildMcpSseUrl } from '@/lib/mcp-bridge-url';
+import { buildMcpRemoteServerConfig } from '@/lib/mcp-bridge-url';
 
 interface ServerPreset {
     name: string;
@@ -180,6 +180,14 @@ const McpSettings = () => {
         setIsAdding(false);
     };
 
+    // Single builder: the rendered snippet and the copy button cannot diverge,
+    // and the token rides the env block, never the argument list.
+    const mcpConfigSnippet = JSON.stringify({
+        mcpServers: {
+            "aartiq-browser": buildMcpRemoteServerConfig(3001, mcpBridgeToken)
+        }
+    }, null, 2);
+
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
@@ -230,21 +238,14 @@ const McpSettings = () => {
                     </p>
                     {!mcpBridgeToken && (
                         <p className="text-[10px] leading-relaxed text-amber-300/80">
-                            The URL needs the session token shown below it. Click
-                            Auto-Configure first — the token is read from
+                            The config needs the session token. Click
+                            Auto-Configure first — it fills the env block from
                             ~/.aartiq-mcp-token, so the snippet stays valid across
                             restarts. A config without it is answered with 401.
                         </p>
                     )}
                     <pre className="p-3 rounded-xl bg-black/40 border border-white/5 text-[10px] font-mono text-white/60 leading-relaxed overflow-x-auto">
-{`{
-  "mcpServers": {
-    "aartiq-browser": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote@0.1.17", "${buildMcpSseUrl(3001, mcpBridgeToken)}"]
-    }
-  }
-}`}
+{mcpConfigSnippet}
                     </pre>
                     {mcpBridgeToken && (
                         <p className="text-[10px] leading-relaxed text-white/40">
@@ -273,15 +274,7 @@ const McpSettings = () => {
                         </button>
                         <button
                             onClick={() => {
-                                const config = JSON.stringify({
-                                    mcpServers: {
-                                        "aartiq-browser": {
-                                            command: "npx",
-                                            args: ["-y", "mcp-remote@0.1.17", buildMcpSseUrl(3001, mcpBridgeToken)]
-                                        }
-                                    }
-                                }, null, 2);
-                                navigator.clipboard.writeText(config);
+                                navigator.clipboard.writeText(mcpConfigSnippet);
                             }}
                             className="flex items-center gap-2 px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-300 transition-all"
                         >

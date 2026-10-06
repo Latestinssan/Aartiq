@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 import { useAppStore } from '@/store/useAppStore';
-import { buildMcpSseUrl as mcpSseUrl } from '@/lib/mcp-bridge-url';
+import { buildMcpRemoteServerConfig as mcpRemoteConfig } from '@/lib/mcp-bridge-url';
 
 interface AISetupGuideProps {
   onClose: () => void;
@@ -745,7 +745,7 @@ const AISetupGuide: React.FC<AISetupGuideProps> = ({ onClose, onComplete }) => {
                               {claudeMcpAutoStatus === 'error' && (
                                 <button
                                   onClick={() => navigator.clipboard.writeText(JSON.stringify({
-                                    mcpServers: { "aartiq-browser": { command: "npx", args: ["-y", "mcp-remote@0.1.17", mcpSseUrl(claudeMcpToken)] } }
+                                    mcpServers: { "aartiq-browser": mcpRemoteConfig(3001, claudeMcpToken) }
                                   }, null, 2))}
                                   className="w-full flex items-center justify-center gap-1.5 p-2 rounded-xl border text-[9px] font-bold text-white/60 hover:text-white/80 transition-all"
                                   style={{ borderColor: 'var(--border-color)' }}

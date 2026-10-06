@@ -280,7 +280,7 @@ const { FlutterBridgeServer } = require('./src/lib/bridge-server.js');
 const { FileSystemMcpServer, NativeAppMcpServer } = require('./src/lib/mcp-desktop-server.js');
 const { BrowserMcpServer } = require('./src/lib/mcp-browser-server.js');
 const { checkLocalRequest } = require('./src/lib/local-server-auth.js');
-const { buildMcpSseUrl } = require('./src/lib/mcp-bridge-url.js');
+const { buildMcpRemoteServerConfig } = require('./src/lib/mcp-bridge-url.js');
 const { RagService } = require('./src/lib/rag-service.js');
 const { VoiceService } = require('./src/lib/voice-service.js');
 const { WorkflowRecorder } = require('./src/lib/workflow-recorder.js');
@@ -9234,17 +9234,19 @@ ${tabData}`;
       // Claude Desktop only supports stdio servers in its config file.
       // Use mcp-remote as a stdio-to-SSE bridge.
       //
-      // mcp-remote authenticates with headers only, and the only value it takes
-      // is a bare URL, so the session token has to travel as a query parameter.
-      // That is a real trade-off: a URL can end up in process arguments and in
-      // whatever the client logs. Tracked in docs-audit/issues/pairing-token-in-url.md.
-      const sseUrl = buildMcpSseUrl(mcpServerPort, mcpServer ? mcpServer.sessionToken : null);
+      // mcp-remote@0.1.17 takes `--header` arguments and expands ${VAR} in a
+      // header value from this entry's env block, so the session token travels
+      // in an Authorization header and never in the argument list (a URL query
+      // parameter would end up in process listings and client logs). Configs
+      // written by older versions keep `?token=` in the URL and still work —
+      // the bridge accepts both carriers. See
+      // docs-audit/issues/pairing-token-in-url.md.
       const aartiqConfig = {
         mcpServers: {
-          "aartiq-browser": {
-            command: "npx",
-            args: ["-y", "mcp-remote@0.1.17", sseUrl],
-          }
+          "aartiq-browser": buildMcpRemoteServerConfig(
+            mcpServerPort,
+            mcpServer ? mcpServer.sessionToken : null,
+          ),
         }
       };
       if (!fs.existsSync(configDir)) {

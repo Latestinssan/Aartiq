@@ -20,7 +20,7 @@ const {
   tokensMatch,
   extractToken,
 } = require('../src/lib/local-server-auth');
-const { buildMcpSseUrl, inspectMcpSseUrl } = require('../src/lib/mcp-bridge-url');
+const { buildMcpSseUrl, buildMcpRemoteServerConfig, inspectMcpSseUrl } = require('../src/lib/mcp-bridge-url');
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ describe('extractToken', () => {
     }
   });
 
-  test('reads the query parameter, which is the only carrier mcp-remote supports', () => {
+  test('reads the query parameter — the legacy carrier, kept for configs written before --header', () => {
     expect(extractToken(makeReq(), url('?token=tok-3'))).toBe('tok-3');
   });
 
@@ -363,7 +363,7 @@ describe('MCP bridge listener (end to end over real sockets)', () => {
     expect(JSON.parse(res.body)).toEqual({ status: 'ok', paired: true });
   });
 
-  test('token in the query parameter works — the mcp-remote carrier', async () => {
+  test('token in the query parameter works — the legacy carrier old configs still use', async () => {
     const res = await request(port, `/sse?token=${encodeURIComponent('bridge-session-token')}`, {
       host: `127.0.0.1:${port}`,
     });
@@ -406,6 +406,43 @@ describe('Claude Desktop pairing flow over loopback', () => {
     expect(inspectMcpSseUrl('http://127.0.0.1:3001/sse')).toEqual({ pointsAtBridge: true, carriesToken: false });
     expect(inspectMcpSseUrl('http://127.0.0.1:3001/sse?token=abc')).toEqual({ pointsAtBridge: true, carriesToken: true });
     expect(inspectMcpSseUrl('http://example.com:3001/sse?token=abc')).toEqual({ pointsAtBridge: false, carriesToken: true });
+  });
+
+  test('the config builder keeps the token out of argv: URL is clean, token rides env', () => {
+    const config = buildMcpRemoteServerConfig(3001, 'tok-secret');
+    expect(config.command).toBe('npx');
+    expect(config.args).toEqual([
+      '-y',
+      'mcp-remote@0.1.17',
+      'http://127.0.0.1:3001/sse',
+      '--header',
+      'Authorization:${AARTIQ_MCP_AUTH}',
+    ]);
+    expect(config.env).toEqual({ AARTIQ_MCP_AUTH: 'Bearer tok-secret' });
+    // The whole point: nothing token-bearing in the argument list.
+    expect(JSON.stringify(config.args)).not.toContain('tok-secret');
+  });
+
+  test('the expanded header the config produces authenticates against the bridge', async () => {
+    const config = buildMcpRemoteServerConfig(3001, 'bridge-session-token');
+    // mcp-remote replaces ${AARTIQ_MCP_AUTH} from env and sends it verbatim as
+    // the Authorization header on every request.
+    const verdict = checkLocalRequest(
+      {
+        method: 'GET',
+        url: '/sse',
+        headers: { host: '127.0.0.1:3001', authorization: config.env.AARTIQ_MCP_AUTH },
+      },
+      { port: 3001, token: 'bridge-session-token', requireToken: true },
+    );
+    expect(verdict.ok).toBe(true);
+  });
+
+  test('without a token yet the config still carries no secret', () => {
+    const config = buildMcpRemoteServerConfig(3001, null);
+    expect(config.args).toContain('http://127.0.0.1:3001/sse');
+    expect(config.env).toBeUndefined();
+    expect(JSON.stringify(config)).not.toContain('token=');
   });
 
   test('a second token does not authenticate the first one’s session', () => {

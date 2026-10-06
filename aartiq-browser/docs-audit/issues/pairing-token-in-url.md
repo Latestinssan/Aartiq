@@ -1,9 +1,12 @@
 # Session token travels in the mcp-remote URL
 
 **Label:** security
-**Status:** open — accepted trade-off, not resolved
+**Status:** resolved — the token rides an Authorization header; the query parameter remains accepted for old configs
 
 ## Summary
+
+*(The original finding, kept verbatim; see Resolution for what has since
+changed.)*
 
 The MCP browser bridge now requires a per-process token on every request. The
 Claude Desktop config Aartiq writes uses `mcp-remote`, which accepts only a bare
@@ -45,3 +48,37 @@ header work and would be worse.
   keeps working.
 - Whichever is chosen, keep `buildMcpSseUrl` the single builder so the config
   writer, the setup screens and the copy button cannot diverge.
+
+## Resolution
+
+The first item of the suggested fix checked out, so the rest was unnecessary.
+
+The published `mcp-remote@0.1.17` package — the exact version Aartiq pins —
+does accept headers: `parseCommandLineArgs` reads `--header "Name:value"`
+arguments, and a second pass expands `${VAR}` in each header value from
+`process.env`. So the config Aartiq writes now looks like this:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "mcp-remote@0.1.17", "http://127.0.0.1:3001/sse",
+           "--header", "Authorization:${AARTIQ_MCP_AUTH}"],
+  "env": { "AARTIQ_MCP_AUTH": "Bearer <session token>" }
+}
+```
+
+The token is in the `env` block, never in `args`: it does not enter the
+process argument list, and mcp-remote's own pre-expansion log line prints the
+`${AARTIQ_MCP_AUTH}` placeholder rather than the value.
+
+- Single builder: `buildMcpRemoteServerConfig(port, token)` in
+  `src/lib/mcp-bridge-url.js`, used by the `auto-configure-claude-mcp`
+  handler, the MCP settings screen, its copy button and the AI setup guide's
+  copy button (which previously passed the *token* as the port —
+  `mcpSseUrl(claudeMcpToken)` — and emitted a broken URL; the shared builder
+  fixed that divergence too).
+- Query parameter kept as a fallback: `extractToken` still reads `?token=`, so
+  configs written before this change keep working until they are re-configured.
+- Covered by `tests/local-server-auth.test.js`: the built args contain no
+  token, the produced header authenticates against the bridge, and a
+  token-less config still carries no secret.
