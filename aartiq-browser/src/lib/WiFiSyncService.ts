@@ -6,6 +6,10 @@ import { clipboard } from 'electron';
 import { randomInt, randomBytes, createHash, timingSafeEqual } from 'crypto';
 import Store from 'electron-store';
 import { DeviceIdentifier } from './DeviceIdentifier';
+// The shared Host/Origin rules for every Aartiq listener. Required rather than
+// imported so the CLI compile in `predev` (no tsconfig, no allowJs) resolves it
+// the same way the runtime does.
+const { isOriginAllowed } = require('./local-server-auth');
 // Late-require to avoid circular deps at module load time
 let _permissionRelayService: any = null;
 let _unifiedSessionManager: any = null;
@@ -87,6 +91,12 @@ export class WiFiSyncService extends EventEmitter {
     constructor(port: number = 3004, host?: string) {
         super();
         this.port = port;
+        // All interfaces by default — deliberately, not by omission: the phone
+        // reaches this socket over the LAN, and the pairing QR and the discovery
+        // broadcast hand out a routable address. AARTIQ_WIFI_SYNC_HOST narrows
+        // the bind (127.0.0.1, one interface address) when that exposure is not
+        // wanted. The exposure is bounded at the upgrade by _isUpgradeAllowed
+        // and per message by the access-token gate in _handleMessage.
         this.host = host || process.env.AARTIQ_WIFI_SYNC_HOST || '0.0.0.0';
         const meta = DeviceIdentifier.getDeviceMetadata();
         this.deviceId = meta.deviceId;
@@ -103,6 +113,65 @@ export class WiFiSyncService extends EventEmitter {
             this.store.set('pairingCode', this.pairingCode);
         }
         this._loadKnownDevices();
+    }
+
+    /**
+     * Host header validation for the WebSocket upgrade (DNS-rebinding guard).
+     *
+     * Every legitimate client reaches this socket as loopback, as one of this
+     * machine's own addresses (the pairing QR hands out getLocalIp()), or by
+     * this machine's name. A Host header that names anything else — a
+     * rebind attacker's domain that resolves to this address — is refused
+     * before the socket exists. Same rule checkLocalRequest applies to the
+     * HTTP listeners, widened for the LAN address the QR actually uses.
+     */
+    private _isLocalHostHeader(hostHeader: string | undefined): boolean {
+        if (!hostHeader || typeof hostHeader !== 'string') return false;
+        let host = hostHeader.trim().toLowerCase();
+        if (!host) return false;
+
+        // host:port — a bracketed IPv6 literal keeps its colons inside [].
+        const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(host);
+        if (bracketed) {
+            host = bracketed[1];
+        } else if (/^[^:]+:\d+$/.test(host)) {
+            host = host.replace(/:\d+$/, '');
+        }
+
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+        const machineNames = [os.hostname().toLowerCase(), `${os.hostname().toLowerCase()}.local`];
+        if (machineNames.includes(host)) return true;
+
+        const interfaces = os.networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+            for (const addr of interfaces[name] || []) {
+                if (addr.address.toLowerCase() === host) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Connection-time gate for the WebSocket upgrade.
+     *
+     * The server listens on every interface on purpose (phone pairing needs the
+     * LAN), so this is where that exposure is bounded: an Origin that is not
+     * one of ours — a page in a browser anywhere on this machine — and a Host
+     * header that does not name this machine are refused before the handshake.
+     * A native phone client sends no Origin at all; that is the allowed path,
+     * and what it can do after connecting stays bounded per message by the
+     * access-token gate in _handleMessage.
+     */
+    private _isUpgradeAllowed(headers: { [key: string]: string | string[] | undefined }): { ok: boolean; reason?: string } {
+        const origin = typeof headers.origin === 'string' ? headers.origin : undefined;
+        if (!isOriginAllowed(origin)) {
+            return { ok: false, reason: `origin not allowed: ${origin}` };
+        }
+        const host = typeof headers.host === 'string' ? headers.host : undefined;
+        if (!this._isLocalHostHeader(host)) {
+            return { ok: false, reason: `host header not local: ${host}` };
+        }
+        return { ok: true };
     }
 
     private _checkLockout(ip: string): boolean {
@@ -168,6 +237,21 @@ export class WiFiSyncService extends EventEmitter {
             if (this.host && this.host !== '0.0.0.0') {
                 serverOptions.host = this.host;
             }
+            // Refuse the upgrade — before any handshake runs — when the Origin
+            // is not one of ours or the Host header does not name this machine.
+            // Fail closed: a missing/undecipherable Host is rejected too.
+            serverOptions.verifyClient = (
+                info: { req: any },
+                done: (ok: boolean, code?: number, message?: string) => void
+            ) => {
+                const verdict = this._isUpgradeAllowed((info.req && info.req.headers) || {});
+                if (!verdict.ok) {
+                    console.warn(`[WiFi-Sync] Rejected WebSocket upgrade: ${verdict.reason}`);
+                    done(false, 403, 'Forbidden');
+                    return;
+                }
+                done(true);
+            };
             this.wss = new WebSocketServer(serverOptions);
             console.log(`[WiFi-Sync] Server started on port ${this.port}${this.host !== '0.0.0.0' ? ` bound to ${this.host}` : ''}`);
 
@@ -583,15 +667,6 @@ export class WiFiSyncService extends EventEmitter {
                     break;
                 }
 
-                case 'unpair-device': {
-                    const devId = this.socketDeviceIds.get(ws) || msg.deviceId;
-                    if (devId) {
-                        this.unpairDevice(devId);
-                    }
-                    ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
-                    break;
-                }
-
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
                     break;
@@ -651,6 +726,20 @@ export class WiFiSyncService extends EventEmitter {
                         case 'desktop-control':
                             this._handleDesktopControl(ws, msg);
                             break;
+
+                        // Unpair is state-changing, so it sits behind the same
+                        // access-token gate as execute-command and the relay
+                        // routes: a socket that never authenticated cannot
+                        // revoke a device. Desktop-side unpair goes through IPC
+                        // (unpairDevice()) and is unaffected.
+                        case 'unpair-device': {
+                            const devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                            if (devId) {
+                                this.unpairDevice(devId);
+                            }
+                            ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
+                            break;
+                        }
 
                 case 'clipboard-sync':
                     if (msg.text && msg.text !== this._lastReceivedClipboard) {

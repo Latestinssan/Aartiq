@@ -132,7 +132,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 ## CI/CD
 
 <!-- SSOT:START workflows -->
-13 GitHub Actions workflows live in `.github/workflows/`. release.yml fires on version tag push, sync-component-docs.yml fires on push to main for a path filter, and the remaining eleven are workflow_dispatch.
+13 GitHub Actions workflows live in `.github/workflows/`. release.yml fires on version tag push, sync-component-docs.yml fires on push to main, and the remaining eleven are workflow_dispatch. docs-gate.yml lives on the ci/docs-gate branch and does not run on main.
 
 The test suite (`.github/workflows/jest.yml`) is one of the manual ones: Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
 <!-- SSOT:END workflows -->

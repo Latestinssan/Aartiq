@@ -108,6 +108,10 @@ var electron_1 = require("electron");
 var crypto_1 = require("crypto");
 var electron_store_1 = __importDefault(require("electron-store"));
 var DeviceIdentifier_1 = require("./DeviceIdentifier");
+// The shared Host/Origin rules for every Aartiq listener. Required rather than
+// imported so the CLI compile in `predev` (no tsconfig, no allowJs) resolves it
+// the same way the runtime does.
+var isOriginAllowed = require('./local-server-auth').isOriginAllowed;
 // Late-require to avoid circular deps at module load time
 var _permissionRelayService = null;
 var _unifiedSessionManager = null;
@@ -164,6 +168,12 @@ var WiFiSyncService = /** @class */ (function (_super) {
         _this.knownDevices = new Map();
         _this.knownDevicesKey = 'knownWifiSyncDevices';
         _this.port = port;
+        // All interfaces by default — deliberately, not by omission: the phone
+        // reaches this socket over the LAN, and the pairing QR and the discovery
+        // broadcast hand out a routable address. AARTIQ_WIFI_SYNC_HOST narrows
+        // the bind (127.0.0.1, one interface address) when that exposure is not
+        // wanted. The exposure is bounded at the upgrade by _isUpgradeAllowed
+        // and per message by the access-token gate in _handleMessage.
         _this.host = host || process.env.AARTIQ_WIFI_SYNC_HOST || '0.0.0.0';
         var meta = DeviceIdentifier_1.DeviceIdentifier.getDeviceMetadata();
         _this.deviceId = meta.deviceId;
@@ -183,6 +193,68 @@ var WiFiSyncService = /** @class */ (function (_super) {
         _this._loadKnownDevices();
         return _this;
     }
+    /**
+     * Host header validation for the WebSocket upgrade (DNS-rebinding guard).
+     *
+     * Every legitimate client reaches this socket as loopback, as one of this
+     * machine's own addresses (the pairing QR hands out getLocalIp()), or by
+     * this machine's name. A Host header that names anything else — a
+     * rebind attacker's domain that resolves to this address — is refused
+     * before the socket exists. Same rule checkLocalRequest applies to the
+     * HTTP listeners, widened for the LAN address the QR actually uses.
+     */
+    WiFiSyncService.prototype._isLocalHostHeader = function (hostHeader) {
+        if (!hostHeader || typeof hostHeader !== 'string')
+            return false;
+        var host = hostHeader.trim().toLowerCase();
+        if (!host)
+            return false;
+        // host:port — a bracketed IPv6 literal keeps its colons inside [].
+        var bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(host);
+        if (bracketed) {
+            host = bracketed[1];
+        }
+        else if (/^[^:]+:\d+$/.test(host)) {
+            host = host.replace(/:\d+$/, '');
+        }
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1')
+            return true;
+        var machineNames = [os.hostname().toLowerCase(), "".concat(os.hostname().toLowerCase(), ".local")];
+        if (machineNames.includes(host))
+            return true;
+        var interfaces = os.networkInterfaces();
+        for (var _i = 0, _a = Object.keys(interfaces); _i < _a.length; _i++) {
+            var name_1 = _a[_i];
+            for (var _b = 0, _c = interfaces[name_1] || []; _b < _c.length; _b++) {
+                var addr = _c[_b];
+                if (addr.address.toLowerCase() === host)
+                    return true;
+            }
+        }
+        return false;
+    };
+    /**
+     * Connection-time gate for the WebSocket upgrade.
+     *
+     * The server listens on every interface on purpose (phone pairing needs the
+     * LAN), so this is where that exposure is bounded: an Origin that is not
+     * one of ours — a page in a browser anywhere on this machine — and a Host
+     * header that does not name this machine are refused before the handshake.
+     * A native phone client sends no Origin at all; that is the allowed path,
+     * and what it can do after connecting stays bounded per message by the
+     * access-token gate in _handleMessage.
+     */
+    WiFiSyncService.prototype._isUpgradeAllowed = function (headers) {
+        var origin = typeof headers.origin === 'string' ? headers.origin : undefined;
+        if (!isOriginAllowed(origin)) {
+            return { ok: false, reason: "origin not allowed: ".concat(origin) };
+        }
+        var host = typeof headers.host === 'string' ? headers.host : undefined;
+        if (!this._isLocalHostHeader(host)) {
+            return { ok: false, reason: "host header not local: ".concat(host) };
+        }
+        return { ok: true };
+    };
     WiFiSyncService.prototype._checkLockout = function (ip) {
         var record = this.failedAttempts.get(ip);
         if (!record)
@@ -240,6 +312,18 @@ var WiFiSyncService = /** @class */ (function (_super) {
             if (this.host && this.host !== '0.0.0.0') {
                 serverOptions.host = this.host;
             }
+            // Refuse the upgrade — before any handshake runs — when the Origin
+            // is not one of ours or the Host header does not name this machine.
+            // Fail closed: a missing/undecipherable Host is rejected too.
+            serverOptions.verifyClient = function (info, done) {
+                var verdict = _this._isUpgradeAllowed((info.req && info.req.headers) || {});
+                if (!verdict.ok) {
+                    console.warn("[WiFi-Sync] Rejected WebSocket upgrade: ".concat(verdict.reason));
+                    done(false, 403, 'Forbidden');
+                    return;
+                }
+                done(true);
+            };
             this.wss = new ws_1.WebSocketServer(serverOptions);
             console.log("[WiFi-Sync] Server started on port ".concat(this.port).concat(this.host !== '0.0.0.0' ? " bound to ".concat(this.host) : ''));
             this.wss.on('connection', function (ws) {
@@ -610,14 +694,6 @@ var WiFiSyncService = /** @class */ (function (_super) {
                     }));
                     break;
                 }
-                case 'unpair-device': {
-                    var devId = this.socketDeviceIds.get(ws) || msg.deviceId;
-                    if (devId) {
-                        this.unpairDevice(devId);
-                    }
-                    ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
-                    break;
-                }
                 case 'ping':
                     ws.send(JSON.stringify({ type: 'pong' }));
                     break;
@@ -676,6 +752,19 @@ var WiFiSyncService = /** @class */ (function (_super) {
                         case 'desktop-control':
                             this._handleDesktopControl(ws, msg);
                             break;
+                        // Unpair is state-changing, so it sits behind the same
+                        // access-token gate as execute-command and the relay
+                        // routes: a socket that never authenticated cannot
+                        // revoke a device. Desktop-side unpair goes through IPC
+                        // (unpairDevice()) and is unaffected.
+                        case 'unpair-device': {
+                            var devId = this.socketDeviceIds.get(ws) || msg.deviceId;
+                            if (devId) {
+                                this.unpairDevice(devId);
+                            }
+                            ws.send(JSON.stringify({ type: 'unpair-ack', success: true }));
+                            break;
+                        }
                         case 'clipboard-sync':
                             if (msg.text && msg.text !== this._lastReceivedClipboard) {
                                 this._lastReceivedClipboard = msg.text;
@@ -862,8 +951,8 @@ var WiFiSyncService = /** @class */ (function (_super) {
     WiFiSyncService.prototype.getLocalIp = function () {
         var interfaces = os.networkInterfaces();
         for (var _i = 0, _a = Object.keys(interfaces); _i < _a.length; _i++) {
-            var name_1 = _a[_i];
-            var ifaceEntry = interfaces[name_1];
+            var name_2 = _a[_i];
+            var ifaceEntry = interfaces[name_2];
             if (!ifaceEntry)
                 continue;
             for (var _b = 0, ifaceEntry_1 = ifaceEntry; _b < ifaceEntry_1.length; _b++) {

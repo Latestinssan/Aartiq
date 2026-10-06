@@ -7,9 +7,9 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 **Plan → Explain → Ask → Execute**
 
 <!-- SSOT:START version -->
-**v0.3.8** — released 2026-10-04.
+**v0.3.7** — released 2026-09-13.
 
-Latest release: [v0.3.8](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.8) · [full release notes](release_notes/v0.3.8.md)
+Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.7) · [full release notes](release_notes/v0.3.7.md)
 <!-- SSOT:END version -->
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
@@ -224,10 +224,10 @@ Every socket the application opens, and what actually protects it:
 | Service | Port | Default bind address | Reachable from LAN when | Authentication |
 | --- | --- | --- | --- | --- |
 | MCP browser bridge | 3001 | `127.0.0.1` | the security_mcpBridgeRemote setting is exactly true (defaults to false; no UI control sets it) | A per-process token, required on every route including SSE. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
-| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | **always** — there is no switch to restrict it | Short-lived 15-minute access tokens and 7-day refresh tokens bound to device ID. Every sync action requires an active, unexpired token, with brute-force lockout and explicit unpair revocation. |
+| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | the phone reaches this over the LAN, so all interfaces is the default; `AARTIQ_WIFI_SYNC_HOST` narrows the bind to an address you name (127.0.0.1 closes it to this machine) | Short-lived 15-minute access tokens and 7-day refresh tokens bound to device ID. Every sync action — unpair included — requires an active, unexpired token, with brute-force lockout. The WebSocket upgrade itself refuses foreign Origins and Host headers that do not name this machine (DNS rebinding). |
 | Native macOS / CLI bridge | 46203 | `127.0.0.1` | never — the host is a literal in the source, not a switch anyone can flip | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
 | Agent API tool server | 46204 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | A token, required on every HTTP route, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
-| Background task service (separate Electron app) | 3999 | `127.0.0.1` | AARTIQ_SERVICE_HOST is set to a routable address (defaults to 127.0.0.1; no switch in the app) | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) matching active sync session or AARTIQ_SYNC_TOKEN, plus Host header validation against DNS rebinding. |
+| Background task service (separate Electron app) | 3999 | `127.0.0.1` | AARTIQ_SERVICE_HOST is set to a routable address (defaults to 127.0.0.1; no switch in the app) | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) compared in constant time against the service token (options.authToken, AARTIQ_PDF_SYNC_TOKEN, or a generated per-process token), plus Host header validation against DNS rebinding. |
 <!-- SSOT:END network -->
 
 One of these binds all interfaces by default with no switch to restrict it. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
@@ -242,7 +242,7 @@ One of these binds all interfaces by default with no switch to restrict it. If y
 - Visual extraction reduces the DOM-based prompt-injection surface. It does not prevent prompt injection, and it cannot give semantic immunity against instructions rendered into the viewport.
 - Seatbelt profiles start from (allow default), so not every IPC class is denied by default; Mach IPC stays usable because node/python/shell require it.
 - Apple Events cannot be filtered by the current sandbox-exec — the operation is not exposed — so a sandboxed command could still ask another app to act on its behalf.
-- The WiFi sync server (3004) still binds every network interface by omission and has no token, Host or Origin check; it was changed by neither the listener-authentication work nor the bind-default change. The background task service (3999) and the PDF sync server bound 0.0.0.0 with a wildcard CORS header until the bind default became 127.0.0.1, with AARTIQ_SERVICE_HOST as the explicit opt-in and no CORS allow-origin header sent at all. See network.servers.
+- The WiFi sync server (3004) binds every network interface on purpose — the phone reaches it over the LAN — so the LAN exposure itself is the limit: the upgrade now refuses foreign Origins and Host headers that do not name this machine, every sync action (unpair included) requires the device's short-lived access token, and AARTIQ_WIFI_SYNC_HOST narrows the bind when that exposure is not wanted. The background task service (3999) and the PDF sync server bound 0.0.0.0 with a wildcard CORS header until the bind default became 127.0.0.1, with AARTIQ_SERVICE_HOST as the explicit opt-in and no CORS allow-origin header sent at all. See network.servers.
 - The session token is per-process, so it changes on every restart. A client configured once — a phone, another machine, a scheduled job — has to be reconfigured, and remote mode is not a finished design because of it.
 - The token has to travel in the mcp-remote URL, because mcp-remote accepts a bare URL and nothing else. It can therefore appear in a process argument list and in a client's own logs. See aartiq-browser/docs-audit/issues/pairing-token-in-url.md.
 - "Allow Always" is keyed on the full normalised command line, which is narrower than before but is still text matching, and a permanent grant has no lifetime. See aartiq-browser/docs-audit/issues/allow-always-granularity.md.
@@ -331,7 +331,7 @@ Aartiq opens the Chromium window immediately and loads background services async
 <!-- SSOT:START benchmarks -->
 Measured on a **MacBook Pro M4 Pro**, 12-core CPU, 24 GB RAM, macOS 26.5.
 
-**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.8.
+**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.7.
 
 | Metric | Result |
 | --- | --- |
