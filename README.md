@@ -9,7 +9,7 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 <!-- SSOT:START version -->
 **v0.3.7** — released 2026-09-13.
 
-Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.7) · [full release notes](release_notes/v0.3.7.md)
+Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.8) · [full release notes](release_notes/v0.3.8.md)
 <!-- SSOT:END version -->
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
@@ -331,7 +331,7 @@ Aartiq opens the Chromium window immediately and loads background services async
 <!-- SSOT:START benchmarks -->
 Measured on a **MacBook Pro M4 Pro**, 12-core CPU, 24 GB RAM, macOS 26.5.
 
-**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.7.
+**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.8.
 
 | Metric | Result |
 | --- | --- |
