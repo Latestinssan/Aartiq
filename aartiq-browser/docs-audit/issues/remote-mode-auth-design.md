@@ -1,9 +1,12 @@
 # Remote / LAN mode authentication design
 
 **Label:** security
-**Status:** open — token required, design not settled
+**Status:** partially resolved — stable tokens and a failed-auth lockout shipped; URL carrier, per-client pairing and named binds remain open
 
 ## Summary
+
+*(The original finding, kept verbatim; see Resolution for what has since
+changed.)*
 
 The MCP browser bridge and the Agent API can be exposed beyond loopback. Remote
 mode is off by default, must be set to a real boolean, and requires the same
@@ -54,3 +57,31 @@ Decide the remote credential model before shipping remote mode to anyone.
 
 Add a failed-authentication counter regardless of which model is chosen, and log
 repeated rejections the way loopback rejections are logged now.
+
+## Resolution (gaps 1 and 4)
+
+1. **Stable token — shipped.** Each listener reads-or-creates its own file in
+   $HOME, mode 0600, instead of generating a per-process value:
+   `~/.aartiq-mcp-token` (MCP bridge), `~/.aartiq-agent-token` (Agent API) and
+   `~/.aartiq-token` (native bridge/CLI — the file it always used, previously
+   overwritten on every start). Helper: `src/lib/session-token.js`. Rotation is
+   an operator action — delete the file and restart Aartiq. The value is still
+   generated server-side when absent; `POST /pairing/token` reports it and
+   still never lets a caller choose it. Covered by `tests/session-token.test.js`.
+
+4. **Failed-authentication counter — shipped.** `checkLocalRequest` counts
+   failed token attempts per client address: a non-loopback address that
+   exceeds 20 failures in 15 minutes is refused with 429 for 15 minutes;
+   loopback is never locked (a stale local config would otherwise DoS itself)
+   but logs a warning at 100 failures. A successful auth clears the record.
+   Covered by `tests/local-server-auth-lockout.test.js`.
+
+Still open, and deliberately deferred:
+
+- **Gap 2 (URL carrier)** — the token still travels as an `mcp-remote` query
+  parameter; tracked by `pairing-token-in-url.md`.
+- **Gap 3 (provisioning), per-client revocation, and the pairing model** — one
+  shared credential per listener is stable, but several clients still cannot be
+  revoked individually, and nothing writes a token to a remote client.
+- **Named-interface bind** — `resolveBindHost` accepts a `bindHost` override
+  but no config surface exposes one.

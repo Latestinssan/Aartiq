@@ -182,6 +182,80 @@ function resolveBindHost(config = {}) {
 }
 
 /**
+ * Failed-authentication accounting (docs-audit/issues/remote-mode-auth-design.md).
+ *
+ * The token is a 256-bit value, so guessing is infeasible even without a
+ * counter — what the counter buys is the observable half: repeated rejections
+ * from one address become a log line instead of a silent stream of 401s, and a
+ * non-loopback address stops guessing altogether for a while.
+ *
+ * Loopback never locks. Its failure mode is the ordinary one this project
+ * documents: a stale client config retrying with an outdated token. Locking
+ * 127.0.0.1 would turn that self-inflicted drift into a self-inflicted DoS.
+ * It is counted and logged at the threshold so the drift is visible anyway.
+ */
+const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_FAILURE_LIMIT_LOCAL = 100; // logged only, never locks
+const AUTH_FAILURE_LIMIT_REMOTE = 20;
+const AUTH_LOCKOUT_MS = 15 * 60 * 1000;
+const _authFailures = new Map(); // client IP -> { count, windowStart, lockedUntil }
+
+/** Remote address as a counter key; IPv4-mapped IPv6 folded to IPv4. */
+function clientIp(req) {
+  const raw = req && req.socket && req.socket.remoteAddress;
+  return raw ? String(raw).replace(/^::ffff:/, '') : null;
+}
+
+function isLoopbackIp(ip) {
+  return !ip || ip === '::1' || ip.startsWith('127.');
+}
+
+/** True while this address is inside a lockout. An expired lockout clears the record. */
+function isAuthLocked(ip) {
+  if (!ip) return false;
+  const rec = _authFailures.get(ip);
+  if (!rec || !rec.lockedUntil) return false;
+  if (rec.lockedUntil > Date.now()) return true;
+  _authFailures.delete(ip);
+  return false;
+}
+
+function recordAuthFailure(ip) {
+  if (!ip) return;
+  const now = Date.now();
+  let rec = _authFailures.get(ip);
+  if (!rec || now - rec.windowStart > AUTH_FAILURE_WINDOW_MS) {
+    rec = { count: 0, windowStart: now, lockedUntil: 0 };
+    _authFailures.set(ip, rec);
+  }
+  rec.count += 1;
+  const limit = isLoopbackIp(ip) ? AUTH_FAILURE_LIMIT_LOCAL : AUTH_FAILURE_LIMIT_REMOTE;
+  if (rec.count !== limit) return;
+  if (isLoopbackIp(ip)) {
+    console.warn(
+      `[local-server-auth] ${rec.count} failed token attempts from ${ip} in the last ` +
+        `${AUTH_FAILURE_WINDOW_MS / 60000} min — a client config is probably carrying an old token`
+    );
+  } else {
+    rec.lockedUntil = now + AUTH_LOCKOUT_MS;
+    console.warn(
+      `[local-server-auth] ${rec.count} failed token attempts from ${ip} — refusing its ` +
+        `requests for ${AUTH_LOCKOUT_MS / 60000} min`
+    );
+  }
+}
+
+/** Drop one address's failure history (a successful auth does this too). */
+function clearAuthFailures(ip) {
+  if (ip) _authFailures.delete(ip);
+}
+
+/** Test/debug helper: forget every address's failure history. */
+function resetFailedAuthCounters() {
+  _authFailures.clear();
+}
+
+/**
  * The single entry point each listener calls for every request.
  *
  * Returns `{ ok: true }`, or `{ ok: false, status, code, log }` where `log` is
@@ -218,6 +292,10 @@ function checkLocalRequest(req, options = {}) {
   // 3. Token — required on every route in loopback mode too, because loopback
   //    reachability is not the same as authorisation.
   if (requireToken) {
+    const ip = clientIp(req);
+    if (isAuthLocked(ip)) {
+      return { ok: false, status: 429, code: 'auth_locked', log: `rejected ${req.method} ${req.url} — address has exceeded the failed-token limit` };
+    }
     let url = null;
     try {
       url = new URL(req.url || '/', `http://${req.headers && req.headers.host ? req.headers.host : 'localhost'}`);
@@ -226,11 +304,14 @@ function checkLocalRequest(req, options = {}) {
     }
     const provided = extractToken(req, url);
     if (!provided) {
+      recordAuthFailure(ip);
       return { ok: false, status: 401, code: 'no_token', log: `rejected ${req.method} ${req.url} — no token presented` };
     }
     if (!tokensMatch(token, provided)) {
+      recordAuthFailure(ip);
       return { ok: false, status: 401, code: 'bad_token', log: `rejected ${req.method} ${req.url} — token did not match` };
     }
+    clearAuthFailures(ip);
   }
 
   return { ok: true, service };
@@ -246,4 +327,9 @@ module.exports = {
   isOriginAllowed,
   resolveBindHost,
   checkLocalRequest,
+  AUTH_FAILURE_WINDOW_MS,
+  AUTH_FAILURE_LIMIT_LOCAL,
+  AUTH_FAILURE_LIMIT_REMOTE,
+  AUTH_LOCKOUT_MS,
+  resetFailedAuthCounters,
 };

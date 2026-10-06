@@ -20,7 +20,8 @@ import { defaultConfig, bindHost } from './providers';
 // Host / Origin / token checks shared with the MCP browser bridge and the native
 // macOS bridge. require() of a CJS module from TS is fine here because the file
 // is plain data and pure functions with no Node-only dependencies.
-import { generateSessionToken, checkLocalRequest } from '../local-server-auth';
+import { checkLocalRequest } from '../local-server-auth';
+import { loadOrCreateSessionToken } from '../session-token';
 import type { AgentApiConfig, ToolContext, Bridge } from './types';
 import type { SecurityPipeline } from '../guardrails';
 import type { AgentRegistry } from '../agent/agent-registry';
@@ -93,7 +94,10 @@ export class AgentApiServer {
     // A token is required even in the default loopback configuration: any page
     // open in any browser on this machine can reach 127.0.0.1. In remote mode it
     // is required too — there is no configuration in which this listener is open.
-    this.sessionToken = this.config.token || generateSessionToken();
+    // config.token wins when an operator set one; otherwise the persisted
+    // ~/.aartiq-agent-token (mode 0600) keeps a configured client working across
+    // restarts — see session-token.js.
+    this.sessionToken = this.config.token || loadOrCreateSessionToken('agent');
     this.httpServer = http.createServer((req, res) => {
       const verdict = checkLocalRequest(req, {
         port: this.config.port,

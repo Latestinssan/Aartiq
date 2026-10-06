@@ -9,7 +9,8 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const { domEngine } = require('./dom-engine');
 const { extractFromHtml, DEFAULT_UA } = require('./web-extractor');
-const { generateSessionToken, resolveBindHost, checkLocalRequest, tokensMatch } = require('./local-server-auth');
+const { resolveBindHost, checkLocalRequest, tokensMatch } = require('./local-server-auth');
+const { loadOrCreateSessionToken } = require('./session-token');
 const { BrowserWindow, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -59,16 +60,17 @@ class BrowserMcpServer {
     this._nativeApprovalManager = null;
     this._pairingConfirmed = false;
     /**
-     * Per-process token required on every HTTP route, including /sse and
-     * /messages. Generated here rather than supplied by a caller, so that
+     * Token required on every HTTP route, including /sse and /messages.
+     * Generated here rather than supplied by a caller, so that
      * `POST /pairing/token` no longer lets whoever can reach the port choose the
      * credential it is later compared against.
      *
-     * Regenerated on every process start. The Claude Desktop config written by
-     * `auto-configure-claude-mcp` embeds it in the mcp-remote URL, so the config
-     * has to be rewritten when Aartiq restarts — see `sessionToken`.
+     * Read-or-created in ~/.aartiq-mcp-token (mode 0600), so the Claude Desktop
+     * config written by `auto-configure-claude-mcp` — which embeds the value in
+     * the mcp-remote URL — stays valid across restarts. Delete the file and
+     * restart Aartiq to rotate; see session-token.js.
      */
-    this._sessionToken = generateSessionToken();
+    this._sessionToken = loadOrCreateSessionToken('mcp');
     this._listenOptions = { remote: false, remoteHosts: [] };
   }
 
