@@ -55,6 +55,7 @@ const providers_1 = require("./providers");
 // macOS bridge. require() of a CJS module from TS is fine here because the file
 // is plain data and pure functions with no Node-only dependencies.
 const local_server_auth_1 = require("../local-server-auth");
+const session_token_1 = require("../session-token");
 class AgentApiServer {
     constructor(deps) {
         this.deps = deps;
@@ -96,7 +97,10 @@ class AgentApiServer {
         // A token is required even in the default loopback configuration: any page
         // open in any browser on this machine can reach 127.0.0.1. In remote mode it
         // is required too — there is no configuration in which this listener is open.
-        this.sessionToken = this.config.token || (0, local_server_auth_1.generateSessionToken)();
+        // config.token wins when an operator set one; otherwise the persisted
+        // ~/.aartiq-agent-token (mode 0600) keeps a configured client working across
+        // restarts — see session-token.js.
+        this.sessionToken = this.config.token || (0, session_token_1.loadOrCreateSessionToken)('agent');
         this.httpServer = http.createServer((req, res) => {
             const verdict = (0, local_server_auth_1.checkLocalRequest)(req, {
                 port: this.config.port,

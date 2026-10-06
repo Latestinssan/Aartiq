@@ -376,13 +376,12 @@ ipcMain.handle('apple-intelligence-summary', async (event, text) => {
 });
 
 // --- CLI TOKEN PERSISTENCE ---
-const nativeMacUiToken = randomBytes(24).toString('hex');
-const tokenPath = path.join(os.homedir(), '.aartiq-token');
-try {
-  fs.writeFileSync(tokenPath, nativeMacUiToken, { mode: 0o600 });
-} catch (e) {
-  console.error('[Main] Failed to write CLI token:', e.message);
-}
+// Read-or-create ~/.aartiq-token (mode 0600) instead of overwriting it with a
+// fresh value on every start: the Swift panels and aartiq-cli read the file, so
+// rotation only broke clients that had copied the value into a config (README
+// known limits). Delete the file and restart Aartiq to rotate.
+const { loadOrCreateSessionToken } = require('./src/lib/session-token');
+const nativeMacUiToken = loadOrCreateSessionToken('cli');
 
 ipcMain.handle('apple-intelligence-generate-image', async (event, { prompt, outputPath, style } = {}) => {
   return generateAppleIntelligenceImage(prompt, outputPath, style);

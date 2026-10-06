@@ -231,9 +231,9 @@ const McpSettings = () => {
                     {!mcpBridgeToken && (
                         <p className="text-[10px] leading-relaxed text-amber-300/80">
                             The URL needs the session token shown below it. Click
-                            Auto-Configure first — the token is generated per Aartiq
-                            start, so the snippet is only valid for the current session.
-                            A config without it is answered with 401.
+                            Auto-Configure first — the token is read from
+                            ~/.aartiq-mcp-token, so the snippet stays valid across
+                            restarts. A config without it is answered with 401.
                         </p>
                     )}
                     <pre className="p-3 rounded-xl bg-black/40 border border-white/5 text-[10px] font-mono text-white/60 leading-relaxed overflow-x-auto">
@@ -248,9 +248,9 @@ const McpSettings = () => {
                     </pre>
                     {mcpBridgeToken && (
                         <p className="text-[10px] leading-relaxed text-white/40">
-                            The token changes every time Aartiq restarts. Re-run
-                            Auto-Configure after a restart, or the client will be
-                            rejected with 401.
+                            The token is stored in ~/.aartiq-mcp-token (mode 0600)
+                            and survives restarts. Delete that file and restart
+                            Aartiq to rotate it, then re-run Auto-Configure.
                         </p>
                     )}
                     <div className="flex gap-2">
