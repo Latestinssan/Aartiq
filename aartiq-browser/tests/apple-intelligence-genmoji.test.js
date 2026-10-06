@@ -124,6 +124,17 @@ describe('generateGenmoji is a real export, not an alias of the image path', () 
 // ── request payload ───────────────────────────────────────────────────────
 
 describe('generateGenmoji sends exactly one genmoji command with the prompt', () => {
+  const realPlatform = process.platform;
+  // generateGenmoji refuses off macOS before spawning, so pin the platform
+  // the way the refusal group below pins it the other way — otherwise this
+  // group only passes on a Mac and CI (linux) sees zero spawn calls.
+  beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+  });
+
   test('it spawns the helper once, with command "genmoji" and the prompt', async () => {
     const result = await appleIntelligence.generateGenmoji('a cat wearing a hat');
 
