@@ -7,7 +7,7 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 **Plan → Explain → Ask → Execute**
 
 <!-- SSOT:START version -->
-**v0.3.7** — released 2026-09-13.
+**v0.3.8** — released 2026-09-13.
 
 Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.8) · [full release notes](release_notes/v0.3.8.md)
 <!-- SSOT:END version -->
