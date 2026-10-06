@@ -78,15 +78,24 @@ describe('docs listener / count claims match source', () => {
     expect(SEARCH_IDX).toMatch(/bind loopback by default/);
   });
 
-  test('M2: the security page enumerates tokened listeners instead of claiming every listener has a token', () => {
+  test('M2: the security page states how the non-HTTP listeners authenticate, tied to source', () => {
     expect(SECURITY).not.toMatch(/Every local listener requires/);
-    expect(SECURITY).toMatch(/carry no token/);
-    // Tie the claim to the source: while WiFiSyncService has no token check,
-    // the page must keep stating that 3004/3999 are unauthenticated.
-    const wifiHasAuth = /local-server-auth|requireToken|per-process token/i.test(WIFI_SRC);
-    if (!wifiHasAuth) {
-      expect(SECURITY).toMatch(/WiFi sync and PDF sync listeners carry no token/);
-    }
+    expect(SECURITY).not.toMatch(/carry no token/);
+
+    // WiFi sync (3004): the upgrade gate refuses foreign Origins and non-local
+    // Host headers, and every sync action carries the device's access token.
+    // The page must describe exactly what the source does.
+    expect(WIFI_SRC).toMatch(/isOriginAllowed/);
+    expect(WIFI_SRC).toMatch(/_isUpgradeAllowed/);
+    expect(WIFI_SRC).toMatch(/Authentication required for sync actions/);
+    expect(SECURITY).toMatch(/WiFi sync WebSocket upgrade refuses foreign Origins/);
+    expect(SECURITY).toMatch(
+      /every sync action — handshake, unpair, clipboard, remote control — requires the trusted device's short-lived access token/
+    );
+
+    // PDF sync (3999): its token is compared in constant time on every file endpoint.
+    expect(read(REPO, 'src/service/pdf-sync.js')).toMatch(/timingSafeEqual/);
+    expect(SECURITY).toMatch(/PDF sync listener requires its token on every file endpoint/);
   });
 
   test('M7: the QR section no longer claims the flow is used for two things only', () => {

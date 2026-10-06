@@ -1,9 +1,12 @@
 # WiFi sync binds all interfaces by omission
 
 **Label:** security
-**Status:** open
+**Status:** resolved — by choice, bounded, and documented
 
 ## Summary
+
+*(The original finding, kept verbatim; see Resolution for what has since
+changed.)*
 
 `WiFiSyncServer` in `src/lib/WiFiSyncService.ts` creates its WebSocket server with
 `new WebSocketServer({ port: this.port })`, passing no host. The `ws` library
@@ -29,15 +32,35 @@ not established here.
 
 - `WiFiSyncServer` constructor — `src/lib/WiFiSyncService.ts`
 
-## Suggested fix
+## Resolution
 
-- Pass an explicit host, as `src/lib/local-server-auth.js` does for the other
-  listeners: loopback by default, and a named interface when the phone is on the
-  same network.
-- Reuse `checkLocalRequest` for the `Host` and `Origin` checks. Note that the
-  phone is not a browser and sends no `Origin`, so the origin allow-list needs a
-  rule for that case rather than a new one.
-- Establish and document whether the pairing code gates the connection. If it
-  does, say where; if it does not, that is a separate finding.
-- Consider whether the device identity carried in the sync messages is verified
-  at all, independent of the address the socket is on.
+The intent question is answered: **LAN exposure is deliberate** — the phone
+reaches this socket over the network, and the pairing QR (`getConnectUri()`)
+and the UDP discovery broadcast hand out a routable address. Restricting the
+bind to loopback by default would break pairing out of the box. What shipped
+instead bounds that exposure rather than pretending it away:
+
+1. **The bind choice is explicit and switchable.** The constructor documents
+   why all interfaces is the default, and `AARTIQ_WIFI_SYNC_HOST` narrows the
+   bind (127.0.0.1 or one interface address) when the exposure is not wanted.
+   The README listener table's "no switch to restrict it" claim was wrong even
+   before this work — the env var already existed — and has been corrected.
+
+2. **The upgrade is gated, fail closed** (`_isUpgradeAllowed`,
+   `verifyClient` in `start()`): an `Origin` that is not one of the app's own
+   (the shared allow-list in `src/lib/local-server-auth.js`, so a browser page
+   anywhere on the machine is refused; a native phone client sends no Origin)
+   or a `Host` header that does not name this machine (DNS-rebinding guard,
+   mirroring `checkLocalRequest`, widened for the LAN address the QR uses) is
+   rejected with 403 before any socket exists.
+
+3. **The pairing code gates the handshake, tokens gate the rest.** The
+   `handshake` route accepts only a matching pairing code or a valid token from
+   a trusted device; every other sync route — now including `unpair-device`,
+   which could previously be called by any connected socket — sits behind the
+   access-token gate in `_handleMessage`'s default branch.
+
+Covered by `tests/wifi-sync-upgrade.test.js` (upgrade matrix over unit and real
+sockets, unpair gate) and the docs gate
+`tests/docs-listener-claims-match-source.test.js` (M2), which pins the landing
+page's description of this listener to the source.
