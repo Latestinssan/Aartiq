@@ -434,6 +434,9 @@ public static class JobRunnerNative {
         public IntPtr AppContainerSid;
         public IntPtr Capabilities;
         public uint CapabilityCount;
+        // winnt.h declares Reserved as DWORD: native sizeof is 24 bytes on
+        // x64, and UpdateProcThreadAttribute enforces that exact cbSize
+        // (a 32-byte layout is rejected with ERROR_INVALID_PARAMETER).
         public uint Reserved;
     }
 
@@ -696,17 +699,29 @@ public static class JobRunnerNative {
                 UIntPtr attrSize = UIntPtr.Zero;
                 InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrSize);
                 IntPtr attrList = Marshal.AllocHGlobal(new IntPtr((long)attrSize.ToUInt64()));
+                bool listInit = false;
+                // capsPtr is REFERENCED by the attribute list: the
+                // UpdateProcThreadAttribute contract requires lpValue to stay
+                // valid until DeleteProcThreadAttributeList. It is freed ONLY
+                // in the finally below, after the list is destroyed - never
+                // before CreateProcessW. Freeing it early was a
+                // use-after-free that surfaced as an intermittent
+                // AccessViolationException at JobRunnerNative.CreateProcessW
+                // (freed heap is often still mapped, so it passed until the
+                // runner image's heap behavior changed).
+                IntPtr capsPtr = IntPtr.Zero;
                 try {
                     if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref attrSize)) {
                         error = "InitializeProcThreadAttributeList failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
                         return 4;
                     }
+                    listInit = true;
                     SECURITY_CAPABILITIES caps = new SECURITY_CAPABILITIES();
                     caps.AppContainerSid = appContainerSid;
                     caps.Capabilities = IntPtr.Zero;
                     caps.CapabilityCount = 0;
                     caps.Reserved = 0;
-                    IntPtr capsPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
+                    capsPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
                     try {
                         Marshal.StructureToPtr(caps, capsPtr, false);
                     } catch {
@@ -715,11 +730,9 @@ public static class JobRunnerNative {
                     }
                     if (!UpdateProcThreadAttribute(attrList, 0, (UIntPtr)PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, capsPtr,
                             (IntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)), IntPtr.Zero, IntPtr.Zero)) {
-                        Marshal.FreeHGlobal(capsPtr);
                         error = "UpdateProcThreadAttribute failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
                         return 4;
                     }
-                    Marshal.FreeHGlobal(capsPtr);
 
                     STARTUPINFOEX siex = new STARTUPINFOEX();
                     siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -748,7 +761,12 @@ public static class JobRunnerNative {
                     }
                     appContainer = true;
                 } finally {
-                    DeleteProcThreadAttributeList(attrList);
+                    // Destroy the list FIRST (it still references capsPtr),
+                    // then release both buffers. Delete on a list whose
+                    // Initialize failed is undefined (the buffer holds
+                    // uninitialised memory), hence the listInit guard.
+                    if (listInit) DeleteProcThreadAttributeList(attrList);
+                    if (capsPtr != IntPtr.Zero) Marshal.FreeHGlobal(capsPtr);
                     Marshal.FreeHGlobal(attrList);
                 }
             } else {

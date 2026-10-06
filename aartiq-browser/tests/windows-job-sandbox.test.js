@@ -108,6 +108,29 @@ it('encodes the AppContainer + restricted-token + verified-assignment invariants
       assert.ok(/AssignProcessToJobObject/.test(runner), 'must assign to the job before resume');
       assert.ok(/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/.test(runner), 'must kill tree on helper exit');
       assert.ok(/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/.test(runner), 'must cap active processes');
+      // SECURITY_CAPABILITIES marshalling lifetime/layout. lpValue must stay
+      // valid until DeleteProcThreadAttributeList (UpdateProcThreadAttribute
+      // contract); freeing it before CreateProcessW is a use-after-free that
+      // crashed the helper with an intermittent AccessViolationException.
+      const capsDecl = (runner.match(/public struct SECURITY_CAPABILITIES \{[^}]*\}/) || [''])[0];
+      assert.ok(
+        /uint Reserved;/.test(capsDecl),
+        'SECURITY_CAPABILITIES.Reserved must stay DWORD (uint): winnt.h native sizeof is 24 bytes on x64 and UpdateProcThreadAttribute enforces that exact cbSize (32 bytes fails with ERROR_INVALID_PARAMETER)'
+      );
+      const capsListDeleteAt = runner.indexOf('DeleteProcThreadAttributeList(attrList)');
+      assert.ok(capsListDeleteAt !== -1, 'must destroy the attribute list');
+      assert.ok(
+        !/FreeHGlobal\(capsPtr\)/.test(runner.slice(0, capsListDeleteAt)),
+        'capsPtr must NOT be freed anywhere before DeleteProcThreadAttributeList (use-after-free at CreateProcessW)'
+      );
+      assert.ok(
+        /FreeHGlobal\(capsPtr\)/.test(runner.slice(capsListDeleteAt)),
+        'capsPtr must still be released after the list is destroyed (no unmanaged leak)'
+      );
+      assert.ok(
+        /if \(listInit\) DeleteProcThreadAttributeList/.test(runner),
+        'DeleteProcThreadAttributeList must be guarded by successful initialisation (undefined on an uninitialised list)'
+      );
     });
 
   it('parseWindowsHelperOutput reports isolation only on a verified success', () => {
