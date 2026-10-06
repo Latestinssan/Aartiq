@@ -165,11 +165,14 @@ function validateAllowlist(allowlist) {
     if (!canonical) {
       throw new SandboxError('SANDBOX_POLICY_INVALID', `Could not canonicalize allowlisted path: ${entry.path}`);
     }
-    if (!fs.existsSync(canonical)) {
-      throw new SandboxError('SANDBOX_POLICY_INVALID', `Allowlisted path does not exist: ${entry.path}`);
-    }
+    // Deny-list BEFORE existence: a sensitive credential/profile path is
+    // rejected whether or not it exists on this host, so the fail-closed
+    // verdict (and its message) does not depend on the machine's state.
     if (isSensitivePath(canonical)) {
       throw new SandboxError('SANDBOX_POLICY_INVALID', `Allowlisted path is a sensitive security location: ${entry.path}`);
+    }
+    if (!fs.existsSync(canonical)) {
+      throw new SandboxError('SANDBOX_POLICY_INVALID', `Allowlisted path does not exist: ${entry.path}`);
     }
     const access = entry.access || 'read';
     if (access === 'read-write') {

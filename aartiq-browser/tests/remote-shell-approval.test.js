@@ -337,5 +337,65 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
       assert.strictEqual(replayResponse.success, false);
       assert.ok(replayResponse.error.includes('failed') || replayResponse.error.includes('redeemed'));
     });
+
+    it('falls back to direct execFile when the sandbox is unavailable (e.g. Linux without bwrap)', async () => {
+      const sandboxExecutor = require('../src/core/sandbox-executor');
+      const childProcess = require('child_process');
+      // A SANDBOX_* result means the sandbox never ran the command. The
+      // handler must fall back to a direct execFile of the approval-gated
+      // command instead of reporting a bogus command failure — this is the
+      // path a CI runner without bubblewrap takes.
+      const sandboxSpy = jest.spyOn(sandboxExecutor, 'executeSandboxed').mockResolvedValue({
+        success: false,
+        code: 'SANDBOX_UNAVAILABLE',
+        error: 'bubblewrap (bwrap) not found',
+        sandboxed: false,
+      });
+      const execSpy = jest.spyOn(childProcess, 'execFile').mockImplementation((cmd, args, opts, cb) => {
+        cb(null, 'hello_fallback\n', '');
+        return { on: () => {} };
+      });
+      try {
+        const { wifiSyncService } = setupSyncHandlerEnv();
+
+        let step1Response = null;
+        wifiSyncService.emit('command', {
+          command: 'desktop-control',
+          args: {
+            action: 'shell-command',
+            command: 'echo hello_fallback',
+          },
+          sendResponse: (res) => {
+            step1Response = res;
+          },
+        });
+        await new Promise((r) => setImmediate(r));
+
+        let step2Response = null;
+        wifiSyncService.emit('command', {
+          command: 'desktop-control',
+          args: {
+            action: 'shell-command',
+            command: 'echo hello_fallback',
+            ticketId: step1Response.ticketId,
+            pin: wifiSyncService.messagesSent[0].pin,
+          },
+          sendResponse: (res) => {
+            step2Response = res;
+          },
+        });
+        await new Promise((r) => setTimeout(r, 100));
+
+        assert.ok(step2Response);
+        assert.strictEqual(step2Response.success, true);
+        assert.ok(String(step2Response.output).includes('hello_fallback'));
+        assert.strictEqual(sandboxSpy.mock.calls.length, 1, 'the sandbox must be attempted first');
+        assert.strictEqual(execSpy.mock.calls.length, 1, 'direct execFile fallback must be used');
+        assert.strictEqual(execSpy.mock.calls[0][0], 'echo');
+      } finally {
+        sandboxSpy.mockRestore();
+        execSpy.mockRestore();
+      }
+    });
   });
 });

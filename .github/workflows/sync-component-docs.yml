@@ -38,7 +38,7 @@ jobs:
       - name: Checkout Landing Page repo
         uses: actions/checkout@v4
         with:
-          repository: Latestinssan/Aartiq-Landing-Page
+          repository: Latestinssan2/Aartiq-Landing-Page
           token: ${{ secrets.LANDING_PAGE_PAT || github.token }}
           path: landing-page-checkout
 

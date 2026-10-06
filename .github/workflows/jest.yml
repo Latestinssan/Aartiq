@@ -43,6 +43,13 @@ jobs:
         with:
           fetch-depth: 1
 
+      # The docs-gate suites (docs-*-match-source, apple-intelligence-genmoji)
+      # read the landing site's source from the sibling path
+      # ../Aartiq-Landing-Page relative to the workspace — without this clone
+      # every one of them fails with ENOENT on the runner.
+      - name: Checkout landing page (docs gates read the sibling path)
+        run: git clone --depth 1 https://github.com/Latestinssan2/Aartiq-Landing-Page.git "$GITHUB_WORKSPACE/../Aartiq-Landing-Page"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

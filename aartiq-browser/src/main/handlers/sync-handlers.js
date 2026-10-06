@@ -367,9 +367,16 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
 
           try {
             const result = await executeSandboxed(cmdBinary, cmdArgs, { timeout: 30000 });
-            if (result && result.code === 0) {
+            // A numeric `code` means the target actually RAN: report its exit
+            // status. A SANDBOX_* string code means the sandbox never ran the
+            // command (tool unavailable / setup failed) — fall back to a
+            // direct execFile of the already-approval-gated command, exactly
+            // like the catch branch below. Treating every defined `code` as a
+            // command exit reported a bogus failure when e.g. bwrap is not
+            // installed, and the documented fallback never fired.
+            if (result && typeof result.code === 'number' && result.code === 0) {
               sendResponse({ success: true, output: result.stdout || result.stderr || '' });
-            } else if (result && result.code !== undefined) {
+            } else if (result && typeof result.code === 'number') {
               sendResponse({ success: false, error: result.stderr || result.error || `Command exited with code ${result.code}` });
             } else {
               execFileFn(cmdBinary, cmdArgs, { timeout: 30000 }, (err, stdout, stderr) => {
