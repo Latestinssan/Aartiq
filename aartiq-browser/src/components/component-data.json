@@ -1,15 +1,15 @@
 {
-  "generated": "2026-10-07T14:13:41.794Z",
+  "generated": "2026-10-07T14:31:30.346Z",
   "version": "0.3.8",
   "desktop": {
-    "total": 428,
-    "totalLines": 127183,
+    "total": 379,
+    "totalLines": 116820,
     "byCategory": {
       "components": 149,
       "core": 16,
       "automation": 5,
       "service": 17,
-      "lib": 196,
+      "lib": 147,
       "app": 10,
       "hooks": 4,
       "main": 21,
@@ -13829,42 +13829,6 @@
         "group": "lib"
       },
       {
-        "name": "CloudSyncService.js",
-        "path": "CloudSyncService.js",
-        "lines": 888,
-        "description": "Cloud Sync Service",
-        "tags": [
-          "Node.js",
-          "Security",
-          "AI",
-          "Sync",
-          "macOS"
-        ],
-        "lastModified": "2026-10-07",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "firebase"
-          ],
-          "keyFunctions": [
-            "__",
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "CloudSyncService"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "CloudSyncService.ts",
         "path": "CloudSyncService.ts",
         "lines": 613,
@@ -13978,34 +13942,6 @@
         "group": "lib"
       },
       {
-        "name": "DeviceIdentifier.js",
-        "path": "DeviceIdentifier.js",
-        "lines": 159,
-        "description": "Device Identifier",
-        "tags": [
-          "Node.js",
-          "AI",
-          "macOS",
-          "Windows",
-          "Linux"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "DeviceIdentifier"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "DeviceIdentifier.ts",
         "path": "DeviceIdentifier.ts",
         "lines": 123,
@@ -14069,37 +14005,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "FirebaseService.js",
-        "path": "FirebaseService.js",
-        "lines": 342,
-        "description": "Firebase Service",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "firebase"
-          ],
-          "keyFunctions": [
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "FirebaseService"
-          ]
         },
         "group": "lib"
       },
@@ -14261,33 +14166,6 @@
         "group": "lib"
       },
       {
-        "name": "MasterPINService.js",
-        "path": "MasterPINService.js",
-        "lines": 245,
-        "description": "MasterPIN service",
-        "tags": [
-          "Node.js",
-          "macOS",
-          "Flutter"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "MasterPINService",
-            "data"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "MasterPINService.ts",
         "path": "MasterPINService.ts",
         "lines": 246,
@@ -14384,46 +14262,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "P2PFileSyncService.js",
-        "path": "P2PFileSyncService.js",
-        "lines": 1056,
-        "description": "File Sync Service",
-        "tags": [
-          "Node.js",
-          "Core",
-          "AI",
-          "Sync",
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "electronAPI",
-            "firebase"
-          ],
-          "keyFunctions": [
-            "__",
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "isErrorResult",
-            "P2PFileSyncService",
-            "getP2PSync"
-          ]
         },
         "group": "lib"
       },
@@ -14645,38 +14483,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "PermissionRelayService.js",
-        "path": "PermissionRelayService.js",
-        "lines": 197,
-        "description": "Permission Relay Service",
-        "tags": [
-          "Node.js",
-          "Security",
-          "Sync",
-          "Automation",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "websocket"
-          ],
-          "keyFunctions": [
-            "__",
-            "PermissionRelayService",
-            "request",
-            "expiredResponse"
-          ]
         },
         "group": "lib"
       },
@@ -14987,44 +14793,6 @@
         "group": "lib"
       },
       {
-        "name": "Security.js",
-        "path": "Security.js",
-        "lines": 564,
-        "description": "Security",
-        "tags": [
-          "Node.js",
-          "Security",
-          "AI",
-          "Sync",
-          "PDF",
-          "macOS",
-          "Windows"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "websocket"
-          ],
-          "keyFunctions": [
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "scores",
-            "entities"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "Security.ts",
         "path": "Security.ts",
         "lines": 584,
@@ -15299,32 +15067,6 @@
         "group": "lib"
       },
       {
-        "name": "SkillLoader.js",
-        "path": "SkillLoader.js",
-        "lines": 124,
-        "description": "Skill Loader",
-        "tags": [
-          "Node.js",
-          "Security",
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "service",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "fallbacks"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "SkillLoader.ts",
         "path": "SkillLoader.ts",
         "lines": 153,
@@ -15419,37 +15161,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "SyncMethodManager.js",
-        "path": "SyncMethodManager.js",
-        "lines": 325,
-        "description": "Sync Method Manager",
-        "tags": [
-          "Sync",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "__",
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "SyncMethodManager"
-          ]
         },
         "group": "lib"
       },
@@ -15917,35 +15628,6 @@
         "group": "lib"
       },
       {
-        "name": "UnifiedSessionManager.js",
-        "path": "UnifiedSessionManager.js",
-        "lines": 323,
-        "description": "Unified Session Manager",
-        "tags": [
-          "Node.js",
-          "AI",
-          "Automation",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "__",
-            "result",
-            "UnifiedSessionManager",
-            "summary"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "UnifiedSessionManager.ts",
         "path": "UnifiedSessionManager.ts",
         "lines": 380,
@@ -16380,49 +16062,6 @@
         "group": "lib"
       },
       {
-        "name": "WiFiSyncService.js",
-        "path": "WiFiSyncService.js",
-        "lines": 1096,
-        "description": "Wi Fi Sync Service",
-        "tags": [
-          "Node.js",
-          "Core",
-          "AI",
-          "Sync",
-          "Automation",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "websocket"
-          ],
-          "keyFunctions": [
-            "__",
-            "result",
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "getPermissionRelayService",
-            "getUnifiedSessionManager",
-            "tokensMatch",
-            "WiFiSyncService",
-            "serverOptions",
-            "getWiFiSync"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "WiFiSyncService.ts",
         "path": "WiFiSyncService.ts",
         "lines": 1123,
@@ -16748,27 +16387,6 @@
         "group": "lib"
       },
       {
-        "name": "agent-registry.js",
-        "path": "agent/agent-registry.js",
-        "lines": 66,
-        "description": "Agent Registry",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
         "name": "agent-registry.ts",
         "path": "agent/agent-registry.ts",
         "lines": 83,
@@ -16828,31 +16446,6 @@
         "group": "lib"
       },
       {
-        "name": "navigator.js",
-        "path": "agent/navigator.js",
-        "lines": 103,
-        "description": "Navigator",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "DEFAULT_OPTIONS",
-            "errorResult",
-            "failedResult"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "navigator.ts",
         "path": "agent/navigator.ts",
         "lines": 139,
@@ -16892,30 +16485,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "planner.js",
-        "path": "agent/planner.js",
-        "lines": 119,
-        "description": "Planner",
-        "tags": [
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "DEFAULT_OPTIONS"
-          ]
         },
         "group": "lib"
       },
@@ -16961,29 +16530,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "tab-lock.js",
-        "path": "agent/tab-lock.js",
-        "lines": 121,
-        "description": "Tab Lock",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "lease"
-          ]
         },
         "group": "lib"
       },
@@ -17053,25 +16599,6 @@
             "LockRequest",
             "TabLockManager"
           ],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "types.js",
-        "path": "agent/types.js",
-        "lines": 3,
-        "description": "Types",
-        "tags": [],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
           "apiUsage": [],
           "keyFunctions": []
         },
@@ -17292,36 +16819,6 @@
         "group": "lib"
       },
       {
-        "name": "bootstrap.js",
-        "path": "agent-api/bootstrap.js",
-        "lines": 141,
-        "description": "Bootstrap",
-        "tags": [
-          "Security",
-          "PDF",
-          "macOS",
-          "Windows"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "pageWindows",
-            "requireTab",
-            "buildPageAdapter",
-            "startAgentApi"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "bootstrap.ts",
         "path": "agent-api/bootstrap.ts",
         "lines": 116,
@@ -17380,30 +16877,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "bridge.js",
-        "path": "agent-api/bridge.js",
-        "lines": 201,
-        "description": "Bridge",
-        "tags": [
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "createRemoteBridge"
-          ]
         },
         "group": "lib"
       },
@@ -17475,32 +16948,6 @@
         "group": "lib"
       },
       {
-        "name": "providers.js",
-        "path": "agent-api/providers.js",
-        "lines": 87,
-        "description": "Providers",
-        "tags": [
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "defaultConfig",
-            "resolveModelEndpoint",
-            "bindHost"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "providers.ts",
         "path": "agent-api/providers.ts",
         "lines": 89,
@@ -17557,28 +17004,6 @@
         "group": "lib"
       },
       {
-        "name": "registry.js",
-        "path": "agent-api/registry.js",
-        "lines": 86,
-        "description": "Registry",
-        "tags": [
-          "Security",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
         "name": "registry.ts",
         "path": "agent-api/registry.ts",
         "lines": 91,
@@ -17603,33 +17028,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "server.js",
-        "path": "agent-api/server.js",
-        "lines": 175,
-        "description": "Server",
-        "tags": [
-          "Node.js",
-          "Security",
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "args"
-          ]
         },
         "group": "lib"
       },
@@ -17731,36 +17129,6 @@
         "group": "lib"
       },
       {
-        "name": "tools.js",
-        "path": "agent-api/tools.js",
-        "lines": 395,
-        "description": "Tools",
-        "tags": [
-          "Security",
-          "AI",
-          "Plugin",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "t",
-            "str",
-            "bool",
-            "num",
-            "registerAllTools"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "tools.ts",
         "path": "agent-api/tools.ts",
         "lines": 419,
@@ -17790,31 +17158,6 @@
             "str",
             "bool",
             "num"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "types.js",
-        "path": "agent-api/types.js",
-        "lines": 18,
-        "description": "Types",
-        "tags": [
-          "Security",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "textResult",
-            "jsonResult"
           ]
         },
         "group": "lib"
@@ -18697,39 +18040,6 @@
         "group": "lib"
       },
       {
-        "name": "matcher.js",
-        "path": "autofill/matcher.js",
-        "lines": 149,
-        "description": "Matcher",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "AUTOCOMPLETE_MAP",
-            "INPUT_TYPE_MAP",
-            "NAME_MAP",
-            "normalize",
-            "matchAutocomplete",
-            "matchInputType",
-            "matchName",
-            "matchLabel",
-            "matchPlaceholder",
-            "matchField",
-            "matchFields"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "matcher.ts",
         "path": "autofill/matcher.ts",
         "lines": 165,
@@ -18835,33 +18145,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "vault.js",
-        "path": "autofill/vault.js",
-        "lines": 127,
-        "description": "Vault",
-        "tags": [
-          "Node.js",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "uid",
-            "entry",
-            "profile",
-            "data"
-          ]
         },
         "group": "lib"
       },
@@ -19325,48 +18608,6 @@
         "group": "lib"
       },
       {
-        "name": "crypto-utils.js",
-        "path": "crypto-utils.js",
-        "lines": 277,
-        "description": "Crypto Utils",
-        "tags": [
-          "Node.js",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "__",
-            "adopt",
-            "fulfilled",
-            "rejected",
-            "step",
-            "_",
-            "verb",
-            "EncryptionError",
-            "DecryptionError",
-            "deriveKey",
-            "base64Decode",
-            "base64Encode",
-            "encrypt",
-            "decrypt",
-            "encodeLocalOnly",
-            "isCiphertext",
-            "migrateLegacyBlob",
-            "decryptLegacyBlob",
-            "migrateToNewFormat"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "crypto-utils.ts",
         "path": "crypto-utils.ts",
         "lines": 189,
@@ -19645,28 +18886,6 @@
         "group": "lib"
       },
       {
-        "name": "ExtensionManager.js",
-        "path": "extensions/ExtensionManager.js",
-        "lines": 51,
-        "description": "Extension Manager",
-        "tags": [
-          "Plugin",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
         "name": "ExtensionManager.ts",
         "path": "extensions/ExtensionManager.ts",
         "lines": 66,
@@ -19734,37 +18953,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "chrome-importer.js",
-        "path": "extensions/chrome-importer.js",
-        "lines": 123,
-        "description": "Chrome Importer",
-        "tags": [
-          "Node.js",
-          "Plugin",
-          "macOS",
-          "Linux"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "deriveId",
-            "readManifest",
-            "findChromeProfile",
-            "importFromChrome",
-            "copyDir"
-          ]
         },
         "group": "lib"
       },
@@ -19859,39 +19047,6 @@
         "group": "lib"
       },
       {
-        "name": "crx-verifier.js",
-        "path": "extensions/crx-verifier.js",
-        "lines": 146,
-        "description": "Crx Verifier",
-        "tags": [
-          "Node.js",
-          "Security",
-          "Plugin",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "result",
-            "uint32le",
-            "encodeVarint",
-            "writeLengthDelimited",
-            "parseFields",
-            "out",
-            "verifyCrx",
-            "buildCrx3"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "crx-verifier.ts",
         "path": "extensions/crx-verifier.ts",
         "lines": 115,
@@ -19954,32 +19109,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "permission-analyzer.js",
-        "path": "extensions/permission-analyzer.js",
-        "lines": 64,
-        "description": "Permission Analyzer",
-        "tags": [
-          "Plugin",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "isBroadHost",
-            "analyzePermissions",
-            "detectConflicts"
-          ]
         },
         "group": "lib"
       },
@@ -20064,34 +19193,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "firebaseConfigStorage.js",
-        "path": "firebaseConfigStorage.js",
-        "lines": 92,
-        "description": "Config Storage",
-        "tags": [
-          "Node.js",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "electronAPI",
-            "firebase"
-          ],
-          "keyFunctions": [
-            "mirrorToMainProcess",
-            "loadFromMainProcess"
-          ]
         },
         "group": "lib"
       },
@@ -20196,32 +19297,6 @@
             "parseMessage",
             "getBody",
             "createMimeMessage"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "agent-trust.js",
-        "path": "guardrails/agent-trust.js",
-        "lines": 139,
-        "description": "Agent Trust",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "BASELINE",
-            "DEFAULT_CAPS",
-            "agent",
-            "mergeCaps"
           ]
         },
         "group": "lib"
@@ -20357,29 +19432,6 @@
         "group": "lib"
       },
       {
-        "name": "index.js",
-        "path": "guardrails/index.js",
-        "lines": 97,
-        "description": "Index",
-        "tags": [
-          "Security",
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
         "name": "index.ts",
         "path": "guardrails/index.ts",
         "lines": 148,
@@ -20435,30 +19487,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "origin-guard.js",
-        "path": "guardrails/origin-guard.js",
-        "lines": 83,
-        "description": "Origin Guard",
-        "tags": [
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "originOf"
-          ]
         },
         "group": "lib"
       },
@@ -20568,34 +19596,6 @@
         "group": "lib"
       },
       {
-        "name": "patterns.js",
-        "path": "guardrails/patterns.js",
-        "lines": 124,
-        "description": "Patterns",
-        "tags": [
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "CRITICAL",
-            "HIGH",
-            "MEDIUM",
-            "LOW",
-            "getPatternsForMode"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "patterns.ts",
         "path": "guardrails/patterns.ts",
         "lines": 133,
@@ -20646,35 +19646,6 @@
           ],
           "apiUsage": [],
           "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "prompt-injection.js",
-        "path": "guardrails/prompt-injection.js",
-        "lines": 259,
-        "description": "Prompt Injection",
-        "tags": [
-          "Security",
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "OVERRIDE_PATTERNS",
-            "EXFIL_PATTERNS",
-            "URGENCY_PATTERNS",
-            "clamp01",
-            "verdict"
-          ]
         },
         "group": "lib"
       },
@@ -20802,38 +19773,6 @@
         "group": "lib"
       },
       {
-        "name": "sanitizer.js",
-        "path": "guardrails/sanitizer.js",
-        "lines": 128,
-        "description": "Sanitizer",
-        "tags": [
-          "Security",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "normalizeUnicode",
-            "REDACTIONS",
-            "getRedaction",
-            "scanPatterns",
-            "wrapUntrustedContent",
-            "sanitize",
-            "containsThreat",
-            "wrapUserRequest",
-            "wrapAttachedFiles"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "sanitizer.ts",
         "path": "guardrails/sanitizer.ts",
         "lines": 158,
@@ -20864,32 +19803,6 @@
         "group": "lib"
       },
       {
-        "name": "spotlight.js",
-        "path": "guardrails/spotlight.js",
-        "lines": 37,
-        "description": "Spotlight",
-        "tags": [
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "spotlight",
-            "unspotlight",
-            "escapeRegExp"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "spotlight.ts",
         "path": "guardrails/spotlight.ts",
         "lines": 39,
@@ -20911,25 +19824,6 @@
             "unspotlight",
             "UNTRUSTED_CONTENT_DIRECTIVE"
           ],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "types.js",
-        "path": "guardrails/types.js",
-        "lines": 14,
-        "description": "Types",
-        "tags": [],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
           "apiUsage": [],
           "keyFunctions": []
         },
@@ -21325,34 +20219,6 @@
         "group": "lib"
       },
       {
-        "name": "html-sanitizer.js",
-        "path": "html-sanitizer.js",
-        "lines": 39,
-        "description": "Html Sanitizer",
-        "tags": [
-          "Security",
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [
-            "dompurify"
-          ],
-          "keyFunctions": [
-            "DEFAULT_OPTIONS",
-            "sanitizeHTML"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "html-sanitizer.ts",
         "path": "html-sanitizer.ts",
         "lines": 38,
@@ -21497,25 +20363,6 @@
           "exports": [
             "LLMOrchestrator"
           ],
-          "apiUsage": [],
-          "keyFunctions": []
-        },
-        "group": "lib"
-      },
-      {
-        "name": "base.js",
-        "path": "llm/providers/base.js",
-        "lines": 4,
-        "description": "Base",
-        "tags": [],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
           "apiUsage": [],
           "keyFunctions": []
         },
@@ -22156,29 +21003,6 @@
           "keyFunctions": [
             "transportOptions",
             "combinedTools"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "modelRegistry.js",
-        "path": "modelRegistry.js",
-        "lines": 34,
-        "description": "ModelRegistry",
-        "tags": [
-          "AI"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "RECOMMENDED_BY_PROVIDER"
           ]
         },
         "group": "lib"
@@ -22848,45 +21672,6 @@
         "group": "lib"
       },
       {
-        "name": "research-pipeline.js",
-        "path": "research-pipeline.js",
-        "lines": 518,
-        "description": "Research Pipeline",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "LIMITS",
-            "clampBudget",
-            "out",
-            "domainOf",
-            "parsePublished",
-            "ms",
-            "NUMBER_WORDS",
-            "normaliseValue",
-            "extractClaims",
-            "verifyClaims",
-            "claim",
-            "numericRatio",
-            "pickLastSource",
-            "empty",
-            "runResearch",
-            "coverage",
-            "outcome"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "research-pipeline.ts",
         "path": "research-pipeline.ts",
         "lines": 679,
@@ -23205,39 +21990,6 @@
             "LIMITS",
             "out",
             "ms"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "researchState.js",
-        "path": "researchState.js",
-        "lines": 128,
-        "description": "ResearchState",
-        "tags": [
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "TERMINAL_STAGE_STATUS",
-            "clampProgress",
-            "normalizeStatus",
-            "stepStatusFor",
-            "eventJobId",
-            "stepIdFor",
-            "createEmptyResearchState",
-            "createResearchState",
-            "isResearchEventForActiveJob",
-            "applyResearchProgress",
-            "nextStep"
           ]
         },
         "group": "lib"
@@ -23733,43 +22485,6 @@
         "group": "lib"
       },
       {
-        "name": "manager.js",
-        "path": "snapshot/manager.js",
-        "lines": 379,
-        "description": "Manager",
-        "tags": [
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "isInteractive",
-            "refs",
-            "scopeMatch",
-            "visit",
-            "node",
-            "result",
-            "walk",
-            "ATTR",
-            "INTERACTIVE_ROLES",
-            "SKIP_TAGS",
-            "textOf",
-            "collect",
-            "truncate",
-            "excerpt"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "manager.ts",
         "path": "snapshot/manager.ts",
         "lines": 393,
@@ -23800,67 +22515,6 @@
             "textOf",
             "collect",
             "node"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "page-scripts.js",
-        "path": "snapshot/page-scripts.js",
-        "lines": 407,
-        "description": "Page Scripts",
-        "tags": [
-          "Node.js",
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "lit",
-            "ATTR",
-            "resolveEl",
-            "protoFor",
-            "setNativeValue",
-            "fire",
-            "isCheckable",
-            "isContentEditable",
-            "scrollTo",
-            "truthy",
-            "readBack",
-            "setChecked",
-            "fillOne",
-            "wrap",
-            "clickScript",
-            "fillScript",
-            "field",
-            "typeScript",
-            "incoming",
-            "next",
-            "fillFormScript",
-            "spec",
-            "wantSubmit",
-            "formSubmitScript",
-            "expected",
-            "elementActionScript",
-            "action",
-            "domQueryScript",
-            "sel",
-            "limit",
-            "attrs",
-            "includeText",
-            "row",
-            "pageTextSearchScript",
-            "q",
-            "scope",
-            "cs"
           ]
         },
         "group": "lib"
@@ -23956,28 +22610,6 @@
             "scope",
             "cs"
           ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "types.js",
-        "path": "snapshot/types.js",
-        "lines": 22,
-        "description": "Types",
-        "tags": [
-          "AI",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": []
         },
         "group": "lib"
       },
@@ -24403,36 +23035,6 @@
         "group": "lib"
       },
       {
-        "name": "resolver.js",
-        "path": "theme/resolver.js",
-        "lines": 67,
-        "description": "Resolver",
-        "tags": [
-          "PDF",
-          "macOS"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "defaultPrefs",
-            "base",
-            "DENSITY_PADDING",
-            "resolveTheme",
-            "merged",
-            "cssVars",
-            "applyThemeToDocument"
-          ]
-        },
-        "group": "lib"
-      },
-      {
         "name": "resolver.ts",
         "path": "theme/resolver.ts",
         "lines": 86,
@@ -24555,29 +23157,6 @@
             "getDomain",
             "getSearchUrl",
             "engines"
-          ]
-        },
-        "group": "lib"
-      },
-      {
-        "name": "url-validator.js",
-        "path": "url-validator.js",
-        "lines": 21,
-        "description": "Url Validator",
-        "tags": [
-          "Security"
-        ],
-        "lastModified": "2026-10-06",
-        "codeAnalysis": {
-          "importsExternal": [],
-          "importsInternal": [],
-          "interfaces": [],
-          "hooks": [],
-          "componentType": "utility",
-          "exports": [],
-          "apiUsage": [],
-          "keyFunctions": [
-            "validateURL"
           ]
         },
         "group": "lib"
@@ -29053,7 +27632,7 @@
     ]
   },
   "summary": {
-    "total": 494,
-    "totalLines": 155230
+    "total": 445,
+    "totalLines": 144867
   }
 }
