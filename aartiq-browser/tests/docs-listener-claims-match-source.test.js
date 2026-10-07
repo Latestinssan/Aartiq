@@ -220,7 +220,7 @@ describe('docs listener / count claims match source', () => {
   });
 
   test('M15: README and the overview page carry the same status paragraph', () => {
-    const marker = 'feature work pauses and resumes in bursts';
+    const marker = 'AI agents handle day-to-day issue triage, analysis, and fix preparation';
     expect(README).toContain(marker);
     expect(OVERVIEW).toContain(marker);
     expect(README).not.toMatch(/Project Status: AI-Assisted Maintenance/);

@@ -60,6 +60,11 @@
 - One deliberate behaviour change: a concurrent `peekTicket` now reports `APPROVAL_INVALID` during the consume window where it previously reported `valid`.
 - Still open: ticket ids combine a per-instance counter with `Date.now()` while the ticket store is module-level, so two `ApprovalGate` instances built in the same millisecond mint identical ids. Left unchanged rather than folded into a security fix.
 
+#### Native-bridge permission writes go through the permission store (#33)
+- The native bridge's grant and revoke routes read and updated their own in-memory copy of the grant list, so a bridge grant never reached `PermissionStore` — no audit-log entry, no lifetime, and no effect on the store the approval dialogs read. This was a real bypass: `bridge-client` grants were meant to be ordinary grants.
+- The routes now call `permissionStore.grant` / `permissionStore.revoke` like every other writer (extracted to `src/lib/native-bridge-permission-routes.js`), so bridge grants are audited and expire like the rest. An unknown permission level now fails closed with a 500 instead of defaulting to an allow.
+- Regression tests in `tests/native-bridge-permissions.test.js`, including the lost-update case where a bridge write used to clobber a store change made between the route's read and write.
+
 ### Fixed
 
 #### The desktop app could not start on Linux
@@ -87,6 +92,11 @@
 #### Waiting for AI output could hang forever (#22)
 - `send-prompt` reported success while `remote-ai-prompt` never reached the renderer, so the phone waited for output that could never arrive. Events now follow the live window, and the regression test fails the send when the renderer was never reached.
 
+#### A failed cloud-sync write looked like success (#31)
+- `CloudSyncService` fired Firebase `update()`, `set()` and `onDisconnect().update()` promises without awaiting or catching them, so a write rejected by the security rules, by quota, or while offline left Settings → Sync showing a synced state that did not exist. The electron-updater path already surfaced its errors; these writes did not.
+- Every such write now reports through `_reportSyncError` → a `cloud-sync-error` IPC event → the Sync settings page, on both load paths (the TypeScript source and its regenerated `.js` twin). Failures are visible where the user looks, not only in the main process log.
+- `tests/cloud-sync-error-surface.test.js` covers both load paths (13 cases).
+
 ### Documentation
 - The risk tier table, test counts and live repository figures published by the docs generator are now read from the same source files the runtime reads, and `npm run docs:check` fails when a published number or a security claim disagrees with the code. The gate is not yet wired into a workflow, so it only protects a commit when someone runs it.
 - The published feature pages had drifted from the source. Eight claims on the Cloud Sync page described behaviour the sync service does not have: a three-tier Read Only / Standard / Trusted permission ladder, mDNS discovery, a 60-second pairing timeout, transfer and per-item size ceilings, an audit trail, automatic conflict resolution, and an encryption guarantee attributed to a `shared-keychain.js` file that does not exist. All eight are corrected, and the true encryption claim is kept and made more precise — the page now says plainly that the local WebSocket is not covered by it.
@@ -96,6 +106,8 @@
 - The audit is published: `docs-audit/` now carries the final report beside `mismatch-inventory.md` — exact counts per pull request, the flagged security behaviour changes, what could not be verified from the repository, and what is left for the maintainer (#21).
 - Corrected landing claims are gated against the source: `tests/docs-listener-claims-match-source.test.js` derives tool counts from `tools.ts` and `server/index.js` at test time, the CHANGELOG listener scope is pinned to "three tokened local listeners", the extension-signature line cites the fail-closed call site and the skipped-suite CI gap, and `release_notes/v0.3.4.md` keeps its historical wording with a correction annotation (#14).
 - The security page was rewritten for this build — the narrowed allowlist and deny list, real biometrics with accurate dialog labels, the Master PIN keychain and the remote-shell ticket flow (#23).
+- The v0.3.8 claims that later pull requests had made stale were refreshed (#34): per-process listener tokens, the "carry no token" phrasing, the mcp-remote URL token claim, and "permanent grant" wording — every grant now expires after 30 days.
+- The audit records now say plainly which of them no longer hold (#35): `docs-audit/security-defaults-verification.md` opens with a supersession status table, and `pdf-sync-bind-address.md` separates what shipped (token and Host checks) from what is still open (explicit Origin rejection).
 ### Behaviour changes users may notice
 - Phone/laptop file sync now needs `AARTIQ_SERVICE_HOST=0.0.0.0` (or a LAN address): the background task service and PDF sync listener bind loopback by default (#15).
 - The Claude Desktop config passes the session token to `mcp-remote` in an `Authorization: Bearer` header (`--header`, with the value supplied through `${AARTIQ_MCP_AUTH}` so it appears neither in the config file nor in the process arguments); a `?token=` URL written by an earlier build is still accepted, but Auto-Configure now writes the header form. The token is read-or-created in `~/.aartiq-mcp-token` (mode 0600), so a configured client keeps working across restarts.
@@ -103,6 +115,9 @@
 ### Testing
 - `tests/local-server-auth.test.js` (44 cases, real sockets), `tests/shell-command-tiers.test.js` (193 cases), `tests/shell-approval-defaults.test.js` (61 cases).
 - `tests/approval-gate-concurrency.test.js` (11 cases), `tests/linux-ipc-registration.test.js` (6 cases), `tests/docs-sync-match-source.test.js` (17 cases).
+- `tests/native-bridge-permissions.test.js` (9 cases), `tests/cloud-sync-error-surface.test.js` (13 cases), `tests/benchmark-smoke.test.js` (5 cases).
+- TypeScript is type-checked in CI (#32): a `typecheck` job running `npx tsc --noEmit` joins the Jest workflow, because Jest transpiles through swc and the Electron build never runs `tsc` — a type error had no gate anywhere. Baseline at merge: 0 errors across 273 files.
+- The security-critical hot paths have a reproducible benchmark harness (#36): `npm run bench` drives fixed corpora through warmup and five repetitions with median/spread reporting, protocol documented in `BENCHMARKS.md`. CI deliberately gates harness validity only — no absolute timing thresholds.
 - Full suite on this tag: **1342 passed, 26 skipped, 0 failed**, 57 suites passing (1 skipped) of 1368 declared.
 
 Full detail, including what was deliberately left unfixed, is in

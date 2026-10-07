@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "docs:test-facts": "node scripts/gen-test-facts.ts",
-    "docs:test-facts:from-ci": "node scripts/gen-test-facts.ts --ci-artifact 34769503518",
+    "docs:test-facts:from-ci": "node scripts/gen-test-facts.ts --ci-artifact 37621797787",
     "docs:shell-tiers": "node scripts/gen-shell-tiers.ts",
     "docs:repo-facts": "node scripts/gen-repo-facts.ts",
     "docs:facts": "npm run docs:repo-facts && npm run docs:test-facts && npm run docs:shell-tiers",
