@@ -89,8 +89,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The OS-automation suite probes for xdotool and a DISPLAY at module
+      # scope. Without them its tests skip; with xdotool but no X server
+      # they would fail (execSync exits non-zero). Install both so the 11
+      # OS-automation tests actually execute on CI. xauth is required by
+      # xvfb-run itself.
+      - name: Install OS-automation tooling and a headless X server
+        run: sudo apt-get update && sudo apt-get install -y xdotool xvfb xauth
+
       - name: Run Jest
-        run: npm test -- --ci --runInBand --forceExit
+        run: xvfb-run --auto-servernum npm test -- --ci --runInBand --forceExit
 
   # Windows runtime verification for the AppContainer + Job Object sandbox.
   # The macOS/Linux runtime tests skip on Windows, but the runtime matrix in
