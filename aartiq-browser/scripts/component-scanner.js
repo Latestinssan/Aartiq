@@ -4,13 +4,21 @@
  * 
  * Automatically scans aartiq-browser/src and flutter_browser_app/lib
  * and generates line counts, metadata, and rich code analysis for documentation.
- * 
+ *
+ * Every entry carries a `group` (the directory it was found in) so consumers can
+ * rebuild categorisation without re-deriving it from paths. Desktop covers
+ * .ts/.tsx/.js; Flutter covers .dart.
+ *
  * Usage:
  *   node scripts/component-scanner.js           # Scan and output JSON
  *   node scripts/component-scanner.js --update  # Update component-data.json
  *   node scripts/component-scanner.js --flutter # Scan Flutter components
  *   node scripts/component-scanner.js --missing  # Find undocumented components
  *   node scripts/component-scanner.js --all      # Scan both desktop and flutter
+ *
+ * Set AARTIQ_LANDING_DIR to also refresh the landing repository's
+ * src/data/component-data.json in the same run (defaults to the sibling
+ * Aartiq-Landing-Page checkout).
  */
 
 const fs = require('fs');
@@ -220,34 +228,40 @@ function scanDirectory(dir, baseDir = dir) {
       results.push(...scanDirectory(fullPath, baseDir));
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
-      // Support TypeScript for desktop, Dart for Flutter
+      // TypeScript/JavaScript for desktop, Dart for Flutter. Plain .js matters:
+      // the main-process services, the automation backends and src/service are
+      // all .js, and skipping them silently emptied the core/automation/service
+      // groups in the generated JSON.
       const isDesktop = dir.includes('/src/') || dir.includes('\\src\\');
-      const validExts = isDesktop ? ['.ts', '.tsx'] : ['.dart'];
-      
-      if (validExts.includes(ext)) {
-        const filename = path.basename(fullPath);
-        const relativePath = path.relative(baseDir, fullPath);
-        const content = fs.readFileSync(fullPath, 'utf8');
-        const lines = countLines(fullPath);
-        const tags = detectTags(content, filename);
-        const description = getDescription(fullPath) || guessDescription(filename);
-        
-        const codeAnalysis = extractCodeAnalysis(content, filename);
+      const validExts = isDesktop ? ['.ts', '.tsx', '.js'] : ['.dart'];
 
-        results.push({
-          name: filename,
-          path: relativePath.replace(/\\/g, '/'),
-          lines,
-          description,
-          tags,
-          lastModified: fs.statSync(fullPath).mtime.toISOString().split('T')[0],
-          codeAnalysis
-        });
+      if (validExts.includes(ext)) {
+        results.push(scanFile(fullPath, path.relative(baseDir, fullPath)));
       }
     }
   }
   
   return results;
+}
+
+/** Build one inventory entry for a file that is known to be scannable. */
+function scanFile(fullPath, relativePath, group = null) {
+  const filename = path.basename(fullPath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  const tags = detectTags(content, filename);
+  const description = getDescription(fullPath) || guessDescription(filename);
+  const codeAnalysis = extractCodeAnalysis(content, filename);
+
+  return {
+    name: filename,
+    path: String(relativePath).replace(/\\/g, '/'),
+    lines: countLines(fullPath),
+    description,
+    tags,
+    lastModified: fs.statSync(fullPath).mtime.toISOString().split('T')[0],
+    codeAnalysis,
+    group,
+  };
 }
 
 function guessDescription(filepath) {
@@ -281,13 +295,35 @@ function scanDesktop() {
     automation: path.join(ROOT_DIR, 'src', 'automation'),
     service: path.join(ROOT_DIR, 'src', 'service'),
     lib: path.join(ROOT_DIR, 'src', 'lib'),
+    app: path.join(ROOT_DIR, 'src', 'app'),
+    hooks: path.join(ROOT_DIR, 'src', 'hooks'),
+    main: path.join(ROOT_DIR, 'src', 'main'),
+    store: path.join(ROOT_DIR, 'src', 'store'),
+    stores: path.join(ROOT_DIR, 'src', 'stores'),
+    workers: path.join(ROOT_DIR, 'src', 'workers'),
   };
   
   const results = {};
   for (const [name, dir] of Object.entries(dirs)) {
-    results[name] = scanDirectory(dir);
+    // Each entry carries the group it was found in, so consumers rebuild
+    // categorisation from data instead of re-deriving it from paths.
+    results[name] = scanDirectory(dir).map((c) => ({ ...c, group: name }));
     console.log(`   - ${name}: ${results[name].length} files`);
   }
+
+  // The entry-point scripts live at the repository root, outside src/, so the
+  // directory walk above cannot see them. Listed explicitly — the root also
+  // holds jest/next configs and one-off dev scripts that are not components.
+  results.root = [
+    'main.js',
+    'preload.js',
+    'approval-preload.js',
+    'auth-preload.js',
+    'view_preload.js',
+  ]
+    .filter((f) => fs.existsSync(path.join(ROOT_DIR, f)))
+    .map((f) => scanFile(path.join(ROOT_DIR, f), f, 'root'));
+  console.log(`   - root: ${results.root.length} files`);
   
   const all = Object.values(results).flat();
   console.log(`\n✅ Total desktop: ${all.length} components`);
@@ -321,7 +357,14 @@ function scanFlutter() {
   ].map(f => f.name);
   
   results.root = results.root.filter(f => !subdirFiles.includes(f.name));
-  
+
+  // Tag every entry with its group, and build byCategory from the groups that
+  // actually exist — the old hard-coded map named groups this scan never
+  // produces (services/components/main), so pages and app_bar counts vanished.
+  for (const key of Object.keys(results)) {
+    results[key] = results[key].map((c) => ({ ...c, group: key }));
+  }
+
   for (const [name, files] of Object.entries(results)) {
     console.log(`   - ${name}: ${files.length} files`);
   }
@@ -334,7 +377,9 @@ function scanFlutter() {
 }
 
 function getDocumentedComponents() {
-  const landingPagePath = path.join(__dirname, '..', '..', 'Landing_Page', 'src', 'app', 'docs', 'components', 'page.tsx');
+  const landingDir = process.env.AARTIQ_LANDING_DIR ||
+    path.join(ROOT_DIR, '..', 'Aartiq-Landing-Page');
+  const landingPagePath = path.join(landingDir, 'src', 'app', 'docs', 'components', 'page.tsx');
   
   if (!fs.existsSync(landingPagePath)) {
     return new Set();
@@ -353,8 +398,8 @@ function getDocumentedComponents() {
 
 function findMissing(allComponents, documented) {
   return allComponents.filter(comp => {
-    const nameLower = comp.name.toLowerCase().replace(/\.(ts|tsx|dart)$/, '');
-    const pathLower = comp.path.toLowerCase().replace(/\.(ts|tsx|dart)$/, '');
+    const nameLower = comp.name.toLowerCase().replace(/\.(ts|tsx|js|dart)$/, '');
+    const pathLower = comp.path.toLowerCase().replace(/\.(ts|tsx|js|dart)$/, '');
     return !documented.has(nameLower) && !documented.has(pathLower);
   });
 }
@@ -386,25 +431,17 @@ function main() {
     desktop: {
       total: desktopData.all.length,
       totalLines: desktopData.all.reduce((s, c) => s + c.lines, 0),
-      byCategory: {
-        components: desktopData.results.components?.length || 0,
-        core: desktopData.results.core?.length || 0,
-        automation: desktopData.results.automation?.length || 0,
-        service: desktopData.results.service?.length || 0,
-        lib: desktopData.results.lib?.length || 0,
-      },
+      byCategory: Object.fromEntries(
+        Object.entries(desktopData.results || {}).map(([k, v]) => [k, v.length]),
+      ),
       components: desktopData.all
     },
     flutter: {
       total: flutterData.all?.length || 0,
       totalLines: flutterData.all?.reduce((s, c) => s + c.lines, 0) || 0,
-      byCategory: {
-        pages: flutterData.results?.pages?.length || 0,
-        services: flutterData.results?.services?.length || 0,
-        models: flutterData.results?.models?.length || 0,
-        components: flutterData.results?.components?.length || 0,
-        main: flutterData.results?.main?.length || 0,
-      },
+      byCategory: Object.fromEntries(
+        Object.entries(flutterData.results || {}).map(([k, v]) => [k, v.length]),
+      ),
       components: flutterData.all || []
     },
     summary: {
@@ -438,16 +475,18 @@ function main() {
   
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(data, null, 2));
   console.log(`\n💾 Saved to: ${OUTPUT_FILE}`);
-  
-  // Also sync to Landing_Page project for Vercel/Production
-  const LANDING_PAGE_DATA_DIR = path.join(ROOT_DIR, '..', 'Landing_Page', 'src', 'data');
-  const LANDING_PAGE_OUTPUT = path.join(LANDING_PAGE_DATA_DIR, 'component-data.json');
-  
-  if (fs.existsSync(LANDING_PAGE_DATA_DIR)) {
-    fs.writeFileSync(LANDING_PAGE_OUTPUT, JSON.stringify(data, null, 2));
-    console.log(`🚀 Also synced to Landing_Page: ${LANDING_PAGE_OUTPUT}`);
+
+  // The canonical landing repository renders this file directly — refresh its
+  // copy in the same run so the site cannot publish a stale inventory.
+  const LANDING_DIR = process.env.AARTIQ_LANDING_DIR ||
+    path.join(ROOT_DIR, '..', 'Aartiq-Landing-Page');
+  const LANDING_DATA_DIR = path.join(LANDING_DIR, 'src', 'data');
+  if (fs.existsSync(LANDING_DATA_DIR)) {
+    const landingOutput = path.join(LANDING_DATA_DIR, 'component-data.json');
+    fs.writeFileSync(landingOutput, JSON.stringify(data, null, 2));
+    console.log(`🚀 Also synced to landing repo: ${landingOutput}`);
   } else {
-    console.log(`\nℹ️  Skipped Landing_Page sync: ${LANDING_PAGE_DATA_DIR} not found.`);
+    console.log(`\nℹ️  Skipped landing repo sync: ${LANDING_DATA_DIR} not found.`);
   }
   
   console.log('\n📈 Top 10 Largest:');
