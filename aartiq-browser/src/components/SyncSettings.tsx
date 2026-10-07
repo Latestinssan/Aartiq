@@ -106,6 +106,13 @@ const SyncSettings: React.FC = () => {
             setCloudConnected(data.connected);
         });
 
+        // A Firebase write that failed in the main process — shown in the same
+        // status line as every other sync message, so it is never invisible.
+        const cleanupCloudErrors = window.electronAPI.on('cloud-sync-error', (details: { operation?: string; error?: string; at?: number }) => {
+            const when = details?.at ? new Date(details.at).toLocaleTimeString() : '';
+            setStatusMessage(`Cloud sync write failed (${details?.operation || 'unknown'}${when ? ` at ${when}` : ''}): ${details?.error || 'unknown error'}`);
+        });
+
         window.electronAPI.getP2PLocalDeviceId().then((id: string) => {
             if (id) setLocalDeviceId(id);
         });
@@ -114,6 +121,7 @@ const SyncSettings: React.FC = () => {
             cleanupWifiStatus();
             cleanupWifiDevices();
             cleanupCloudStatus();
+            cleanupCloudErrors();
         };
     }, [qrMode]);
 

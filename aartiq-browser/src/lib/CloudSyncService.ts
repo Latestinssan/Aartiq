@@ -211,7 +211,7 @@ export class CloudSyncService extends EventEmitter {
                 }
             }
         } catch (error) {
-            console.error('[CloudSync] Cleanup error:', error);
+            this._reportSyncError('cleanup', error);
         }
     }
 
@@ -266,6 +266,22 @@ export class CloudSyncService extends EventEmitter {
         }
     }
 
+    /**
+     * A Firebase write failed.
+     *
+     * Nothing in this service may fail silently: `update()`/`set()` promises
+     * that are dropped on the floor reject into the void — no log, no
+     * caller, no way to tell why a prompt stayed `pending` or a device
+     * stayed `online`. Every write failure goes through here instead: it is
+     * logged and emitted as `cloud-sync-error`, which the sync handlers
+     * forward to the renderer so Settings → Sync can show it.
+     */
+    private _reportSyncError(operation: string, error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[CloudSync] ${operation} failed:`, message);
+        this.emit('cloud-sync-error', { operation, error: message, at: Date.now() });
+    }
+
     private _startPromptListener(): void {
         if (!this.db || !this.userId || !this.deviceId) return;
 
@@ -281,7 +297,9 @@ export class CloudSyncService extends EventEmitter {
                     fromDeviceId: data.fromDeviceId
                 });
 
-                update(promptsRef, { status: 'processed' });
+                update(promptsRef, { status: 'processed' }).catch((err) => {
+                    this._reportSyncError('mark-prompt-processed', err);
+                });
             }
         });
 
@@ -298,6 +316,8 @@ export class CloudSyncService extends EventEmitter {
             isStreaming,
             timestamp: Date.now(),
             fromDeviceId: this.deviceId
+        }).catch((err) => {
+            this._reportSyncError('send-ai-response', err);
         });
     }
 
@@ -341,7 +361,9 @@ export class CloudSyncService extends EventEmitter {
 
         await set(deviceRef, deviceData);
 
-        onDisconnect(deviceRef).update({ online: false, lastSeen: Date.now() });
+        onDisconnect(deviceRef).update({ online: false, lastSeen: Date.now() }).catch((err) => {
+            this._reportSyncError('device-on-disconnect-registration', err);
+        });
         console.log('[CloudSync] Device registered:', this.deviceId);
     }
 
@@ -476,7 +498,7 @@ export class CloudSyncService extends EventEmitter {
                 deviceId: this.deviceId
             });
         } catch (error) {
-            console.error('[CloudSync] Clipboard sync failed:', error);
+            this._reportSyncError('clipboard-sync', error);
         }
     }
 
@@ -493,7 +515,7 @@ export class CloudSyncService extends EventEmitter {
                 timestamp: Date.now()
             });
         } catch (error) {
-            console.error('[CloudSync] History sync failed:', error);
+            this._reportSyncError('history-sync', error);
         }
     }
 
@@ -514,7 +536,7 @@ export class CloudSyncService extends EventEmitter {
                 timestamp: Date.now()
             });
         } catch (error) {
-            console.error('[CloudSync] File sync failed:', error);
+            this._reportSyncError('file-sync', error);
         }
     }
 
