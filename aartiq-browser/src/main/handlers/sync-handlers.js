@@ -424,6 +424,15 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
 
     wifiSyncService.on('client-connected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: true }); });
     wifiSyncService.on('client-disconnected', () => { const w = liveWindow(); if (w) w.webContents.send('wifi-sync-status', { connected: false }); });
+
+    // Firebase write failures are logged in the service; forward them so the
+    // renderer can show them instead of the user discovering a stale prompt.
+    if (cloudSyncService) {
+      cloudSyncService.on('cloud-sync-error', (details) => {
+        const w = liveWindow();
+        if (w) w.webContents.send('cloud-sync-error', details);
+      });
+    }
     wifiSyncService.on('new-device-paired', (info) => {
       const w = liveWindow();
       if (w) w.webContents.send('wifi-sync-new-device', info);

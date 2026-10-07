@@ -342,7 +342,7 @@ var CloudSyncService = /** @class */ (function (_super) {
                     case 5: return [3 /*break*/, 7];
                     case 6:
                         error_2 = _a.sent();
-                        console.error('[CloudSync] Cleanup error:', error_2);
+                        this._reportSyncError('cleanup', error_2);
                         return [3 /*break*/, 7];
                     case 7: return [2 /*return*/];
                 }
@@ -443,6 +443,21 @@ var CloudSyncService = /** @class */ (function (_super) {
             });
         });
     };
+    /**
+     * A Firebase write failed.
+     *
+     * Nothing in this service may fail silently: `update()`/`set()` promises
+     * that are dropped on the floor reject into the void — no log, no
+     * caller, no way to tell why a prompt stayed `pending` or a device
+     * stayed `online`. Every write failure goes through here instead: it is
+     * logged and emitted as `cloud-sync-error`, which the sync handlers
+     * forward to the renderer so Settings → Sync can show it.
+     */
+    CloudSyncService.prototype._reportSyncError = function (operation, error) {
+        var message = error instanceof Error ? error.message : String(error);
+        console.error("[CloudSync] ".concat(operation, " failed:"), message);
+        this.emit('cloud-sync-error', { operation: operation, error: message, at: Date.now() });
+    };
     CloudSyncService.prototype._startPromptListener = function () {
         var _this = this;
         if (!this.db || !this.userId || !this.deviceId)
@@ -457,12 +472,15 @@ var CloudSyncService = /** @class */ (function (_super) {
                     promptId: data.promptId,
                     fromDeviceId: data.fromDeviceId
                 });
-                (0, database_1.update)(promptsRef, { status: 'processed' });
+                (0, database_1.update)(promptsRef, { status: 'processed' }).catch(function (err) {
+                    _this._reportSyncError('mark-prompt-processed', err);
+                });
             }
         });
         this.unsubscribers.push(unsubscribe);
     };
     CloudSyncService.prototype.sendAIResponse = function (targetDeviceId, promptId, response, isStreaming) {
+        var _this = this;
         if (!this.db || !this.userId)
             return;
         var responseRef = (0, database_1.ref)(this.db, "aiResponses/".concat(this.userId, "/").concat(targetDeviceId));
@@ -472,6 +490,8 @@ var CloudSyncService = /** @class */ (function (_super) {
             isStreaming: isStreaming,
             timestamp: Date.now(),
             fromDeviceId: this.deviceId
+        }).catch(function (err) {
+            _this._reportSyncError('send-ai-response', err);
         });
     };
     CloudSyncService.prototype._startAIResponseListener = function () {
@@ -496,6 +516,7 @@ var CloudSyncService = /** @class */ (function (_super) {
     CloudSyncService.prototype._registerDevice = function () {
         return __awaiter(this, void 0, void 0, function () {
             var deviceRef, deviceData;
+            var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -517,7 +538,9 @@ var CloudSyncService = /** @class */ (function (_super) {
                         return [4 /*yield*/, (0, database_1.set)(deviceRef, deviceData)];
                     case 1:
                         _a.sent();
-                        (0, database_1.onDisconnect)(deviceRef).update({ online: false, lastSeen: Date.now() });
+                        (0, database_1.onDisconnect)(deviceRef).update({ online: false, lastSeen: Date.now() }).catch(function (err) {
+                            _this._reportSyncError('device-on-disconnect-registration', err);
+                        });
                         console.log('[CloudSync] Device registered:', this.deviceId);
                         return [2 /*return*/];
                 }
@@ -706,7 +729,7 @@ var CloudSyncService = /** @class */ (function (_super) {
                         return [3 /*break*/, 5];
                     case 4:
                         error_6 = _a.sent();
-                        console.error('[CloudSync] Clipboard sync failed:', error_6);
+                        this._reportSyncError('clipboard-sync', error_6);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
@@ -738,7 +761,7 @@ var CloudSyncService = /** @class */ (function (_super) {
                         return [3 /*break*/, 5];
                     case 4:
                         error_7 = _a.sent();
-                        console.error('[CloudSync] History sync failed:', error_7);
+                        this._reportSyncError('history-sync', error_7);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
@@ -782,7 +805,7 @@ var CloudSyncService = /** @class */ (function (_super) {
                         return [3 /*break*/, 5];
                     case 4:
                         error_8 = _a.sent();
-                        console.error('[CloudSync] File sync failed:', error_8);
+                        this._reportSyncError('file-sync', error_8);
                         return [3 /*break*/, 5];
                     case 5: return [2 /*return*/];
                 }
