@@ -7,7 +7,8 @@
  *
  * Every entry carries a `group` (the directory it was found in) so consumers can
  * rebuild categorisation without re-deriving it from paths. Desktop covers
- * .ts/.tsx/.js; Flutter covers .dart.
+ * .ts/.tsx/.js (skipping `.js` files that are committed compile artifacts of a
+ * `.ts`/`.tsx` twin); Flutter covers .dart.
  *
  * Usage:
  *   node scripts/component-scanner.js           # Scan and output JSON
@@ -235,13 +236,26 @@ function scanDirectory(dir, baseDir = dir) {
       const isDesktop = dir.includes('/src/') || dir.includes('\\src\\');
       const validExts = isDesktop ? ['.ts', '.tsx', '.js'] : ['.dart'];
 
-      if (validExts.includes(ext)) {
+      if (validExts.includes(ext) && !isCompiledTwin(fullPath, ext)) {
         results.push(scanFile(fullPath, path.relative(baseDir, fullPath)));
       }
     }
   }
   
   return results;
+}
+
+/**
+ * A `.js` file whose `.ts`/`.tsx` source sits beside it is a committed compile
+ * artifact (identical doc comment behind a `"use strict";` prelude, and the
+ * project's tsconfig has `noEmit: true`, so nothing regenerates them). They are
+ * not separate components — this is what the original "no .js duplicates"
+ * exclusion was about. A `.js` with no such twin is real source and must scan.
+ */
+function isCompiledTwin(fullPath, ext) {
+  if (ext !== '.js') return false;
+  const base = fullPath.slice(0, -3);
+  return fs.existsSync(base + '.ts') || fs.existsSync(base + '.tsx');
 }
 
 /** Build one inventory entry for a file that is known to be scannable. */
@@ -321,7 +335,10 @@ function scanDesktop() {
     'auth-preload.js',
     'view_preload.js',
   ]
-    .filter((f) => fs.existsSync(path.join(ROOT_DIR, f)))
+    .filter((f) => {
+      const p = path.join(ROOT_DIR, f);
+      return fs.existsSync(p) && !isCompiledTwin(p, path.extname(p));
+    })
     .map((f) => scanFile(path.join(ROOT_DIR, f), f, 'root'));
   console.log(`   - root: ${results.root.length} files`);
   
