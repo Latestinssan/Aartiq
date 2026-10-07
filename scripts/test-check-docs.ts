@@ -380,4 +380,4 @@ if (clean.ok) {
 const total = cases.length + hCases.length + 4;
 console.log(`\n${pass}/${total} checks behaved as expected`);
 if (pass !== total) process.exitCode = 1;
-if (pass !== cases.length + 3) process.exit(1);
+if (pass !== total) process.exit(1);
