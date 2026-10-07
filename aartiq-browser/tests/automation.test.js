@@ -1,12 +1,17 @@
 const assert = require('assert');
 const path = require('path');
 
-const { automationLayer, PLATFORM } = require('../src/automation');
+const { automationLayer, PLATFORM, probeNativeTooling } = require('../src/automation');
 
-// jest-circus has no `this.skip()` (Jasmine-only). Register the OS
-// automation tests as skipped unless the native backend exists on this
-// runner (xdotool / xte absent -> unavailable -> skip, e.g. ubuntu CI).
-const automationAvailable = automationLayer.isAvailable;
+// jest-circus has no `this.skip()` (Jasmine-only), so registration is static
+// and has to happen before any beforeAll hook runs. automationLayer.isAvailable
+// only turns true inside initialize(), which beforeAll calls — reading it here
+// always yielded false, so every test below registered as it.skip on every
+// platform even with the tooling installed. probeNativeTooling() answers the
+// same question synchronously: on Linux the suite needs xdotool or xte *and* a
+// display (xdotool exits non-zero without one); the macOS AppleScript fallback
+// and the Windows backend are always available.
+const automationAvailable = probeNativeTooling();
 const itWhenAvailable = (title, fn) => (automationAvailable ? it(title, fn) : it.skip(title, fn));
 
 describe('Automation Layer', () => {

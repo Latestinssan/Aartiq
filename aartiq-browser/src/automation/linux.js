@@ -112,8 +112,19 @@ function keyTap(key, modifiers = []) {
   const keyName = keyMap[key.toLowerCase()] || key;
   
   if (useXdotool) {
-    const modCmd = modifiers.length > 0 ? `--modifiers ${modifiers.join('+')}` : '';
-    execSync(`xdotool key ${modCmd} ${keyName}`, { stdio: 'ignore' });
+    // xdotool has no --modifiers flag: modifiers go inside the keystroke
+    // itself ("ctrl+alt+n"), using the aliases alt/ctrl/shift/super/meta.
+    const modAliases = {
+      'shift': 'shift',
+      'control': 'ctrl',
+      'ctrl': 'ctrl',
+      'alt': 'alt',
+      'meta': 'meta',
+      'super': 'super',
+      'command': 'super'
+    };
+    const mods = modifiers.map((m) => modAliases[m.toLowerCase()] || m);
+    execSync(`xdotool key ${[...mods, keyName].join('+')}`, { stdio: 'ignore' });
   } else if (useXdotest) {
     const modsDown = modifiers.map(m => `keydown ${keyMap[m.toLowerCase()] || m}`).join(' ');
     const modsUp = modifiers.map(m => `keyup ${keyMap[m.toLowerCase()] || m}`).join(' ');

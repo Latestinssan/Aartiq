@@ -1,5 +1,6 @@
 const os = require('os');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const PLATFORM = process.platform;
 
@@ -146,10 +147,42 @@ class AutomationLayer {
   }
 }
 
+/**
+ * Synchronous, side-effect-free availability probe.
+ *
+ * `isAvailable` only becomes true once `initialize()` has run, and the test
+ * suite has to decide which tests to register before any beforeAll hook fires
+ * — reading `isAvailable` at module scope therefore always said false and the
+ * whole OS-automation suite registered as skipped on every platform, whatever
+ * tooling was installed. This answers the same question at module scope.
+ */
+function probeNativeTooling() {
+  if (PLATFORM === 'linux') {
+    // linux.js adopts the backend only when xdotool or xte exists, and every
+    // action shells out to the X server: without DISPLAY the child exits
+    // non-zero and the call fails closed. Tooling and a display are both
+    // required, so a headless box reports unavailable and the tests skip.
+    try {
+      execSync('which xdotool', { stdio: 'ignore' });
+      return Boolean(process.env.DISPLAY);
+    } catch {}
+    try {
+      execSync('which xte', { stdio: 'ignore' });
+      return Boolean(process.env.DISPLAY);
+    } catch {}
+    return false;
+  }
+  // macOS always adopts a backend — native binary, steve CLI, or the
+  // AppleScript fallback, whose actions catch their own errors — and win.js
+  // returns true from initialize() on every path.
+  return PLATFORM === 'darwin' || PLATFORM === 'win32';
+}
+
 const automationLayer = new AutomationLayer();
 
 module.exports = { 
   AutomationLayer, 
   automationLayer, 
-  PLATFORM 
+  PLATFORM,
+  probeNativeTooling
 };
