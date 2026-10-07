@@ -8,6 +8,7 @@ on:
       - 'aartiq-browser/src/components/**/*.ts'
       - 'aartiq-browser/src/lib/**/*.ts'
       - 'aartiq-browser/scripts/component-scanner.js'
+      - 'flutter_browser_app/lib/**/*.dart'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +34,7 @@ jobs:
 
       - name: Run component scanner
         working-directory: aartiq-browser
-        run: node scripts/component-scanner.js --update
+        run: node scripts/component-scanner.js --all
 
       - name: Checkout Landing Page repo
         uses: actions/checkout@v4
