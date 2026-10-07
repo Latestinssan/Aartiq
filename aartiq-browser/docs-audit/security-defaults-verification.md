@@ -7,6 +7,21 @@ function it came from.
 This document deliberately describes weaknesses at the level needed to fix them.
 It contains no exploitation steps and no payloads.
 
+> **Status — updated after the known-limits fixes.** This is a Phase A0
+> snapshot: it records what the code did *before* the changes catalogued here,
+> and several findings have since been fixed. It stays verbatim as the record
+> of what was found — **it is not a description of the current state.**
+>
+> | Finding here | Current state |
+> | --- | --- |
+> | §1 WiFi sync binds every interface by omission | loopback default with `AARTIQ_WIFI_SYNC_HOST` to widen it; foreign Origins/Hosts refused; every sync action requires the device's access token (#27) |
+> | §2 tokens regenerated on every start | session tokens persist in mode-0600 files — `~/.aartiq-mcp-token`, `~/.aartiq-agent-token`, `~/.aartiq-token` (#28); the `mcp-remote` URL-token carrier was replaced by an Authorization header (#29) |
+> | §4 startup `SHELL_LOW`/`SHELL_MEDIUM` grants | removed by Part A itself; auto-approval is the opt-in `autoApproveLowRiskShell`, default off |
+> | §6 and row 11: "Allow Always" keys on the first word, with no lifetime | keyed on the full normalised command line, and every grant expires after 30 days with an audit-logged sweep (#30) |
+>
+> Current claims live in the README's SSOT marker blocks; what remains open or
+> was closed is tracked in `docs-audit/issues/`.
+
 ---
 
 ## 1. Listeners, bind addresses, and what causes a wide bind
@@ -197,6 +212,10 @@ network-capable or script-capable command is "low", because "low" is unreachable
 
 ## 6. Where "Allow Always" is stored, and what it keys on
 
+> Superseded: the quotes below are the Phase A0 first-word keying. Grants are
+> now keyed on the full normalised command line and expire after 30 days — see
+> the status table at the top.
+
 Two independent stores, both keyed on the **first word only**.
 
 **Session grants — `PermissionStore`, checked by `checkShellPermission`:**
@@ -246,7 +265,7 @@ coarser than the UI implies.
 | 8 | Startup grants `SHELL_LOW` and `SHELL_MEDIUM` unconditionally | `main.js` `permissionStore.load().then(...)` | removed; replaced by the opt-in `autoApproveLowRiskShell` setting |
 | 9 | Grant comment claims no disk persistence; `grant()` calls `_save()` | `PermissionStore.grant` / `_save` | comment corrected |
 | 10 | `getShellRisk` never returns `low` | `SecurityValidator.getShellRisk` | per-command tier table in one data file, consumed by classifier and docs |
-| 11 | "Allow Always" keys on first word, in two stores | `checkShellPermission`, `PermissionStore._normalizeCommand` | bind to a normalized full pattern; suppress Always for network/script-capable commands |
+| 11 | "Allow Always" keys on first word, in two stores | `checkShellPermission`, `PermissionStore._normalizeCommand` | bind to a normalized full pattern; suppress Always for network/script-capable commands — shipped; grants additionally gained a 30-day lifetime (#30) |
 
 Items 8 through 11 change user-visible behaviour and are recorded in the release note
 per A3. Item 10 introduces a real `low` tier, which means the `SHELL_LOW` path becomes

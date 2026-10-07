@@ -1,7 +1,7 @@
 # Background task service binds 0.0.0.0
 
 **Label:** security
-**Status:** open — bind default fixed (loopback + env opt-in, no wildcard CORS); credential (token / `Host` / `Origin`) still missing
+**Status:** partially resolved — bind fixed (loopback + env opt-in, no wildcard CORS); token and Host checks shipped; explicit `Origin` rejection remains open
 
 ## Summary
 
@@ -35,7 +35,7 @@ gate means deciding how the service receives the credential.
 - If it is, make it an explicit setting that defaults to loopback, mirroring
   `resolveBindHost` in `src/lib/local-server-auth.js`.
 - Whatever the bind, add the token, `Host` and `Origin` checks this service
-  currently lacks. It serves files, so an unauthenticated read is a disclosure
+  lacked. It serves files, so an unauthenticated read is a disclosure
   and not only a state change.
 - Document the answer on the security page's network table either way, so the
   published list of listeners matches the code.
@@ -51,7 +51,18 @@ all. The default, the opt-in, and the missing header are pinned by
 `docs-audit/mutation-check-network-hardening.txt`. The README network table
 and the landing SSOT were updated in the same change.
 
-**Token / `Host` / `Origin` — still open.** This service is a separate
-Electron app, so the per-process token in `local-server-auth.js` does not
-reach it as written. Deciding how it would receive a credential is a
-maintainer decision and was not made here.
+**Token / `Host` — fixed.** The service now owns its credential, which was the
+open question above: `pdf-sync.js` takes `options.authToken` or
+`AARTIQ_PDF_SYNC_TOKEN` (falling back to a generated token for the process) and
+requires it on all file endpoints, accepted as `Authorization: Bearer`,
+`X-Artiq-Token` or `?token=` and compared in constant time. Requests pass a
+Host allow-list first — loopback names plus the resolved service host, 403 on
+anything else, 401 on a missing or wrong token. The main process's
+`local-server-auth.js` token remains out of scope for this separate app; the
+credential is the service's own.
+
+**`Origin` — still open.** There is no explicit request-Origin rejection: the
+listener sends no `Access-Control-Allow-Origin` header at all, so a browser
+gets no cross-origin read, and non-browser access is gated by Host + token.
+Whether a direct foreign-`Origin` request should also be refused is the
+maintainer decision this issue was always waiting on.
