@@ -151,10 +151,11 @@ function build(): GeneratedShellTiers {
       scope: "the full normalised command line",
       note:
         "Keyed on the whole command, not the first word. Eligibility is an allow-list, " +
-        "not a deny-list: a permanent grant requires a binary that appears in the table " +
+        "not a deny-list: an Allow Always grant requires a binary that appears in the table " +
         "below, so a binary we have never classified is offered Allow Once only. Withheld " +
         "also for network-capable, script-capable and destructive commands, and for any " +
-        "command with a URL in its arguments. Allow Once is always available.",
+        "command with a URL in its arguments. Every grant expires after 30 days and the " +
+        "dialog asks again. Allow Once is always available.",
       neverEligible: [...tiers.NEVER_ALWAYS_ELIGIBLE].sort(),
     },
     blockedCommands: [...tiers.BLOCKED_COMMANDS].sort(),
