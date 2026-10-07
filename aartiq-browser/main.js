@@ -350,6 +350,7 @@ const webSearchProvider = new WebSearchProvider();
 
 // Handler modules (src/main/handlers/) — modular IPC handler registration
 const { registerAllHandlers } = require('./src/main/handlers/index.js');
+const { registerPermissionRoutes } = require('./src/lib/native-bridge-permission-routes');
 
 // Core modules - Architecture refactoring (extracted from main.js)
 const { NetworkSecurityManager } = require('./src/core/network-security.js');
@@ -1733,58 +1734,12 @@ const startNativeMacUiBridge = () => {
     });
 
     // ── Permissions ──
-
-    bridgeApp.get('/native-mac-ui/permissions', (_req, res) => {
-      try {
-        const permStorePath = require('path').join(app.getPath('userData'), 'comet-permissions.json');
-        const secSettingsPath = require('path').join(app.getPath('userData'), 'comet-security-settings.json');
-        let permissions = {};
-        let securitySettings = {};
-        if (fs.existsSync(permStorePath)) {
-          permissions = JSON.parse(fs.readFileSync(permStorePath, 'utf-8'));
-        }
-        if (fs.existsSync(secSettingsPath)) {
-          securitySettings = JSON.parse(fs.readFileSync(secSettingsPath, 'utf-8'));
-        }
-        res.json({ permissions, securitySettings });
-      } catch (e) {
-        res.json({ permissions: {}, securitySettings: {}, error: e.message });
-      }
-    });
-
-    bridgeApp.post('/native-mac-ui/permissions/grant', (req, res) => {
-      const { key, level, description } = req.body || {};
-      if (!key) return res.status(400).json({ error: 'Missing key' });
-      try {
-        const permStorePath = require('path').join(app.getPath('userData'), 'comet-permissions.json');
-        let permissions = {};
-        if (fs.existsSync(permStorePath)) {
-          permissions = JSON.parse(fs.readFileSync(permStorePath, 'utf-8'));
-        }
-        permissions[key] = { level: level || 'read', description: description || '', granted_at: Date.now() };
-        fs.writeFileSync(permStorePath, JSON.stringify(permissions, null, 2));
-        res.json({ granted: key });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
-
-    bridgeApp.post('/native-mac-ui/permissions/revoke', (req, res) => {
-      const { key } = req.body || {};
-      if (!key) return res.status(400).json({ error: 'Missing key' });
-      try {
-        const permStorePath = require('path').join(app.getPath('userData'), 'comet-permissions.json');
-        let permissions = {};
-        if (fs.existsSync(permStorePath)) {
-          permissions = JSON.parse(fs.readFileSync(permStorePath, 'utf-8'));
-        }
-        delete permissions[key];
-        fs.writeFileSync(permStorePath, JSON.stringify(permissions, null, 2));
-        res.json({ revoked: key });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
-      }
-    });
+    //
+    // Backed by PermissionStore — see src/lib/native-bridge-permission-routes.js.
+    // Writing comet-permissions.json directly left the loaded store unaware:
+    // the gate ignored bridge grants until a restart, and the store's next
+    // save overwrote them.
+    registerPermissionRoutes(bridgeApp, permissionStore);
 
     // ── Automation / Scheduling ──
 
