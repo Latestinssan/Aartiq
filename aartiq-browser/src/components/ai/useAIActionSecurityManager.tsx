@@ -13,7 +13,7 @@ import {
 } from '@/lib/ai-action-security';
 // The eligibility rule lives in the same module the main-process classifier
 // reads, so the dialog cannot offer a grant the store would refuse to record.
-import { alwaysApprovalEligibility } from '@/lib/shell-command-tiers';
+import { alwaysApprovalEligibility, ALWAYS_GRANT_TTL_MS } from '@/lib/shell-command-tiers';
 
 interface PermissionContext {
   actionType: string;
@@ -693,6 +693,7 @@ export function useAIActionSecurityManager() {
             <button
               type="button"
               disabled={shellPermissionLoading}
+              title={`Auto-approves this exact command for ${Math.round(ALWAYS_GRANT_TTL_MS / (24 * 60 * 60 * 1000))} days — after that the dialog asks again. The grant is listed with its expiry under Settings → Permissions.`}
               onClick={() => {
                 setShellPermissionLoading(true);
                 window.electronAPI?.respondShellPermission?.(shellPermissionRequest.requestId, true, true);
@@ -706,7 +707,7 @@ export function useAIActionSecurityManager() {
           ) : (
             <div
               className="flex-1 rounded-lg border border-[color-mix(in_srgb,var(--border-color)_65%,transparent)] px-4 py-2.5 text-center text-[11px] leading-tight text-secondary-text/70"
-              title="A permanent grant is not offered for this command. Commands that reach the network, run other applications, or change permissions would carry that authority into every later invocation you did not see."
+              title="An Allow Always grant is not offered for this command. Commands that reach the network, run other applications, or change permissions would carry that authority into every later invocation you did not see."
             >
               Always Allow unavailable
               <span className="block text-[10px] opacity-70">

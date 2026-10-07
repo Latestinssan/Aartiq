@@ -6,6 +6,7 @@ const {
   normalizeCommandPattern,
   alwaysApprovalEligibility,
   isAutoApproveEligibleTier,
+  ALWAYS_GRANT_TTL_MS,
 } = require('./shell-command-tiers');
 
 const {
@@ -78,6 +79,10 @@ class PermissionStore {
       requireBiometricPerSession: true,
       autoApprovedCommands: [],
       autoApprovedActions: [],
+      // Parallel to autoApprovedCommands: same keys, plus the lifetime each
+      // grant was given. Strings stay strings so every existing consumer —
+      // IPC payloads, the settings panel, stored files — is unchanged.
+      autoApprovedCommandGrants: {},
       allowedDirectories: [...DEFAULT_ALLOWED_DIRECTORIES],
     };
     this.autoApprovedCommands = new Set();
@@ -122,6 +127,7 @@ class PermissionStore {
         this.settings = { ...this.settings, ...settings };
         this._syncAutoApprovedCommands();
         this._migrateLegacyAutoApprovedCommands();
+        this._reconcileAutoCommandGrants();
         this._syncAutoApprovedActions();
         this._checkBroadGrantsMigration();
       } else {
@@ -182,13 +188,112 @@ class PermissionStore {
         this.logAudit(`settings.dropLegacyAutoApprovedCommand: ${normalized} (${verdict.reason})`);
         console.warn(
           `[PermissionStore] Dropped a stored "Always" grant for "${normalized}" — ${verdict.reason}. ` +
-          'A permanent grant is no longer offered for this command; answer Allow Once, or ' +
+          'An Allow Always grant is no longer offered for this command; answer Allow Once, or ' +
           're-approve it if the exact command should be allowed to repeat.',
         );
       }
     }
     this.autoApprovedCommands = new Set([...current, ...legacy]);
     this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
+  }
+
+  /** The grant-lifetime map; self-healing if a stored settings file lacks it. */
+  _autoCommandGrants() {
+    if (
+      !this.settings.autoApprovedCommandGrants ||
+      typeof this.settings.autoApprovedCommandGrants !== 'object'
+    ) {
+      this.settings.autoApprovedCommandGrants = {};
+    }
+    return this.settings.autoApprovedCommandGrants;
+  }
+
+  /** Copy of the grant lifetimes, for the IPC surface and the settings panel. */
+  getAutoCommandGrantRecords() {
+    return { ...this._autoCommandGrants() };
+  }
+
+  /**
+   * Give every stored grant its clock, and sweep the ones whose clock ran out.
+   *
+   * Grants written before lifetimes existed (plain strings) get a full first
+   * lifetime starting at this load — expiring them all at once would revoke
+   * every user's approvals in a single release for a policy they never saw.
+   * Records whose grant is gone, or whose expiry has passed, are removed with
+   * an audit line; nothing is dropped silently.
+   */
+  _reconcileAutoCommandGrants() {
+    const grants = this._autoCommandGrants();
+    const now = Date.now();
+    let changed = false;
+
+    for (const key of this.autoApprovedCommands) {
+      const record = grants[key];
+      if (
+        !record ||
+        typeof record.granted_at !== 'number' ||
+        typeof record.expires_at !== 'number'
+      ) {
+        grants[key] = { granted_at: now, expires_at: now + ALWAYS_GRANT_TTL_MS };
+        this.logAudit(
+          `settings.autoApprovedCommandGrantBackfilled: ${key} (expires ${new Date(now + ALWAYS_GRANT_TTL_MS).toISOString()})`,
+        );
+        changed = true;
+      }
+    }
+
+    for (const [key, record] of Object.entries(grants)) {
+      if (!this.autoApprovedCommands.has(key)) {
+        delete grants[key];
+        changed = true;
+      } else if (now > record.expires_at) {
+        delete grants[key];
+        this.autoApprovedCommands.delete(key);
+        this.logAudit(
+          `settings.expireAutoApprovedCommand: ${key} (expired ${new Date(record.expires_at).toISOString()})`,
+        );
+        console.warn(
+          `[PermissionStore] "Allow Always" grant expired for "${key}" — the approval dialog will ask again.`,
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
+      this._saveSettings();
+    }
+  }
+
+  /**
+   * True when the key's grant has run out. The sweep in load() normally gets
+   * there first; this covers a grant that expires while the process is
+   * running, and a settings file edited under us. A granted key with no
+   * record (a hand-edited file) gets a fresh first lifetime rather than
+   * silently losing an approval that is still there in plain sight.
+   */
+  _autoCommandGrantExpired(key) {
+    const grants = this._autoCommandGrants();
+    const record = grants[key];
+    const now = Date.now();
+    if (!record || typeof record.expires_at !== 'number') {
+      grants[key] = { granted_at: now, expires_at: now + ALWAYS_GRANT_TTL_MS };
+      this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
+      this._saveSettings();
+      return false;
+    }
+    if (now <= record.expires_at) return false;
+    delete grants[key];
+    this.autoApprovedCommands.delete(key);
+    this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
+    this.logAudit(
+      `settings.expireAutoApprovedCommand: ${key} (expired ${new Date(record.expires_at).toISOString()})`,
+    );
+    console.warn(
+      `[PermissionStore] "Allow Always" grant expired for "${key}" — the approval dialog will ask again.`,
+    );
+    this._saveSettings();
+    return true;
   }
 
   _syncAutoApprovedActions() {
@@ -219,10 +324,18 @@ class PermissionStore {
   setAutoCommand(command, enabled) {
     const key = this._normalizeCommand(command);
     if (!key) return;
+    const grants = this._autoCommandGrants();
     if (enabled) {
       this.autoApprovedCommands.add(key);
+      // A grant is not permanent: it carries the clock that will bring the
+      // user back to the dialog. See ALWAYS_GRANT_TTL_MS in shell-command-tiers.
+      grants[key] = {
+        granted_at: Date.now(),
+        expires_at: Date.now() + ALWAYS_GRANT_TTL_MS,
+      };
     } else {
       this.autoApprovedCommands.delete(key);
+      delete grants[key];
     }
     this.settings.autoApprovedCommands = [...this.autoApprovedCommands];
     this._saveSettings();
@@ -465,7 +578,14 @@ class PermissionStore {
 
   canAutoExecute(command, riskLevel) {
     const key = this._normalizeCommand(command);
-    if (this.autoApprovedCommands.has(key)) return true;
+    if (this.autoApprovedCommands.has(key)) {
+      if (this._autoCommandGrantExpired(key)) {
+        // The grant outlived its lifetime: it is gone, and only the opt-in
+        // low-tier fallback can still auto-approve this command.
+        return this.isShellAutoExecutable(riskLevel);
+      }
+      return true;
+    }
     return this.isShellAutoExecutable(riskLevel);
   }
 

@@ -402,17 +402,19 @@ function normalizeCommandPattern(command) {
  * Whether "Allow Always" may be offered for a command, and why not if it may
  * not. Returns `{ eligible, reason }`.
  *
- * The rule is allow-list, not deny-list: a permanent grant requires a binary we
- * have classified. `NEVER_ALWAYS_ELIGIBLE` alone let anything absent from it
- * through, including a binary nobody has heard of — which is exactly the one
- * whose behaviour cannot be described to the user before they grant it forever.
+ * The rule is allow-list, not deny-list: an Allow Always grant requires a
+ * binary we have classified. `NEVER_ALWAYS_ELIGIBLE` alone let anything absent
+ * from it through, including a binary nobody has heard of — which is exactly
+ * the one whose behaviour cannot be described to the user before they let it
+ * repeat.
  * Such a command is `medium` because we know nothing about it, and the same
  * ignorance is why "Allow Once" is the strongest answer available for it.
  *
  * Membership in the tier table is what establishes that we know what a binary
  * does. It is a weaker signal than knowing a binary is safe, and a `medium` entry
- * can still be granted: `cp`, `mv`, `mkdir` and `touch` keep exact-match permanent
- * grants, because the effect of repeating them is visible in the dialog text.
+ * can still be granted: `cp`, `mv`, `mkdir` and `touch` keep exact-match Always
+ * grants — which expire after ALWAYS_GRANT_TTL_MS — because the effect of
+ * repeating them is visible in the dialog text.
  */
 function alwaysApprovalEligibility(command) {
   const binary = extractBaseBinary(command);
@@ -431,6 +433,22 @@ function alwaysApprovalEligibility(command) {
   }
   return { eligible: true, reason: null };
 }
+
+/**
+ * How long an "Allow Always" grant lasts before the dialog asks again.
+ *
+ * A grant cannot model the situation it was granted in: the directory a
+ * `grep` walks and the files a `mkdir` creates change after the approval, so a
+ * grant that never expires outlives the reason it was given. Every stored
+ * grant therefore carries `granted_at`/`expires_at`, an expired one is swept
+ * with an audit line, and the next run of the command reopens the dialog.
+ *
+ * 30 days is a credential-style lifetime: long enough that approving is not a
+ * weekly ritual, short enough that "Always" cannot be read as "permanent".
+ * Eligibility and lifetime both live in this file so the dialog, the grant
+ * recorder and the gate keep reading one policy.
+ */
+const ALWAYS_GRANT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** True only for `low`. The single condition any auto-approval must check. */
 function isAutoApproveEligibleTier(tier) {
@@ -455,5 +473,6 @@ module.exports = {
   classifyShellCommand,
   normalizeCommandPattern,
   alwaysApprovalEligibility,
+  ALWAYS_GRANT_TTL_MS,
   isAutoApproveEligibleTier,
 };

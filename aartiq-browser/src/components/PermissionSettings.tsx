@@ -80,6 +80,8 @@ type SecuritySettings = {
   requireBiometricEveryTime: boolean;
   autoApprovedCommands: string[];
   autoApprovedActions: string[];
+  /** Same keys as autoApprovedCommands, plus each grant's lifetime. */
+  autoApprovedCommandGrants: Record<string, { granted_at: number; expires_at: number }>;
 };
 
 const DEFAULT_SETTINGS: SecuritySettings = {
@@ -91,6 +93,7 @@ const DEFAULT_SETTINGS: SecuritySettings = {
   requireBiometricEveryTime: false,
   autoApprovedCommands: [],
   autoApprovedActions: [],
+  autoApprovedCommandGrants: {},
 };
 
 /**
@@ -103,6 +106,18 @@ const DEFAULT_SETTINGS: SecuritySettings = {
  */
 function normalizeCommandKey(command: string) {
   return normalizeCommandPattern(command);
+}
+
+/**
+ * Remaining lifetime of a grant, as shown on its chip: "12d left", "expired",
+ * or nothing when the store has no record for it.
+ */
+function grantLifetimeText(record?: { granted_at: number; expires_at: number }) {
+  if (!record || typeof record.expires_at !== 'number') return null;
+  const remainingMs = record.expires_at - Date.now();
+  if (remainingMs <= 0) return 'expired';
+  const days = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+  return days === 1 ? '1d left' : `${days}d left`;
 }
 
 function actionIcon(actionType: string) {
@@ -160,6 +175,7 @@ const PermissionSettings = () => {
           autoApprovedActions: Array.isArray(nextSettings.autoApprovedActions)
             ? nextSettings.autoApprovedActions.map((action) => normalizeActionType(action))
             : [],
+          autoApprovedCommandGrants: nextSettings.autoApprovedCommandGrants || {},
         });
       }
 
@@ -768,22 +784,37 @@ const PermissionSettings = () => {
           {settings.autoApprovedCommands.length === 0 ? (
             <span className="text-[11px] text-white/40">No custom shell command overrides configured yet.</span>
           ) : (
-            settings.autoApprovedCommands.map((command) => (
-              <span
-                key={command}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-xs font-mono text-sky-300"
-              >
-                <span>{command}</span>
-                <button
-                  type="button"
-                  onClick={() => void toggleAutoCommand(command)}
-                  className="p-0.5 hover:text-red-400 text-white/40 transition-colors"
-                  title={`Remove ${command} from auto-approve list`}
+            settings.autoApprovedCommands.map((command) => {
+              const lifetime = grantLifetimeText(settings.autoApprovedCommandGrants[command]);
+              return (
+                <span
+                  key={command}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-xs font-mono text-sky-300"
                 >
-                  <Trash2 size={12} />
-                </button>
-              </span>
-            ))
+                  <span>{command}</span>
+                  {lifetime && (
+                    <span
+                      className="text-[10px] opacity-70"
+                      title={
+                        lifetime === 'expired'
+                          ? 'This grant has expired; the approval dialog will ask again.'
+                          : `Auto-approval ends after this; the dialog asks again then.`
+                      }
+                    >
+                      · {lifetime}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void toggleAutoCommand(command)}
+                    className="p-0.5 hover:text-red-400 text-white/40 transition-colors"
+                    title={`Remove ${command} from auto-approve list`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </span>
+              );
+            })
           )}
         </div>
 

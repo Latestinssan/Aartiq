@@ -151,6 +151,13 @@ module.exports = function registerPermissionHandlers(ipcMain, handlers) {
       requireBiometricEveryTime: !!storeSettings.requireBiometricEveryTime,
       autoApprovedCommands: Array.isArray(storeSettings.autoApprovedCommands) ? storeSettings.autoApprovedCommands : [],
       autoApprovedActions: Array.isArray(storeSettings.autoApprovedActions) ? storeSettings.autoApprovedActions : [],
+      // Grant lifetimes, keyed by the same command strings. Read-only for the
+      // renderer: security-settings-update whitelists its fields, so a stale
+      // round-trip can never rewrite or erase a grant's clock.
+      autoApprovedCommandGrants:
+        storeSettings.autoApprovedCommandGrants && typeof storeSettings.autoApprovedCommandGrants === 'object'
+          ? storeSettings.autoApprovedCommandGrants
+          : {},
       allowedDirectories: permissionStore?.getAllowedDirectories?.() || [],
     };
   });
