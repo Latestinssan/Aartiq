@@ -18,6 +18,7 @@
     "start": "npx serve@latest out",
     "lint": "eslint",
     "test": "jest",
+    "bench": "node bench/run.js",
     "test:extraction": "jest tests/extraction.test.js",
     "test:extraction:live": "electron tests/live-extraction-test.js",
     "test:watch": "jest --watch",
