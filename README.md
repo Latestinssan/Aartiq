@@ -69,15 +69,15 @@ Actions that require approval are presented before execution with information ab
 
 ### Risk-Based Permissions
 
-Risk tiers are assigned to the capability being invoked, not inferred from the wording of the prompt. They are advisory labels — the control that actually confines execution is OS sandboxing. Read the last column before relying on any row.
+Risk tiers are assigned to the capability being invoked, not inferred from the wording of the prompt. They are advisory labels — the control that actually confines execution is OS sandboxing. What each tier does *not* guarantee is stated on the [Security Model page](https://aartiq.ponsrischool.in/docs/security), which carries the full table.
 
 <!-- SSOT:START risk-table -->
-| Tier | Approval behaviour | Auto-approved? | Examples | What it does not guarantee |
-| --- | --- | --- | --- | --- |
-| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` | The setting covers the whole low tier rather than named commands, so turning it on is a decision about a category. It is also independent of the MCP tool path: shell commands read autoApproveLowRiskShell from the permission store, MCP tool calls read a separate security_autoApproveLowRisk key, both default to off, and enabling one does not enable the other. |
-| **medium** | Asked every time. autoApproveMidRisk does not reach shell commands — it still applies to MCP tool actions, which is a separate question. | No. There is no setting that auto-approves a medium shell command. | `cp`, `mv`, `mkdir`, `touch`, `npm`, `git`, `node`, `python`, `curl`, `wget`, `osascript` | An unrecognised command lands here rather than in low, so this tier also means "we have never heard of it". "Allow Always" is withheld for network-capable and script-capable binaries, but a local write like cp or mkdir can still take an exact-match Always grant — valid for 30 days. |
-| **high** | Asked every time, then offered as Allow Once / Always / Deny. | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` | An Allow Always grant is never offered for a destructive command, so the Always button is absent here and Allow Once is the strongest answer available. `chmod` sits in this tier because it matches a destructive pattern, not because it is privileged in the usual sense — it was already high and moving it down would have weakened a default. |
-| **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Refused before the grant store and the auto-approve settings are consulted, and unreachable from every one of them. | _none assigned by any registry_ | No command in the tier table is assigned this tier. It is only synthesised at runtime for commands arriving from a remote device. Remote-origin shell execution strictly requires single-use, input-hash-bound QR+PIN ticket redemption. |
+| Tier | Approval behaviour | Auto-approved? | Examples |
+| --- | --- | --- | --- |
+| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` |
+| **medium** | Asked every time. autoApproveMidRisk does not reach shell commands — it still applies to MCP tool actions, which is a separate question. | No. There is no setting that auto-approves a medium shell command. | `cp`, `mv`, `mkdir`, `touch`, `npm`, `git`, `node`, `python`, `curl`, `wget`, `osascript` |
+| **high** | Asked every time, then offered as Allow Once / Always / Deny. | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` |
+| **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Refused before the grant store and the auto-approve settings are consulted, and unreachable from every one of them. | _none assigned by any registry_ |
 <!-- SSOT:END risk-table -->
 
 For the complete command catalog, risk assignments, and implementation details:
@@ -105,17 +105,17 @@ The security model, including which layers actually enforce and which only advis
 <!-- SSOT:START layers -->
 The model has 6 layers. Only 2 of them are enforcement boundaries in the strict sense — controls the OS applies that application code cannot bypass. The rest are policy and first-pass checks, and are labelled as such rather than presented as equally strong.
 
-| # | Layer | Strength | Source |
-| --- | --- | --- | --- |
-| 1 | Visual Sandbox & SecureDOM | heuristic/first-pass | `src/lib/Security.ts` |
-| 2 | Syntactic Firewall | heuristic/first-pass | `src/lib/SecurityValidator.js` |
-| 3 | Human-in-the-Loop Approval | policy layer | `src/core/capability-controller.js, src/core/shell-permission-bridge.js` |
-| 4 | Directory Allowlist | policy layer | `src/core/directory-allowlist.js` |
-| 5 | OS-Level Sandboxing | enforcement boundary | `src/core/sandbox-executor.js` |
-| 6 | Capability-Scoped Execution | enforcement boundary | `src/core/capability-controller.js, src/core/approval-ticket-manager.js` |
+| # | Layer | Strength |
+| --- | --- | --- |
+| 1 | Visual Sandbox & SecureDOM | heuristic/first-pass |
+| 2 | Syntactic Firewall | heuristic/first-pass |
+| 3 | Human-in-the-Loop Approval | policy layer |
+| 4 | Directory Allowlist | policy layer |
+| 5 | OS-Level Sandboxing | enforcement boundary |
+| 6 | Capability-Scoped Execution | enforcement boundary |
 <!-- SSOT:END layers -->
 
-The full model — risk levels, layer-by-layer detail, encryption & vault migration, and remote-device security — is documented on the [Security Model page](https://aartiq.ponsrischool.in/docs/security).
+The full model — risk levels, layer-by-layer detail, encryption & vault migration, remote-device security, and the Windows AppContainer sandbox with its audit report — is documented on the [Security Model page](https://aartiq.ponsrischool.in/docs/security).
 
 ### Continuous integration
 
@@ -126,50 +126,29 @@ Manual dispatch only. There is no push or pull_request trigger, so a green run i
 
 Latest green run: [#37621797787](https://github.com/Latestinssan/Aartiq/actions/runs/37621797787) (run #75, `workflow_dispatch`, 2026-10-07, `029cc82c`, success).
 
-| Job | Runner | Passed | Skipped | Failed | Declared |
-| --- | --- | --- | --- | --- | --- |
-| Run Jest (aartiq-browser) | `ubuntu-latest` | 1395 | 40 | 0 | 1435 |
-| Run Jest (Windows AppContainer sandbox runtime) | `windows-latest` | 61 | 30 | 0 | 91 |
-| Run Jest (macOS Seatbelt sandbox runtime) | `macos-latest` | 105 | 0 | 0 | 105 |
-| Run Jest (Linux bubblewrap sandbox runtime) | `ubuntu-latest` | 57 | 21 | 0 | 78 |
-
 **5 jobs.** All five jobs were green on the run above — the four Jest jobs tabled here plus a typecheck job (tsc --noEmit) that reports no test counts. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
 Test counts are generated, not typed. On macOS (local) the full suite reports **1409 passed / 26 skipped / 0 failed of 1435 declared** (generated 2026-10-07).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
-### Skip breakdown — macOS (local), 2026-10-07
-
-| Reason | Skipped | Evidence |
-| --- | --- | --- |
-| Platform-skipped | 12 | linux-bwrap-sandbox requires linux; generated on darwin; windows-job-sandbox requires win32; generated on darwin |
-| Missing native OS-automation tooling | 11 | automation — tests registered via itWhenAvailable, skipped when the backend is absent (looks for xdotool, xte). Reason in file: "jest-circus has no `this.skip()` (Jasmine-only). Register the OS // automation tests as skipped unless the native backend exists on this // runner (xdotool / xt" |
-| CRX3 signature-verifier bug | 3 | src/tests/extensions.crx-verifier.test.ts — describe.skip |
+> Per-job results and the skip breakdown for this run live on the [testing page](https://aartiq.ponsrischool.in/docs/testing#ci-run).
 <!-- SSOT:END ci -->
 
 The suite covers approval gating, params-hash verification, fail-closed sandboxing, directory allowlists, capability scoping, and agent token-binding.
-
-### Windows sandboxing
-
-AppContainer + Job Object sandboxing on Windows shipped in the previous release, v0.3.7: AppContainer adds OS-layer isolation — filesystem via package-SID ACL grants and network via zero capabilities — by starting the target with `CreateProcessW` in a suspended state inside the AppContainer and applying the Job Object at creation, so nothing runs even momentarily unsandboxed. Before that release the Job Object confined processes only.
-
-* **CI-verified on real Windows** (`windows-latest`): the runtime matrix passes — suspended AppContainer start, OS-enforced ACL allowlist, verified job assignment, grandchild containment, secret isolation, and `KILL_ON_JOB_CLOSE` all return verified sandbox results.
-* **Audited:** design + source review in [`Audit Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md`](Audit%20Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md).
-* **Fail-closed:** any policy or setup failure returns a structured `SANDBOX_*` error; there is no fallback path that runs the command unsandboxed.
 
 ### Network listeners
 
 Every socket the application opens, and what actually protects it:
 
 <!-- SSOT:START network -->
-| Service | Port | Default bind address | Reachable from LAN when | Authentication |
-| --- | --- | --- | --- | --- |
-| MCP browser bridge | 3001 | `127.0.0.1` | the security_mcpBridgeRemote setting is exactly true (defaults to false; no UI control sets it) | A token required on every route including SSE, read-or-created in ~/.aartiq-mcp-token (mode 0600) so a configured client survives restarts. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
-| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | the phone reaches this over the LAN, so all interfaces is the default; `AARTIQ_WIFI_SYNC_HOST` narrows the bind to an address you name (127.0.0.1 closes it to this machine) | Short-lived 15-minute access tokens and 7-day refresh tokens bound to device ID. Every sync action — unpair included — requires an active, unexpired token, with brute-force lockout. The WebSocket upgrade itself refuses foreign Origins and Host headers that do not name this machine (DNS rebinding). |
-| Native macOS / CLI bridge | 46203 | `127.0.0.1` | never — the host is a literal in the source, not a switch anyone can flip | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
-| Agent API tool server | 46204 | `127.0.0.1` | config.remote === true (defaults to false; no UI, env var, or IPC path sets it) | A token required on every HTTP route, read-or-created in ~/.aartiq-agent-token (mode 0600) so an agent configured once keeps working across restarts, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
-| Background task service (separate Electron app) | 3999 | `127.0.0.1` | AARTIQ_SERVICE_HOST is set to a routable address (defaults to 127.0.0.1; no switch in the app) | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) compared in constant time against the service token (options.authToken, AARTIQ_PDF_SYNC_TOKEN, or a generated per-process token), plus Host header validation against DNS rebinding. |
+| Service | Port | Default bind address | Authentication |
+| --- | --- | --- | --- |
+| MCP browser bridge | 3001 | `127.0.0.1` | A token required on every route including SSE, read-or-created in ~/.aartiq-mcp-token (mode 0600) so a configured client survives restarts. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
+| WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | Short-lived 15-minute access tokens and 7-day refresh tokens bound to device ID. Every sync action — unpair included — requires an active, unexpired token, with brute-force lockout. The WebSocket upgrade itself refuses foreign Origins and Host headers that do not name this machine (DNS rebinding). |
+| Native macOS / CLI bridge | 46203 | `127.0.0.1` | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
+| Agent API tool server | 46204 | `127.0.0.1` | A token required on every HTTP route, read-or-created in ~/.aartiq-agent-token (mode 0600) so an agent configured once keeps working across restarts, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
+| Background task service (separate Electron app) | 3999 | `127.0.0.1` | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) compared in constant time against the service token (options.authToken, AARTIQ_PDF_SYNC_TOKEN, or a generated per-process token), plus Host header validation against DNS rebinding. |
 <!-- SSOT:END network -->
 
 One of these binds all interfaces by default with no switch to restrict it. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
@@ -195,10 +174,10 @@ One of these binds all interfaces by default with no switch to restrict it. If y
 
 ## Capabilities
 
-- **Agent API & tool server** — one security-enforced tool registry over two transports: **MCP** for clients such as Claude Desktop, and **HTTP** for local scripts, the in-product assistant, and remote access over Tailscale / LAN. Both pass every call through the security pipeline.
-- **Multiple agents, one browser** — each connection is registered with a trust level that scopes its verbs and origins, and a per-tab lock manager stops two agents colliding on form filling.
-- **Accessibility snapshots with stable `@ref` ids** — agents receive an AX tree whose interactive nodes carry identity-bound ids that stay stable across navigation and DOM changes, instead of raw DOM dumps.
-- **Form filling** — stored credentials and profiles live in an encrypted vault (AES-GCM, passphrase-derived key), and a field matcher autocompletes page inputs from it.
+- **Agent API & tool server** — one security-enforced tool registry over two transports: **MCP** (Claude Desktop and other MCP clients) and **HTTP** (local scripts, the in-product assistant, remote access over Tailscale / LAN). Both pass every call through the security pipeline.
+- **Multiple agents, one browser** — each connection gets a trust level that scopes its verbs and origins; a per-tab lock manager stops two agents colliding on form filling.
+- **Accessibility snapshots with stable `@ref` ids** — an AX tree whose interactive nodes carry identity-bound ids that survive navigation and DOM changes, instead of raw DOM dumps.
+- **Form filling** — credentials and profiles live in an encrypted vault (AES-GCM, passphrase-derived key); a field matcher autocompletes page inputs from it.
 - **Chrome extensions** — loaded from an unpacked directory or installed from the Web Store, checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's own test suite is currently skipped because `verifyCrx` hangs on Node 24's OpenSSL (`src/tests/extensions.crx-verifier.test.ts:12-16`), so signature verification is not covered by CI and is not claimed here to be runtime-verified.
 - **UI themes and modes** — normal, focus, reader, zen and presentation modes that change what is shown and how the assistant presents itself, independent of authentication state.
 
@@ -212,12 +191,9 @@ Try Aartiq with tasks such as:
 | --------------------------------------------------------- | --------------------------------------------- |
 | `Search for React tutorials and open the top 3`           | Searches the web and opens relevant results   |
 | `Summarize this page and save it as a PDF`                | Reads the page and generates a structured PDF |
-| `Set brightness to 50% and open VS Code`                  | Uses supported system capabilities            |
 | `Create a PowerPoint about climate change`                | Generates a structured presentation           |
 | `Schedule a daily backup at 9 AM`                         | Creates a recurring background task           |
-| `Read the text in this screenshot`                        | Uses OCR / visual intelligence                |
 | `Fill this form with my details`                          | Identifies and fills supported form fields    |
-| `Search for electron performance and extract the results` | Performs browser-based research               |
 
 For every available command and its risk classification:
 
@@ -318,18 +294,9 @@ flutter run
 
 The GitHub README provides the product overview. Detailed architecture and implementation documentation lives on the Aartiq documentation site.
 
-| Topic                   | Documentation                                                          |
-| ----------------------- | ---------------------------------------------------------------------- |
-| Overview & Architecture | [Overview](https://aartiq.ponsrischool.in/docs/overview)               |
-| Security Model          | [Security](https://aartiq.ponsrischool.in/docs/security)               |
-| AI Commands             | [Command Reference](https://aartiq.ponsrischool.in/docs/ai-commands)   |
-| API Reference           | [API Reference](https://aartiq.ponsrischool.in/docs/api-reference)     |
-| Components              | [Components](https://aartiq.ponsrischool.in/docs/components)           |
-| Automation              | [Automation](https://aartiq.ponsrischool.in/docs/automation)           |
-| Cloud Sync              | [Cloud Sync](https://aartiq.ponsrischool.in/docs/cloud-sync)           |
-| Troubleshooting         | [Troubleshooting](https://aartiq.ponsrischool.in/docs/troubleshooting) |
-| Changelog               | [Changelog](https://aartiq.ponsrischool.in/docs/changelog)             |
-| Release notes (source)  | [release_notes/](release_notes)                                         |
+**[Overview](https://aartiq.ponsrischool.in/docs/overview) · [Security](https://aartiq.ponsrischool.in/docs/security) · [Command Reference](https://aartiq.ponsrischool.in/docs/ai-commands) · [Testing & CI](https://aartiq.ponsrischool.in/docs/testing) · [Components](https://aartiq.ponsrischool.in/docs/components) · [API Reference](https://aartiq.ponsrischool.in/docs/api-reference) · [Automation](https://aartiq.ponsrischool.in/docs/automation) · [Cloud Sync](https://aartiq.ponsrischool.in/docs/cloud-sync) · [Troubleshooting](https://aartiq.ponsrischool.in/docs/troubleshooting) · [Changelog](https://aartiq.ponsrischool.in/docs/changelog)**
+
+Release notes for each version live in [release_notes/](release_notes).
 
 ---
 
@@ -369,19 +336,7 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 
 ### Terminology
 
-<!-- SSOT:START glossary -->
-| Term | Definition |
-| --- | --- |
-| **Capability** | A registered action the model may invoke. Capabilities are the only way to affect the system — there is no unrestricted access to system primitives. |
-| **Approval ticket** | A single-use, time-limited token that authorises one capability execution and is consumed on use. |
-| **Skill** | A named, loadable instruction bundle that shapes how the assistant approaches a class of task. Distinct from a capability: a skill changes behaviour, a capability changes the system. |
-| **Risk tier** | An advisory label (low / medium / high / critical) attached to a capability or derived for a command. It is not itself an enforcement boundary — see security.riskTiers. |
-| **Enforcement boundary** | A control the OS applies, which application code cannot bypass. Only OS sandboxing and capability scoping qualify. |
-| **Fail-closed** | If a control cannot be established or verified, the action does not run. There is no fallback path that runs it anyway. |
-| **Monitoring-only** | Code that observes and reports but does not block. It never gates an action, and should never be counted as if it did. |
-| **Agent API** | The HTTP and MCP transports that expose the capability registry to external agents. Both pass every call through the security pipeline. |
-| **Local-first** | User data stays on the device. Local models keep request content local; sync is end-to-end encrypted; credentials live in the OS keychain. |
-<!-- SSOT:END glossary -->
+Capability, approval ticket, risk tier, fail-closed — the vocabulary this README uses is defined in the [glossary on the documentation site](https://aartiq.ponsrischool.in/docs/overview).
 
 ---
 
@@ -397,8 +352,6 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 The MCP server is MIT-licensed for compatibility with Claude Desktop and other MCP clients.
 
 ### Trademark
-
-**Aartiq™** is a trademark of Latestinssan.
 
 Aartiq™ is a trademark of Latestinssan. The open-source licence permits use, modification, and redistribution of the source code. It does not grant permission to use the Aartiq name, logo, trademarks, or visual identity. Modified distributions must be rebranded under a different name and must not present themselves as official Aartiq releases.
 <!-- SSOT:END license -->

@@ -49,7 +49,7 @@ const facts = (await import(
   pathToFileURL(join(LANDING, "src", "data", "project-facts.ts")).href
 )) as typeof import("../../Aartiq-Landing-Page/src/data/project-facts.ts");
 
-const { version, security, network, ci, benchmarks, legal, skills } = facts;
+const { version, security, network, ci, benchmarks, legal } = facts;
 
 const tests = readJson<GeneratedTestFacts>("src/data/test-facts.generated.json");
 const repoStats = readJson<GeneratedRepoFacts>("src/data/repo-facts.generated.json");
@@ -94,8 +94,8 @@ function renderLayers(): string {
     security.layerSummary,
     ``,
     table(
-      ["#", "Layer", "Strength", "Source"],
-      security.layers.map((l, i) => [String(i + 1), l.name, l.strength, `\`${l.source}\``]),
+      ["#", "Layer", "Strength"],
+      security.layers.map((l, i) => [String(i + 1), l.name, l.strength]),
     ),
   ].join("\n");
 }
@@ -103,14 +103,13 @@ function renderLayers(): string {
 /** Risk tiers, including the limitation that stops each row reading as a guarantee. */
 function renderRiskTable(): string {
   return table(
-    ["Tier", "Approval behaviour", "Auto-approved?", "Examples", "What it does not guarantee"],
+    ["Tier", "Approval behaviour", "Auto-approved?", "Examples"],
     security.riskTiers.map((t) => [
       `**${t.id}**`,
       t.approvalMethod,
       t.autoApprove,
-      t.examples.length ? t.examples.map((e) => `\`${e}\``).join(", ") : "_none assigned by any registry_",
-      t.limit,
-    ]),
+    t.examples.length ? t.examples.map((e) => `\`${e}\``).join(", ") : "_none assigned by any registry_",
+  ]),
   );
 }
 
@@ -127,23 +126,13 @@ function renderCI(): string {
     ``,
     `Latest green run: [#${ci.latestRun.id}](${ci.latestRun.url}) (run #${ci.latestRun.runNumber}, \`${ci.latestRun.event}\`, ${ci.latestRun.date}, \`${ci.latestRun.headSha}\`, ${ci.latestRun.conclusion}).`,
     ``,
-    table(
-      ["Job", "Runner", "Passed", "Skipped", "Failed", "Declared"],
-      ci.perJob.map((j) => [j.name, `\`${j.os}\``, String(j.passed), String(j.skipped), String(j.failed), String(j.declared)]),
-    ),
-    ``,
     `**${ci.jobs.defined} jobs.** ${ci.jobs.detail} Node ${ci.jobs.nodeVersion}. ${ci.jobs.timeout}`,
     ``,
     `Test counts are generated, not typed. On ${env} the full suite reports **${local}** (generated ${when}).`,
     ``,
     `> ${ci.platformVarianceNote}`,
     ``,
-    `### Skip breakdown — ${env}, ${when}`,
-    ``,
-    table(
-      ["Reason", "Skipped", "Evidence"],
-      tests.skipBreakdown.map((s) => [s.reason, String(s.count), s.detail]),
-    ),
+    `> Per-job results and the skip breakdown for this run live on the [testing page](https://aartiq.ponsrischool.in/docs/testing#ci-run).`,
   ];
   return lines.join("\n");
 }
@@ -206,39 +195,19 @@ function renderLicense(): string {
     ``,
     `### Trademark`,
     ``,
-    `**${legal.trademark.mark}** is a trademark of ${legal.trademark.owner}.`,
-    ``,
     legal.trademark.paragraph,
   );
   return lines.join("\n");
 }
 
 /** Every network listener, with its bind address and auth state. */
-/**
- * The "Reachable from LAN when" cell.
- *
- * `bindsAllInterfacesWhen === null` means "no switch restricts this", which on its
- * own is ambiguous: a listener hard-coded to 127.0.0.1 has no switch either, and
- * is still unreachable from the LAN. Reading null as "always" printed a row that
- * contradicted its own bind-address cell. So null is resolved against the bind
- * address: loopback means never, anything else means always.
- */
-function lanReachability(s: (typeof network.servers)[number]): string {
-  if (s.bindsAllInterfacesWhen) return s.bindsAllInterfacesWhen;
-  const loopback = /\b127\.0\.0\.1\b|\blocalhost\b|\b::1\b/.test(s.defaultBindAddress);
-  return loopback
-    ? "never — the host is a literal in the source, not a switch anyone can flip"
-    : "**always** — there is no switch to restrict it";
-}
-
 function renderNetwork(): string {
   return table(
-    ["Service", "Port", "Default bind address", "Reachable from LAN when", "Authentication"],
+    ["Service", "Port", "Default bind address", "Authentication"],
     network.servers.map((s) => [
       s.name,
       typeof s.port === "number" ? `${s.port}` : `${s.port} (env-overridable)`,
       `\`${s.defaultBindAddress}\``,
-      lanReachability(s),
       s.auth,
     ]),
   );
@@ -292,14 +261,6 @@ function renderWorkflows(): string {  const w = ci.workflows;
   ].join("\n");
 }
 
-/** The terminology glossary, so "skill" and "capability" mean one thing. */
-function renderGlossary(): string {
-  return table(
-    ["Term", "Definition"],
-    skills.glossary.map((g) => [`**${g.term}**`, g.definition]),
-  );
-}
-
 /** Repo stats, or nothing at all if they could not be fetched. */
 function renderRepo(): string {
   if (!repoStats.live && repoStats.stars === 0) {
@@ -331,7 +292,6 @@ const BLOCKS: Record<string, () => string> = {
   license: renderLicense,
   network: renderNetwork,
   "known-limits": renderKnownLimits,
-  glossary: renderGlossary,
   repo: renderRepo,
   /** AGENTS.md only */
   protocols: renderProtocols,
