@@ -7,9 +7,9 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 **Plan → Explain → Ask → Execute**
 
 <!-- SSOT:START version -->
-**v0.3.7** — released 2026-09-13.
+**v0.3.8** — released 2026-10-04.
 
-Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.7) · [full release notes](release_notes/v0.3.7.md)
+Latest release: [v0.3.8](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.8) · [full release notes](release_notes/v0.3.8.md)
 <!-- SSOT:END version -->
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
@@ -29,15 +29,15 @@ Latest release: [v0.3.7](https://github.com/Latestinssan/Aartiq/releases/tag/v0.
 
 ## Why Aartiq?
 
-Traditional browsers help you navigate the web.
+Traditional browsers help you navigate the web. AI assistants help you understand information. **Aartiq is built for the space between the two: helping AI carry out tasks while keeping the user in control.**
 
-AI assistants help you understand information.
+Instead of manually opening tabs, searching websites, filling forms, creating documents, moving files, and repeating workflows, you describe the goal — Aartiq turns it into structured actions, evaluates them against its permission model, requests approval when required, and executes through registered capabilities.
 
-**Aartiq is built for the space between the two: helping AI carry out tasks while keeping the user in control.**
+Three commitments shape every part of it:
 
-Instead of manually opening tabs, searching websites, filling forms, creating documents, moving files, and repeating workflows, you describe the goal.
-
-Aartiq can turn that goal into structured actions, evaluate those actions against its permission model, request approval when required, and execute through registered capabilities.
+- **Permission-first.** The model never gets raw access to system primitives — only registered capabilities, each one classified, scoped and approval-gated before it can run.
+- **Fail-closed.** If a control cannot be established or verified, the action does not run. There is no fallback path that runs it anyway — and when a test cannot run, it is counted as skipped, never as passing.
+- **Local-first, evidence over claims.** User data stays on the device, sync is end-to-end encrypted, and credentials live in the OS keychain. Published numbers — test counts, ports, tiers — are generated from source rather than typed, and every claim ships with its known limits.
 
 > **AI can act. You decide what it is allowed to do.**
 
@@ -53,34 +53,17 @@ Aartiq can turn that goal into structured actions, evaluate those actions agains
   <img width="744" height="480" alt="Aartiq task execution demo" src="https://github.com/user-attachments/assets/051f5188-6e20-4b58-8087-74b9dd61b2e2" />
 </p>
 
-The workflow:
-
-```text
-Understand
-    ↓
-Plan
-    ↓
-Explain
-    ↓
-Ask
-    ↓
-Execute
-    ↓
-Result
-````
-## Permission Workflow
-
 | Plan | Permission | Results |
 |:----:|:----------:|:-------:|
 | <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/f1c17873-077e-4b00-8ca7-87cc7cb4eebe" /> | <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/a42e7c35-1f10-445a-b0a4-7660361a4f12" /> | <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/aca29055-ce34-400c-9329-1bba7127d1b4" /> |
 
-Aartiq searches the web, gathers information, creates the document, requests approval for actions that require it, moves the resulting file, and opens it.
+Aartiq searches the web, gathers information, creates the document, requests approval for actions that require it, moves the resulting file, and opens it — the flow is always **Understand → Plan → Explain → Ask → Execute → Result**.
 
 ---
 
 ## Permission-First AI
 
-Aartiq evaluates each command against its registered capability and permission policy.
+Every tool call — navigation, tab control, form filling, extension management, snapshots, theming, or OS actions — is routed through the `SecurityPipeline` before it runs. The pipeline performs risk classification, capability matching, and approval-gating.
 
 Actions that require approval are presented before execution with information about what will happen and what resource or capability is involved.
 
@@ -105,52 +88,11 @@ For the complete command catalog, risk assignments, and implementation details:
 
 ## How It Works
 
-Aartiq converts natural-language goals into structured, permission-aware execution.
-
-```text
-┌───────────────────────────┐
-│           USER            │
-│     Natural-language      │
-│           goal            │
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│      AI ORCHESTRATOR      │
-│ GPT • Claude • Gemini ... │
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│      TASK PLANNING        │
-│   Structured Commands     │
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│   PERMISSION & SECURITY   │
-│ Risk • Capability • Scope │
-└─────────────┬─────────────┘
-              │
-              ▼
-        ┌──────────────┐
-        │   APPROVAL   │
-        │   REQUIRED?  │
-        └──────┬───────┘
-               │
-               ▼
-┌───────────────────────────┐
-│     CONTROLLED EXECUTION  │
-│ Browser • Files • OS • OCR│
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│          RESULT           │
-└───────────────────────────┘
-```
-
-Actions are exposed through registered capabilities rather than allowing the model unrestricted access to arbitrary system primitives.
+1. **You describe the goal**, not the clicks.
+2. **The orchestrator plans** it as structured commands, using the AI provider you chose.
+3. **Every command is classified** — risk tier, capability match, scope — before anything runs.
+4. **Approval is requested** when the policy says so, with a description of what will happen.
+5. **Execution is controlled** — browser, files, OS and OCR run through registered capabilities, sandboxed per platform.
 
 ---
 
@@ -182,22 +124,22 @@ The full model — risk levels, layer-by-layer detail, encryption & vault migrat
 
 Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
 
-Latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/runs/34769503518) (run #52, `workflow_dispatch`, 2026-09-13, `acc703ae`, success).
+Latest green run: [#37621797787](https://github.com/Latestinssan/Aartiq/actions/runs/37621797787) (run #75, `workflow_dispatch`, 2026-10-07, `029cc82c`, success).
 
 | Job | Runner | Passed | Skipped | Failed | Declared |
 | --- | --- | --- | --- | --- | --- |
-| Run Jest (aartiq-browser) | `ubuntu-latest` | 537 | 40 | 0 | 577 |
+| Run Jest (aartiq-browser) | `ubuntu-latest` | 1395 | 40 | 0 | 1435 |
 | Run Jest (Windows AppContainer sandbox runtime) | `windows-latest` | 61 | 30 | 0 | 91 |
-| Run Jest (macOS Seatbelt sandbox runtime) | `macos-latest` | 104 | 0 | 0 | 104 |
+| Run Jest (macOS Seatbelt sandbox runtime) | `macos-latest` | 105 | 0 | 0 | 105 |
 | Run Jest (Linux bubblewrap sandbox runtime) | `ubuntu-latest` | 57 | 21 | 0 | 78 |
 
-**4 jobs.** All four jobs were green on the run above. Dispatch inputs can reduce this to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job; the three sandbox jobs have no timeout configured.
+**5 jobs.** All five jobs were green on the run above — the four Jest jobs tabled here plus a typecheck job (tsc --noEmit) that reports no test counts. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1342 passed / 26 skipped / 0 failed of 1368 declared** (generated 2026-10-04).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1409 passed / 26 skipped / 0 failed of 1435 declared** (generated 2026-10-07).
 
 > The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
-### Skip breakdown — macOS (local), 2026-10-04
+### Skip breakdown — macOS (local), 2026-10-07
 
 | Reason | Skipped | Evidence |
 | --- | --- | --- |
@@ -208,9 +150,9 @@ Test counts are generated, not typed. On macOS (local) the full suite reports **
 
 The suite covers approval gating, params-hash verification, fail-closed sandboxing, directory allowlists, capability scoping, and agent token-binding.
 
-### Windows sandboxing (v0.3.7+)
+### Windows sandboxing
 
-v0.3.7 adds **AppContainer + Job Object** sandboxing on Windows. Before v0.3.7 the Job Object confined processes only; AppContainer adds OS-layer isolation — filesystem via package-SID ACL grants and network via zero capabilities — by starting the target with `CreateProcessW` in a suspended state inside the AppContainer and applying the Job Object at creation, so nothing runs even momentarily unsandboxed.
+AppContainer + Job Object sandboxing on Windows shipped in the previous release, v0.3.7: AppContainer adds OS-layer isolation — filesystem via package-SID ACL grants and network via zero capabilities — by starting the target with `CreateProcessW` in a suspended state inside the AppContainer and applying the Job Object at creation, so nothing runs even momentarily unsandboxed. Before that release the Job Object confined processes only.
 
 * **CI-verified on real Windows** (`windows-latest`): the runtime matrix passes — suspended AppContainer start, OS-enforced ACL allowlist, verified job assignment, grandchild containment, secret isolation, and `KILL_ON_JOB_CLOSE` all return verified sandbox results.
 * **Audited:** design + source review in [`Audit Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md`](Audit%20Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md).
@@ -251,34 +193,14 @@ One of these binds all interfaces by default with no switch to restrict it. If y
 
 ---
 
-## Agent API & Tool Server
+## Capabilities
 
-Aartiq exposes its browser capabilities to AI agents through a single, security-enforced tool registry served over two transports:
-
-* **MCP** (Model Context Protocol) for clients such as Claude Desktop, and
-* **HTTP** for local scripts, the in-product assistant, and remote access over Tailscale / LAN.
-
-Every tool call — navigation, tab control, form filling, extension management, snapshots, theming, or OS actions — is routed through the `SecurityPipeline` before it runs. The pipeline performs risk classification, capability matching, and approval-gating.
-
-### Multiple agents, one browser
-
-More than one agent can be connected to the same browser at once. Each connection is registered with a trust level that scopes its verbs and origins. A per-tab lock manager ensures two agents can't collide on form filling.
-
-### Accessibility snapshots with stable `@ref` ids
-
-Instead of raw DOM dumps, agents receive an accessibility (AX) tree. Each interactive node carries an identity-bound `@ref` id derived from the page's backend node id, so a reference stays stable across navigation and DOM changes.
-
-### Form filling
-
-Stored credentials and profiles are kept in an encrypted vault (AES-GCM, passphrase-derived key; the same E2EE2 scheme used elsewhere). A field matcher maps page inputs to stored values by autocompleting password fields and typed text.
-
-### Chrome extensions
-
-Extensions can be loaded from an on-disk unpacked directory or installed from the Chrome Web Store. Web Store packages are checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's own test suite is currently skipped because `verifyCrx` hangs on Node 24's OpenSSL (`src/tests/extensions.crx-verifier.test.ts:12-16`), so signature verification is not covered by CI and is not claimed here to be runtime-verified.
-
-### UI themes and modes
-
-The interface supports selectable themes and UI modes (normal, focus, reader, zen, presentation) that adjust what is shown and how the assistant presents itself, independent of the underlying authentication state.
+- **Agent API & tool server** — one security-enforced tool registry over two transports: **MCP** for clients such as Claude Desktop, and **HTTP** for local scripts, the in-product assistant, and remote access over Tailscale / LAN. Both pass every call through the security pipeline.
+- **Multiple agents, one browser** — each connection is registered with a trust level that scopes its verbs and origins, and a per-tab lock manager stops two agents colliding on form filling.
+- **Accessibility snapshots with stable `@ref` ids** — agents receive an AX tree whose interactive nodes carry identity-bound ids that stay stable across navigation and DOM changes, instead of raw DOM dumps.
+- **Form filling** — stored credentials and profiles live in an encrypted vault (AES-GCM, passphrase-derived key), and a field matcher autocompletes page inputs from it.
+- **Chrome extensions** — loaded from an unpacked directory or installed from the Web Store, checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's own test suite is currently skipped because `verifyCrx` hangs on Node 24's OpenSSL (`src/tests/extensions.crx-verifier.test.ts:12-16`), so signature verification is not covered by CI and is not claimed here to be runtime-verified.
+- **UI themes and modes** — normal, focus, reader, zen and presentation modes that change what is shown and how the assistant presents itself, independent of authentication state.
 
 ---
 
@@ -305,19 +227,7 @@ For every available command and its risk classification:
 
 ## AI Providers
 
-Aartiq supports multiple AI backends, including:
-
-* Google Gemini
-* OpenAI GPT
-* Anthropic Claude
-* Groq
-* xAI
-* Azure OpenAI
-* Ollama (local)
-* LM Studio (local, OpenAI-compatible)
-* Apple Intelligence on macOS
-
-Provider availability depends on the platform and configuration. Local models (Ollama, LM Studio) keep request content on the device; an OpenClaw-compatible local-agent bridge is also supported for remote inference.
+Google Gemini · OpenAI GPT · Anthropic Claude · Groq · xAI · Azure OpenAI · Ollama (local) · LM Studio (local) · Apple Intelligence on macOS. Provider availability depends on the platform and configuration; local models (Ollama, LM Studio) keep request content on the device, and an OpenClaw-compatible local-agent bridge is also supported for remote inference.
 
 ---
 
@@ -325,12 +235,12 @@ Provider availability depends on the platform and configuration. Local models (O
 
 Aartiq opens the Chromium window immediately and loads background services asynchronously, so the interface is usable before every subsystem has finished starting. Long-running automation runs as a background task, not a blocking modal.
 
-### Benchmark
+### Startup benchmark
 
 <!-- SSOT:START benchmarks -->
 Measured on a **MacBook Pro M4 Pro**, 12-core CPU, 24 GB RAM, macOS 26.5.
 
-**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.7.
+**2026-07-20 — benchmarked on v0.3.4.** Current release: v0.3.8.
 
 | Metric | Result |
 | --- | --- |
@@ -340,8 +250,12 @@ Measured on a **MacBook Pro M4 Pro**, 12-core CPU, 24 GB RAM, macOS 26.5.
 
 > Startup means time to first visible window, not complete service initialisation. Results vary by hardware, operating system, and configuration.
 
-> These figures predate the current release (v0.3.7) and were taken on v0.3.4. TODO(verify) — no benchmark script, raw output file, or instrumentation exists in either repository. These figures cannot currently be reproduced or checked. A published page also claimed the benchmark scripts were included in the repository; that claim was false and has been removed.
+> These figures predate the current release (v0.3.8) and were taken on v0.3.4. TODO(verify) — no script, raw output file, or instrumentation exists in either repository for these startup figures, so they cannot currently be reproduced or checked. A separate harness for the security-critical hot paths does ship in the repository (`npm run bench`, see BENCHMARKS.md): it measures the permission classifier, Always eligibility, grant gate, auth gate, path allowlist and key derivation — not application startup. A published page also claimed the startup benchmark scripts were included in the repository; that claim was false and has been removed.
 <!-- SSOT:END benchmarks -->
+
+### Security hot paths
+
+The permission-critical hot paths have their own reproducible harness: `npm run bench` drives fixed corpora — classifier, Allow Always eligibility, grant gate, path allowlist, auth gate, PBKDF2 key derivation — through warmup and five repetitions, reporting median and spread. Protocol, numbers and comparison rules: **[BENCHMARKS.md](aartiq-browser/BENCHMARKS.md)**. CI gates only that the harness runs; it deliberately sets no absolute timing thresholds.
 
 Detailed measurements and methodology:
 
@@ -436,19 +350,18 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 </a>
 
 ---
+
 > [!IMPORTANT]
 >
-> ## 🚧 Project Status
+> ## 🚧 Project Status — AI-Assisted Development
 >
-> Aartiq is a solo project maintained in an AI-assisted rhythm: AI agents handle day-to-day issue triage, analysis, and fix preparation, and a human reviews and approves every change to security, permissions, user data, or releases before it ships. Development currently runs at a limited pace around academic commitments — feature work pauses and resumes in bursts rather than on a fixed schedule. The repository stays public, existing releases stay available, and bug reports go to GitHub issues, triaged in the order things break. In short:
+> Aartiq is a solo project in active AI-assisted development: AI agents handle day-to-day issue triage, analysis, and fix preparation, and a human reviews and approves every change to security, permissions, user data, or releases before it ships. The repository stays public, existing releases stay available, and bug reports go to GitHub issues, triaged in the order things break. In short:
 >
 > - Every change to security, permissions, user data, releases, or project direction is reviewed and approved by a human before it ships.
 > - CI must be green before any release goes out (see the Security section above for the current test numbers).
 > - The maintainer remains responsible for the project's direction and correctness.
 >
 > **Why this setup:** it lets a solo project keep shipping fixes and improvements without requiring full-time human bandwidth on every routine task, while keeping a human in the loop for anything consequential — which is the same philosophy Aartiq applies to its own permission model.
->
-> Bigger roadmap items (new features, larger refactors, community contribution workflows) are paused until there's more bandwidth or contributors to support them. Bug fixes, security patches, and documentation stay actively maintained.
 >
 > Issues, PRs, and questions are welcome — response time may vary, but nothing ships without review.
 >
@@ -471,6 +384,7 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 <!-- SSOT:END glossary -->
 
 ---
+
 ## License
 
 <!-- SSOT:START license -->
@@ -479,10 +393,6 @@ _Fetched from the GitHub API. Refresh with `npm run docs:repo-facts`._
 | Aartiq Browser — desktop, mobile, and core code | Apache-2.0 | `LICENSE + aartiq-browser/LICENSE.txt` | verified |
 | Aartiq MCP Server — aartiq-mcp/ | MIT | `aartiq-mcp/LICENSE` | verified |
 | Landing page / documentation site | Unlicensed (private repository) | `none` | verified |
-
-> [!NOTE]
-> **Licence conflict resolved (2026-10-04).** `aartiq-browser/LICENSE.txt` now carries the same Apache-2.0 text as the repository root, the package manifest declares `Apache-2.0`, and the Windows installer points at that same file — so installer, manifest and repository agree.
-> The decision, including the EULA it replaced, is recorded in `aartiq-browser/docs-audit/licence-decision.md`. `docs:check` rule (j) fails if the copies ever disagree again.
 
 The MCP server is MIT-licensed for compatibility with Claude Desktop and other MCP clients.
 

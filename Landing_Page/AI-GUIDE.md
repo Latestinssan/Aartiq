@@ -32,9 +32,9 @@ Aartiq/
 
 ### Current Version
 <!-- SSOT:START current-version -->
-- **Version:** `0.3.7` (stable)
-- **Codename:** AppContainer
-- **Release Date:** 2026-09-13
+- **Version:** `0.3.8` (stable)
+- **Codename:** Palisade
+- **Release Date:** 2026-10-04
 <!-- SSOT:END current-version -->
 
 ### Version Pattern
@@ -385,7 +385,7 @@ When preparing a new release, ensure all these are updated:
 - [ ] Push: `git push origin v{x.y.z}`
 - [ ] Create GitHub release with notes
 
-#### v0.3.7 (AppContainer) — Steps 1–4 complete (2026-09-13). Build/tag/push pending.
+#### Release record: the previous release was v0.3.7 (AppContainer), tagged 2026-09-13; the current release is v0.3.8 (Palisade), published 2026-10-04.
 ---
 
 ## Common Patterns
