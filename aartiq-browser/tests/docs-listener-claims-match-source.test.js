@@ -39,6 +39,7 @@ const read = (...p) => fs.readFileSync(path.join(...p), 'utf8');
 const MCP_PAGE = read(LANDING, 'src/app/mcp-settings/page.tsx');
 const SEARCH_IDX = read(LANDING, 'src/lib/search-index.ts');
 const SECURITY = read(LANDING, 'src/app/docs/security/page.tsx');
+const PROJECT_FACTS = read(LANDING, 'src/data/project-facts.ts');
 const AI_COMMANDS_PAGE = read(LANDING, 'src/app/docs/ai-commands/page.tsx');
 const SKILLS = read(LANDING, 'src/app/docs/skills/page.tsx');
 const FEATURES = read(LANDING, 'src/app/features/page.tsx');
@@ -309,5 +310,57 @@ describe('docs listener / count claims match source', () => {
   test('X3: the changelog scopes the token claim to the three tokened listeners', () => {
     expect(CHANGELOG).not.toMatch(/Every route on the local listeners — including/);
     expect(CHANGELOG).toMatch(/three tokened local listeners/);
+  });
+
+  // M24: the 600,000-round PBKDF2 claim ships on the landing (security page
+  // and the benchmark notes in project-facts); the truth is a single source
+  // constant. Cross-repo pin: the number may only change in both repos in the
+  // same change, and the legacy-record migration note must stay attached to
+  // the claim (a bare "600,000" without the re-hash story would overstate what
+  // happens to a 100,000-round record created by an earlier version).
+  test('M24: the landing’s 600,000-round PBKDF2 claim matches the source constant', () => {
+    const iter = /PBKDF2_ITERATIONS\s*=\s*(\d+)/.exec(
+      read(REPO, 'src/lib/crypto-utils.js'),
+    );
+    expect(iter).not.toBeNull();
+    const rounds = Number(iter[1]).toLocaleString('en-US');
+    // Typed on purpose: changing the cost must be an explicit, reviewable
+    // edit here as well as in crypto-utils.js and on the landing.
+    expect(rounds).toBe('600,000');
+    expect(SECURITY).toMatch(/PBKDF2-SHA256 with 600,000 rounds/);
+    expect(SECURITY).toMatch(new RegExp(`${rounds} iterations`));
+    expect(PROJECT_FACTS).toMatch(/PBKDF2 with 600,000 iterations, SHA-256/);
+    // Migration honesty: older records keep verifying and are re-hashed.
+    expect(SECURITY).toMatch(
+      /100,000-round cost keep verifying and are re-hashed to 600,000/,
+    );
+  });
+
+  // M25: the regenerated network rows claim per-client credentials — mint
+  // with the primary token, revoke one at a time. Pin the claim to the code:
+  // the shared route surface, the primary-only administration rule, the gate
+  // accepting client credentials, and all three listeners wired to both.
+  test('M25: the README’s per-client credential claim matches the gate and routes', () => {
+    expect(README).toMatch(/POST \/clients mints one with the primary token/);
+    expect(README).toMatch(/POST \/clients\/revoke retires just it/);
+
+    const CREDS = read(REPO, 'src/lib/client-credentials.js');
+    expect(CREDS).toMatch(/pathname === '\/clients'/);
+    expect(CREDS).toMatch(/pathname === '\/clients\/revoke'/);
+    expect(CREDS).toMatch(/verdict\.auth !== 'primary'/); // admin is primary-only
+    expect(CREDS).toMatch(/sha256/); // the registry stores no usable token
+
+    const GATE = read(REPO, 'src/lib/local-server-auth.js');
+    expect(GATE).toMatch(/auth: 'client'/); // active credential accepted
+    expect(GATE).toMatch(/token_revoked/); // revoked gets its own 401 code
+
+    // Every tokened listener shares the surface — none may ship without it.
+    expect(read(REPO, 'src/lib/mcp-browser-server.js')).toMatch(
+      /maybeHandleClientAdminRoute/,
+    );
+    expect(read(REPO, 'src/lib/agent-api/server.ts')).toMatch(
+      /maybeHandleClientAdminRoute/,
+    );
+    expect(read(REPO, 'main.js')).toMatch(/maybeHandleClientAdminRoute/);
   });
 });
