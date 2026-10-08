@@ -124,13 +124,13 @@ The full model — risk levels, layer-by-layer detail, encryption & vault migrat
 
 Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
 
-Latest green run: [#37621797787](https://github.com/Latestinssan/Aartiq/actions/runs/37621797787) (run #75, `workflow_dispatch`, 2026-10-07, `029cc82c`, success).
+Latest green run: [#37772437527](https://github.com/Latestinssan/Aartiq/actions/runs/37772437527) (run #83, `workflow_dispatch`, 2026-10-08, `a31a5bf5`, success).
 
-**5 jobs.** All five jobs were green on the run above — the four Jest jobs tabled here plus a typecheck job (tsc --noEmit) that reports no test counts. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
+**5 jobs.** All five jobs were green on the run above — four Jest jobs (full suite, macOS Seatbelt, Linux bubblewrap, Windows AppContainer) plus a typecheck job (tsc --noEmit) that reports no test counts; per-job results live on the testing page. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1409 passed / 26 skipped / 0 failed of 1435 declared** (generated 2026-10-07).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1426 passed / 12 skipped / 0 failed of 1438 declared** (generated 2026-10-08).
 
-> The per-job figures above belong to that run and commit, not to the current tree, which has grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
+> The per-job figures on the testing page belong to their run and commit, not to the current tree, which may have grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
 > Per-job results and the skip breakdown for this run live on the [testing page](https://aartiq.ponsrischool.in/docs/testing#ci-run).
 <!-- SSOT:END ci -->
@@ -155,20 +155,7 @@ One of these binds all interfaces by default with no switch to restrict it. If y
 
 ### Known limits
 
-<!-- SSOT:START known-limits -->
-- Runtime sandbox tests execute only on their own OS. There is no single job that exercises Seatbelt, bubblewrap, and AppContainer at once.
-- OS-automation tests skip wherever the native tooling is absent (xdotool/xte on Linux, cliclick on macOS).
-- The CRX3 signature-verifier suite is skipped because verifyCrx() hangs on a Node 24 / OpenSSL header parse. It is counted as skipped, never as passing, until the verifier is fixed.
-- SecurityValidator.js does not guarantee that non-blocked commands are safe — it is a fast first-pass reject layer.
-- Visual extraction reduces the DOM-based prompt-injection surface. It does not prevent prompt injection, and it cannot give semantic immunity against instructions rendered into the viewport.
-- Seatbelt profiles start from (allow default), so not every IPC class is denied by default; Mach IPC stays usable because node/python/shell require it.
-- Apple Events cannot be filtered by the current sandbox-exec — the operation is not exposed — so a sandboxed command could still ask another app to act on its behalf.
-- The WiFi sync server (3004) binds every network interface on purpose — the phone reaches it over the LAN — so the LAN exposure itself is the limit: the upgrade now refuses foreign Origins and Host headers that do not name this machine, every sync action (unpair included) requires the device's short-lived access token, and AARTIQ_WIFI_SYNC_HOST narrows the bind when that exposure is not wanted. The background task service (3999) and the PDF sync server bound 0.0.0.0 with a wildcard CORS header until the bind default became 127.0.0.1, with AARTIQ_SERVICE_HOST as the explicit opt-in and no CORS allow-origin header sent at all. See network.servers.
-- The session tokens for the MCP bridge, the Agent API and the native bridge persist in mode-0600 files in your home directory (~/.aartiq-mcp-token, ~/.aartiq-agent-token, ~/.aartiq-token), so a client configured once keeps working across restarts — but remote mode is still not a finished design: there is no per-client credential to revoke, no pairing UI, and the binds are not operator-named.
-- "Allow Always" is keyed on the full normalised command line, which is narrower than before but is still text matching — it records what the command says, not what it will do — and every grant now expires after 30 days, swept with an audit-log entry, so the dialog asks again. See aartiq-browser/docs-audit/issues/allow-always-granularity.md.
-- An Allow Always grant requires a binary that appears in the classifier's table. One that does not — including anything we have never seen — is offered Allow Once only, because a grant that repeats a command nobody can describe is a promise about behaviour rather than about the text. Local writes such as cp, mv, mkdir and touch are in the table and keep exact-match Always grants, which expire after 30 days.
-- The native bridge and the Agent API both defaulted to port 46203, so if both started one failed to bind and the error was logged and swallowed — not visible from outside. The Agent API now defaults to 46204 and the native bridge keeps 46203, so the two no longer collide.
-<!-- SSOT:END known-limits -->
+The full list — product-wide, not just the test suite — lives on the [testing page](https://aartiq.ponsrischool.in/docs/testing#known-limits), kept in the same source of truth that renders the blocks above so there is exactly one copy of it. It stays unsummarised there: what advises instead of enforcing, what text matching cannot know, and what is exposed by design.
 
 ---
 
@@ -178,7 +165,7 @@ One of these binds all interfaces by default with no switch to restrict it. If y
 - **Multiple agents, one browser** — each connection gets a trust level that scopes its verbs and origins; a per-tab lock manager stops two agents colliding on form filling.
 - **Accessibility snapshots with stable `@ref` ids** — an AX tree whose interactive nodes carry identity-bound ids that survive navigation and DOM changes, instead of raw DOM dumps.
 - **Form filling** — credentials and profiles live in an encrypted vault (AES-GCM, passphrase-derived key); a field matcher autocompletes page inputs from it.
-- **Chrome extensions** — loaded from an unpacked directory or installed from the Web Store, checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's own test suite is currently skipped because `verifyCrx` hangs on Node 24's OpenSSL (`src/tests/extensions.crx-verifier.test.ts:12-16`), so signature verification is not covered by CI and is not claimed here to be runtime-verified.
+- **Chrome extensions** — loaded from an unpacked directory or installed from the Web Store, checked as CRX3 before extraction: `installFromWebStore` calls the verifier and rejects an invalid signature (fail-closed) — `src/lib/extensions/ChromeExtensionManager.js:256-266`. The verifier's suite runs in CI and checks Chromium's CRX3 format — a bounds-checked header parse, the crx_id ↔ signing-key binding, and the signature over the signed header plus the zip archive — `src/tests/extensions.crx-verifier.test.ts:25`. What it does not implement is Chrome's publisher-key allowlisting: a package signed with some other key can only come through as that key's own extension, never as an existing one's.
 - **UI themes and modes** — normal, focus, reader, zen and presentation modes that change what is shown and how the assistant presents itself, independent of authentication state.
 
 ---
