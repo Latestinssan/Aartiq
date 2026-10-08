@@ -67,7 +67,7 @@ aartiq-browser/
 | `skill-loader.js` | On-demand AI skill loading and management |
 | `AdvancedDocumentEngine.ts` | PDF/XLSX/PPTX generation |
 | `WiFiSyncService.ts` | WebSocket sync desktop↔mobile with permanent authentication tokens |
-| `MasterPINService.ts` | Master PIN (PBKDF2-SHA256, 100k rounds) stored in Native OS Keychain |
+| `MasterPINService.ts` | Master PIN (PBKDF2-SHA256, 600k rounds) stored in Native OS Keychain |
 | `UnifiedSessionManager.ts` | Unified session manager (tabs, history, tasks, permissions, sync snapshots) |
 | `PermissionRelayService.ts` | Dual-gate permission relay (Master PIN + Android Screen Lock) for remote approvals |
 | `DeviceIdentifier.ts` | Hardware detection & real friendly computer name detection |
@@ -122,7 +122,7 @@ AI file access is restricted to user-approved directories via a configurable all
 
 ### Master PIN & Unified Mobile Permission Relay
 
-- **Native OS Keychain Integration:** Master PIN credentials (PBKDF2-SHA256, 100,000 iterations) are stored and encrypted using native OS backends via Electron's `safeStorage` (Apple Keychain / Windows DPAPI / Linux Secret Service) and `native-keychain.js`.
+- **Native OS Keychain Integration:** Master PIN credentials (PBKDF2-SHA256, 600,000 iterations; records created at the earlier 100,000-iteration cost keep verifying and are re-hashed on first successful unlock) are stored and encrypted using native OS backends via Electron's `safeStorage` (Apple Keychain / Windows DPAPI / Linux Secret Service) and `native-keychain.js`.
 - **Permanent Sync Authentication:** Paired mobile devices receive cryptographic permanent tokens stored in native secure storage, eliminating repetitive code pairing.
 - **Dual-Gate Verification:** For remote or high-risk automations, approvals require the shared Master PIN + Android device screen lock (Biometric fingerprint/face or system PIN/pattern).
 - **Unified Session Manager:** All active tabs, browsing history, automation tasks, and permission audits are continuously recorded and synchronized locally over LAN (`:3004`) or remotely via Firebase Realtime Database.

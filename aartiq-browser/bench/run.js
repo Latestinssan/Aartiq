@@ -174,8 +174,8 @@ function buildBenches() {
       observe: (r) => (r && Buffer.isBuffer(r) && r.length === 32 ? 1 : 0),
     },
     {
-      name: 'kdf-masterpin-100k-sha256',
-      what: 'MasterPINService.hashPin — PBKDF2 100 000 iterations, SHA-256 (unlock path, matches Flutter)',
+      name: 'kdf-masterpin-600k-sha256',
+      what: 'MasterPINService.hashPin — PBKDF2 600 000 iterations, SHA-256 (unlock path, matches Flutter)',
       source: 'src/lib/MasterPINService.js',
       iters: 5,
       warmup: 1,

@@ -42,11 +42,26 @@ var path = __importStar(require("path"));
 var electron_1 = require("electron");
 var electron_store_1 = __importDefault(require("electron-store"));
 var PIN_STORE_KEY = 'master_pin_credentials';
-var ITERATIONS = 100000;
+/** Cost for every record created from now on. */
+var ITERATIONS = 600000;
+/** Cost of records written before the per-record `iterations` field existed. */
+var LEGACY_ITERATIONS = 100000;
 var KEY_LEN = 32;
 var DIGEST = 'sha256';
 var MAX_ATTEMPTS = 5;
 var LOCKOUT_MS = 10 * 60 * 1000; // 10 minutes
+/**
+ * The PBKDF2 cost a record's hash verifies at. Absent, malformed, or
+ * below-legacy claims resolve to the legacy cost and are never honoured
+ * below it: a wrong value can only cause a mismatch (fail closed), never a
+ * cheaper comparison than the legacy one.
+ */
+function resolveIterations(value) {
+    if (typeof value === 'number' && Number.isInteger(value) && value >= LEGACY_ITERATIONS) {
+        return value;
+    }
+    return LEGACY_ITERATIONS;
+}
 // Lazy-require native keychain helper if available
 var nativeKeychain = null;
 try {
@@ -73,10 +88,13 @@ var MasterPINService = /** @class */ (function () {
         return MasterPINService.instance;
     };
     /**
-     * Compute PBKDF2 hash using SHA-256 (matches Flutter mobile PBKDF2)
+     * Compute PBKDF2 hash using SHA-256 (matches Flutter mobile PBKDF2).
+     * Defaults to the current target cost; pass an explicit cost only to
+     * verify or re-create a record made at that cost.
      */
-    MasterPINService.hashPin = function (pin, salt) {
-        return crypto.pbkdf2Sync(pin, salt, ITERATIONS, KEY_LEN, DIGEST).toString('hex');
+    MasterPINService.hashPin = function (pin, salt, iterations) {
+        if (iterations === void 0) { iterations = ITERATIONS; }
+        return crypto.pbkdf2Sync(pin, salt, iterations, KEY_LEN, DIGEST).toString('hex');
     };
     /**
      * Save Master PIN credentials securely to Native OS Keychain / safeStorage
@@ -150,6 +168,7 @@ var MasterPINService = /** @class */ (function () {
         var data = {
             salt: salt,
             hash: hash,
+            iterations: ITERATIONS,
             createdAt: Date.now(),
             failedAttempts: 0,
         };
@@ -170,12 +189,22 @@ var MasterPINService = /** @class */ (function () {
                 error: "Too many failed attempts. Locked for ".concat(minutesLeft, " more minute(s)"),
             };
         }
-        var expectedHash = MasterPINService.hashPin(pin, data.salt);
+        var storedIterations = resolveIterations(data.iterations);
+        var expectedHash = MasterPINService.hashPin(pin, data.salt, storedIterations);
         var match = crypto.timingSafeEqual(Buffer.from(expectedHash, 'hex'), Buffer.from(data.hash, 'hex'));
         if (match) {
             data.failedAttempts = 0;
             data.lockedUntil = undefined;
             data.lastVerifiedAt = now;
+            if (storedIterations < ITERATIONS) {
+                // Lazy migration: the plaintext PIN is in hand only here, on a
+                // proven match — re-hash records below the target cost now.
+                // A wrong PIN never reaches this branch, so legacy records
+                // keep verifying at their stored cost until they first prove
+                // correct; nothing is ever rewritten from a failed attempt.
+                data.hash = MasterPINService.hashPin(pin, data.salt, ITERATIONS);
+                data.iterations = ITERATIONS;
+            }
             this._saveDataToNativeOS(data);
             return { verified: true };
         }
@@ -208,8 +237,10 @@ var MasterPINService = /** @class */ (function () {
         return this.setupPIN(newPin);
     };
     /**
-     * Get safe sync payload containing salt and hash (NEVER plaintext PIN).
-     * Used for initial pairing between Aartiq desktop and mobile app.
+     * Get safe sync payload containing salt, hash and the PBKDF2 cost the
+     * hash was derived at (NEVER plaintext PIN). The peer must verify at that
+     * cost, not at whatever its own build defaults to. Used for initial
+     * pairing between Aartiq desktop and mobile app.
      */
     MasterPINService.prototype.getSyncPayload = function () {
         var data = this.getMasterPinData();
@@ -219,17 +250,22 @@ var MasterPINService = /** @class */ (function () {
             hasPin: true,
             salt: data.salt,
             hash: data.hash,
+            iterations: resolveIterations(data.iterations),
         };
     };
     /**
      * Set Master PIN from trusted mobile device sync
      */
-    MasterPINService.prototype.setFromSync = function (salt, hash) {
+    MasterPINService.prototype.setFromSync = function (salt, hash, iterations) {
         if (!salt || !hash)
             return false;
         var data = {
             salt: salt,
             hash: hash,
+            // Senders predating the field hashed at the legacy cost; any
+            // claim below legacy is clamped up, so a bogus value fails
+            // verification instead of cheapening it.
+            iterations: resolveIterations(iterations),
             createdAt: Date.now(),
             failedAttempts: 0,
         };

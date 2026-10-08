@@ -5,7 +5,7 @@
 ### New features after the beta
 
 #### Master PIN, permanent sync auth, dual-gate mobile approvals, unified sessions (#22)
-- Master PIN (PBKDF2-SHA256, 100,000 iterations) stored in the native OS keychain — Electron `safeStorage` → Apple Keychain / Windows DPAPI / Linux Secret Service on desktop, Android Keystore on mobile; only salt and hash cross the sync channel; five consecutive failures trigger a 10-minute lockout.
+- Master PIN (PBKDF2-SHA256, 600,000 iterations for new records; records created at the earlier 100,000-iteration cost carry no cost field, verify at that stored cost, and are re-hashed to 600,000 on first successful unlock — desktop and mobile alike) stored in the native OS keychain — Electron `safeStorage` → Apple Keychain / Windows DPAPI / Linux Secret Service on desktop, Android Keystore on mobile; only salt, hash and the cost the hash was derived at cross the sync channel; five consecutive failures trigger a 10-minute lockout.
 - First pairing mints a 256-bit permanent token; Wi-Fi and cloud reconnects validate it without a code or an approval again, and the paired-device ledger survives restarts. Live sessions ride on short-lived tokens (see Security after the beta).
 - The 📱 Mobile button delegates an execution plan to a paired phone — risk tiers with factors and mitigations, authorised only by both gates (Master PIN and Android screen lock / biometrics) — resolved in real time over IPC + WebSocket.
 - Unified session manager: tabs, history, tasks and permission decisions streamed live and persisted atomically to OS application data; native device names and hardware models on both sides.
