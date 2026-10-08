@@ -227,10 +227,16 @@ describe('docs listener / count claims match source', () => {
     expect(OVERVIEW).not.toMatch(/taking a temporary pause/);
   });
 
-  test('M21: the README does not claim signature verification while its suite is skipped', () => {
+  // M21 (rewritten with the CRX3 fix, Aartiq #44): the old pin asserted the
+  // README admitted its suite was skipped. The suite now runs — 6 tests,
+  // Chromium's real CRX3 format — so the README may claim CI coverage, but
+  // only as far as the suite actually verifies, and never the retired claims.
+  test('M21: the README claims CRX3 verification only as far as the suite covers it', () => {
     expect(README).not.toMatch(/signature is verified with the embedded public key/);
-    expect(README).toMatch(/`verifyCrx` hangs on Node 24/);
-    expect(README).toMatch(/not covered by CI/);
+    expect(README).not.toMatch(/`verifyCrx` hangs on Node 24/);
+    expect(README).not.toMatch(/not covered by CI/);
+    expect(README).toMatch(/verifier's suite runs in CI/);
+    expect(README).toMatch(/publisher-key allowlisting/);
   });
 
   test('X3: the changelog scopes the token claim to the three tokened listeners', () => {

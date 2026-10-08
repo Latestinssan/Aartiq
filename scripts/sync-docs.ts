@@ -213,11 +213,6 @@ function renderNetwork(): string {
   );
 }
 
-/** Open, honest limits. Kept in full; never summarised away. */
-function renderKnownLimits(): string {
-  return security.knownLimits.map((l) => `- ${l}`).join("\n");
-}
-
 /**
  * AGENTS.md's Communication Protocols table. It is a port table by another name,
  * so it renders from `network.servers` — plus discovery, which is not a listener
@@ -291,7 +286,6 @@ const BLOCKS: Record<string, () => string> = {
   benchmarks: renderBenchmarks,
   license: renderLicense,
   network: renderNetwork,
-  "known-limits": renderKnownLimits,
   repo: renderRepo,
   /** AGENTS.md only */
   protocols: renderProtocols,
