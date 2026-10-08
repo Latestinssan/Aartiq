@@ -104,11 +104,21 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
 
   it('should harden IPC/signal/exec channels beyond plain network denial', () => {
     const profile = sandbox.generateSeatbeltProfile({ workspace: ws });
+    // The baseline itself is part of the contract: deny-by-default means an
+    // operation class the profile does not enumerate is DENIED, not silently
+    // permitted (the old (allow default) baseline failed open for exactly the
+    // unknown-unknowns a profile cannot anticipate).
+    assert.ok(profile.includes('(deny default)'), 'baseline must be deny-by-default');
+    assert.ok(!profile.includes('(allow default)'), 'must not carry a default-allow rule');
+    assert.ok(
+      profile.indexOf('(deny default)') < profile.indexOf('(allow file-read'),
+      'deny default must precede the explicit grants'
+    );
     // AF_UNIX sockets (syslog, docker, P2P services) are NOT covered by
     // (deny network*) — they must be shut down separately.
     assert.ok(profile.includes('(deny system-socket)'), 'must deny AF_UNIX sockets');
-    // Signals must be confined to the sandbox's own processes; the default
-    // (allow default) baseline would otherwise permit signaling anyone.
+    // Signals must be confined to the sandbox's own processes — asserted
+    // explicitly so confinement never depends on the baseline alone.
     assert.ok(profile.includes('(deny signal)'), 'must deny signals by default');
     assert.ok(profile.includes('(allow signal (target self))'), 'must allow self-signal');
     assert.ok(profile.includes('(allow signal (target children))'), 'must allow child-signal');

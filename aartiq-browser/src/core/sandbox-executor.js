@@ -13,12 +13,13 @@
  * documented as unsandboxed execution and reported as such in the result.
  *
  * Platform guarantees (v0.3.7+):
- *   macOS  — Seatbelt (sandbox-exec) with a closed-by-default profile:
- *            deny file-read/write (re-allow only system paths + allowlisted
- *            directories + workspace), deny all IP network AND AF_UNIX
- *            sockets ((deny system-socket)), confine process-exec and
- *            file-map-executable to the allowlist, deny mount/umount, and
- *            confine signals to the sandbox's own processes (self/children).
+ *   macOS  — Seatbelt (sandbox-exec) with a `(deny default)` baseline: only
+ *            explicitly granted operation classes run; file-read/write are
+ *            re-allowed only for system paths + allowlisted directories +
+ *            workspace; all IP network AND AF_UNIX sockets are denied
+ *            ((deny system-socket)); process-exec and file-map-executable are
+ *            confined to the allowlist; mount/umount is denied; and signals
+ *            are confined to the sandbox's own processes (self/children).
  *   Linux  — bubblewrap (bwrap): full namespace isolation
  *            (pid/net/ipc/uts/user/cgroup + new session), read-only system
  *            mounts, allowlisted bind mounts (read-only vs read-write),
@@ -34,12 +35,18 @@
  *            profile are removed after every run.
  *
  * HONEST LIMITATIONS (see Audit Report/2026-09-13_..._audit):
- *   - Seatbelt profiles start from `(allow default)`; denied-by-default IPC is
- *     NOT claimed. Mach IPC remains default-allowed (required so arbitrary
- *     node/python/shell commands keep working). Signals and AF_UNIX sockets are
- *     denied explicitly. Apple Events cannot be filtered by current sandbox-exec
- *     (operation not exposed), so a sandboxed process could ask another app to
- *     perform actions on its behalf — document this when writing policy docs.
+ *   - Seatbelt profiles start from `(deny default)`: an operation class with
+ *     no explicit rule is DENIED (the old `(allow default)` baseline silently
+ *     permitted the unknown-unknowns). Three plumbing grants keep arbitrary
+ *     node/python/shell commands working, exactly as the audit report §8.1
+ *     required: mach-lookup (Mach service-name discovery — so Mach IPC
+ *     remains reachable), sysctl-read (read-only introspection), and
+ *     file-ioctl (bounded by the file allowlist — an fd the path policy
+ *     rejected cannot be ioctl'd). Signals and AF_UNIX sockets are also
+ *     denied explicitly. Apple Events cannot be filtered by current
+ *     sandbox-exec (operation not exposed), so a sandboxed process could ask
+ *     another app to perform actions on its behalf — document this when
+ *     writing policy docs.
  *   - sandbox-exec is deprecated by Apple; it still works but is not part of
  *     the App Sandbox API and has no support guarantees.
  *   - bubblewrap is an unprivileged userns-based boundary between the sandbox
@@ -264,6 +271,14 @@ function seatbeltQuote(p) {
 /**
  * Generate a Seatbelt sandbox profile.
  *
+ * Deny-by-default baseline:
+ *   - `(deny default)` — any operation class without an explicit rule below
+ *     is denied. The three plumbing grants (sysctl-read, mach-lookup,
+ *     file-ioctl) preserve the load-bearing reach real commands were
+ *     observed to need; everything else the old `(allow default)` baseline
+ *     left open is now closed (see HONEST LIMITATIONS at the top of this
+ *     file).
+ *
  * Closed-by-default filesystem policy:
  *   - `(deny file-read*)` + explicit re-allow of system paths + allowlisted
  *     directories + workspace. Home is NOT broadly readable.
@@ -332,7 +347,26 @@ function generateSeatbeltProfile(options = {}) {
 
   return `
 (version 1)
-(allow default)
+; Deny-by-default baseline: every operation class WITHOUT an explicit grant
+; below is denied (fail-closed for the unknown-unknowns the old allow-default
+; baseline silently permitted). The grants that follow preserve
+; exactly the load-bearing reach real commands need:
+;   - sysctl-read  — read-only system introspection (libc/python/node probe
+;                    hardware and OS info); sysctl WRITE stays denied;
+;   - mach-lookup  — Mach service-name discovery, required so arbitrary
+;                    node/python/shell commands keep working (audit report
+;                    §8.1); all other IPC classes stay default-denied;
+;   - file-ioctl   — ioctl on files the path policy already allowed open
+;                    (terminal probes like isatty); an fd the file rules
+;                    rejected can never be ioctl'd, so this adds no reach
+;                    beyond the file allowlist itself.
+; Every other class the old baseline left open (foreign process-info,
+; user preferences, host-level mach ops, sysv ipc, ...) is now DENIED.
+(deny default)
+
+(allow sysctl-read)
+(allow mach-lookup)
+(allow file-ioctl)
 
 ; Network: fully denied. Seatbelt cannot match per-domain destinations.
 ; system-socket additionally kills AF_UNIX sockets — network* only covers
@@ -381,10 +415,9 @@ ${execBlock}
 )
 (allow process-fork)
 
-; Signal discipline: the sandbox may only signal its own processes.
-; (allow default) covers IPC by design (Mach) — see the audit report "by
-; design" section; per-process signals are NOT part of that and stay denied
-; for other processes.
+; Signal discipline: the sandbox may only signal its own processes — an
+; explicit deny plus per-target allows, so confinement does not depend on
+; the deny-by-default baseline alone.
 (deny signal)
 (allow signal (target self))
 (allow signal (target children))
