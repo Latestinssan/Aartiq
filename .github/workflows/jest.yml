@@ -1,6 +1,11 @@
 name: 🧪 Jest Test Suite
 
 on:
+  # Every PR runs the full suite automatically — the gate must not depend on
+  # someone remembering to dispatch it. workflow_dispatch stays for the two
+  # inputs below (fast Windows-only iteration, OS-sandbox-only runs) and for
+  # re-runs on demand.
+  pull_request:
   workflow_dispatch:
     inputs:
       # Dispatching with a pattern runs ONLY the Windows sandbox job, and only
