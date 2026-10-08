@@ -128,7 +128,7 @@ Latest green run: [#37772437527](https://github.com/Latestinssan/Aartiq/actions/
 
 **5 jobs.** All five jobs were green on the run above — four Jest jobs (full suite, macOS Seatbelt, Linux bubblewrap, Windows AppContainer) plus a typecheck job (tsc --noEmit) that reports no test counts; per-job results live on the testing page. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1426 passed / 12 skipped / 0 failed of 1438 declared** (generated 2026-10-08).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1479 passed / 12 skipped / 0 failed of 1491 declared** (generated 2026-10-08).
 
 > The per-job figures on the testing page belong to their run and commit, not to the current tree, which may have grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 
@@ -144,10 +144,10 @@ Every socket the application opens, and what actually protects it:
 <!-- SSOT:START network -->
 | Service | Port | Default bind address | Authentication |
 | --- | --- | --- | --- |
-| MCP browser bridge | 3001 | `127.0.0.1` | A token required on every route including SSE, read-or-created in ~/.aartiq-mcp-token (mode 0600) so a configured client survives restarts. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. |
+| MCP browser bridge | 3001 | `127.0.0.1` | A token required on every route including SSE, read-or-created in ~/.aartiq-mcp-token (mode 0600) so a configured client survives restarts. Host must be the loopback host and this listener's own port; any browser Origin must be on an allow-list of the app's own origins. Per-client credentials: POST /clients mints one with the primary token (returned once) and POST /clients/revoke retires just it — its peers and the primary token keep working. |
 | WiFi sync (desktop ↔ mobile) | 3004 | `all interfaces (0.0.0.0 / ::)` | Short-lived 15-minute access tokens and 7-day refresh tokens bound to device ID. Every sync action — unpair included — requires an active, unexpired token, with brute-force lockout. The WebSocket upgrade itself refuses foreign Origins and Host headers that do not name this machine (DNS rebinding). |
-| Native macOS / CLI bridge | 46203 | `127.0.0.1` | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. |
-| Agent API tool server | 46204 | `127.0.0.1` | A token required on every HTTP route, read-or-created in ~/.aartiq-agent-token (mode 0600) so an agent configured once keeps working across restarts, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. |
+| Native macOS / CLI bridge | 46203 | `127.0.0.1` | A token required on every route, read from ~/.aartiq-token (mode 0600), plus the same Host and Origin checks. Per-client credentials: POST /clients mints one with the primary token (returned once) and POST /clients/revoke retires just it — its peers and the primary token keep working. |
+| Agent API tool server | 46204 | `127.0.0.1` | A token required on every HTTP route, read-or-created in ~/.aartiq-agent-token (mode 0600) so an agent configured once keeps working across restarts, plus the same Host and Origin checks. An unknown x-agent-id is still auto-registered, but as a limited-trust agent — it no longer stands in for authentication. Per-client credentials: POST /clients mints one with the primary token (returned once) and POST /clients/revoke retires just it — its peers and the primary token keep working. |
 | Background task service (separate Electron app) | 3999 | `127.0.0.1` | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) compared in constant time against the service token (options.authToken, AARTIQ_PDF_SYNC_TOKEN, or a generated per-process token), plus Host header validation against DNS rebinding. |
 <!-- SSOT:END network -->
 
