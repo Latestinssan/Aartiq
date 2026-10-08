@@ -79,7 +79,7 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | File | Purpose |
 |------|---------|
 | `Security.ts` / `SecurityValidator.js` | Command validation, risk levels, injection detection |
-| `MasterPINService.ts` / `MasterPINSetup.tsx` | Master PIN (PBKDF2-SHA256, 100k rounds) stored in Native OS Keychain (Apple Keychain/DPAPI/Secret Service) + 5-attempt lockout |
+| `MasterPINService.ts` / `MasterPINSetup.tsx` | Master PIN (PBKDF2-SHA256, 600k rounds; legacy 100k records re-hash on first successful unlock) stored in Native OS Keychain (Apple Keychain/DPAPI/Secret Service) + 5-attempt lockout |
 | `UnifiedSessionManager.ts` | Unified past/live session aggregator (tabs, history, tasks, permissions, sync snapshots) |
 | `PermissionRelayService.ts` | Dual-gate permission relay (Master PIN + Android Screen Lock) for remote & high-risk approvals |
 | `DeviceIdentifier.ts` | Native OS friendly computer name and hardware model detection |

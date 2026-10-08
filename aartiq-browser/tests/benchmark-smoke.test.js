@@ -10,9 +10,9 @@
  *     observed === calls guards held),
  *   - the environment block is captured,
  *   - the PBKDF2 numbers are plausible floors: 600 000 SHA-256 iterations
- *     cannot finish in under 5 ms on any real CPU, so a floor of 5 ms proves
- *     the KDF bench actually did the documented work rather than short-
- *     circuiting,
+ *     cannot finish in under 5 ms on any real CPU, so a 5 ms floor on each
+ *     KDF bench proves it actually did the documented work rather than
+ *     short-circuiting,
  *   - and the cheap gates are cheaper than the KDF — a sanity ordering.
  *
  * See BENCHMARKS.md for how to run and compare real numbers.
@@ -32,7 +32,7 @@ const EXPECTED_RESULTS = [
   'path-allowlist',
   'auth-gate',
   'kdf-pbkdf2-600k-sha256',
-  'kdf-masterpin-100k-sha256',
+  'kdf-masterpin-600k-sha256',
 ];
 
 let output;
@@ -99,10 +99,10 @@ test('the KDF benches did their documented work (plausible floors)', () => {
   // 600 000 SHA-256 PBKDF2 cannot run in under 5 ms on real hardware — a
   // result below the floor would mean the bench short-circuited.
   expect(byName['kdf-pbkdf2-600k-sha256'].medianNsPerOp).toBeGreaterThan(5e6);
-  expect(byName['kdf-masterpin-100k-sha256'].medianNsPerOp).toBeGreaterThan(5e5);
+  expect(byName['kdf-masterpin-600k-sha256'].medianNsPerOp).toBeGreaterThan(5e6);
   // …and every other gate must be orders of magnitude cheaper.
   for (const name of ['shell-classify', 'always-eligibility', 'grant-gate', 'auth-gate']) {
-    expect(byName[name].medianNsPerOp).toBeLessThan(byName['kdf-masterpin-100k-sha256'].medianNsPerOp);
+    expect(byName[name].medianNsPerOp).toBeLessThan(byName['kdf-masterpin-600k-sha256'].medianNsPerOp);
   }
 });
 

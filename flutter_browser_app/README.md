@@ -13,7 +13,7 @@ A next-generation AI-native mobile companion browser created using Flutter. Conn
 
 ### 1. Dual-Gate Permission Approval
 - **Exact Desktop Risk Tiers**: Displays automation plans with the same risk categorization (`CRITICAL` 🔴, `HIGH` 🟠, `MEDIUM` 🟡, `LOW` 🟢), step-by-step shell operation code blocks, risk factors, and security mitigations as the desktop application.
-- **Gate 1 — Master PIN**: Required 6-digit PIN hashed using PBKDF2-SHA256 (100,000 rounds) stored securely in Android Keystore / iOS Keychain.
+- **Gate 1 — Master PIN**: Required 6-digit PIN hashed using PBKDF2-SHA256 (600,000 rounds; PINs created at the earlier 100,000-round cost keep verifying and are re-hashed on first successful unlock) stored securely in Android Keystore / iOS Keychain.
 - **Gate 2 — Android Screen Lock / Biometrics**: Android native device verification (`local_auth`) using biometric fingerprint/face or device PIN/pattern. Both gates must succeed to authorize remote and high-risk executions.
 
 ### 2. Unified Session Synchronization

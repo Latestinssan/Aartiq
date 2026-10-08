@@ -20,7 +20,7 @@ local HTTP request the app gates. They exist to answer two questions honestly:
 | `path-allowlist` | `src/core/directory-allowlist.js` | `isPathAllowed` canonicalizes with `realpath` (system calls), applies the always-deny sensitive-path rule, then walks the allowlist with read/write separation. |
 | `auth-gate` | `src/lib/local-server-auth.js` | `checkLocalRequest` is the per-request gate on the three local listeners: Host (DNS-rebinding defense), Origin allow-list, failed-auth lockout map, URL parse, constant-time token compare. |
 | `kdf-pbkdf2-600k-sha256` | documented parameters (`Documentation.tsx`, `crypto-utils.ts`, `system-handlers.js`) | The documented cost of the current E2EE scheme: PBKDF2-SHA-256, 600 000 iterations. |
-| `kdf-masterpin-100k-sha256` | `src/lib/MasterPINService.js` | `hashPin` — the Master PIN unlock path (PBKDF2-SHA-256, 100 000 iterations, matches Flutter). |
+| `kdf-masterpin-600k-sha256` | `src/lib/MasterPINService.js` | `hashPin` — the Master PIN unlock path (PBKDF2-SHA-256, 600 000 iterations, matches Flutter; pre-existing records verify at their stored cost and are re-hashed on first successful unlock). |
 
 ## Running
 
