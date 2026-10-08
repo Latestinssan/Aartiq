@@ -529,6 +529,8 @@ declare global {
             workflowDelete: (name: string) => Promise<{ success: boolean; deleted?: boolean; error?: string }>;
             workflowStatus: () => Promise<{ success: boolean; isRecording?: boolean; stepCount?: number }>;
             generateHighRiskQr: (actionId: string) => Promise<string | null>;
+            generateShellTicketQr: (ticketId: string) => Promise<string | null>;
+            onApprovalTicketResolved: (callback: (data: { ticketId: string }) => void) => () => void;
             onMobileApproveHighRisk: (callback: (data: { pin: string; id: string }) => void) => () => void;
             forwardAiStream: (opts: { promptId: string; response: string; isStreaming: boolean; fromDeviceId?: string; mode?: string }) => Promise<{ success: boolean }>;
             logError: (message: string) => void;

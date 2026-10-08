@@ -97,8 +97,11 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
 
   describe('sync-handlers.js remote shell gate', () => {
     function setupSyncHandlerEnv() {
+      const ipcHandlers = {};
       const ipcMain = {
-        handle: () => {},
+        handle: (channel, fn) => {
+          ipcHandlers[channel] = fn;
+        },
         on: () => {},
       };
 
@@ -135,7 +138,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
 
       registerSyncHandlers(ipcMain, handlers);
 
-      return { wifiSyncService, capabilityController, handlers };
+      return { wifiSyncService, capabilityController, handlers, ipcHandlers };
     }
 
     it('remote command without ticket triggers QR/PIN flow and does not execute', async () => {
@@ -161,14 +164,18 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
       assert.strictEqual(response.awaiting_approval, true);
       assert.ok(response.ticketId);
 
-      // Verify QR was sent to mobile with PIN
+      // The push is informational: it carries the command and ticket id and
+      // must NOT carry the confirmation secret. The PIN and QR exist only in
+      // the desktop's window (generate-shell-ticket-qr) — pushing them here
+      // would let any holder of the paired device's token confirm without
+      // ever pointing a camera at the desktop.
       assert.strictEqual(wifiSyncService.messagesSent.length, 1);
       const sent = wifiSyncService.messagesSent[0];
       assert.strictEqual(sent.action, 'shell-approval-qr');
       assert.strictEqual(sent.ticketId, response.ticketId);
-      assert.ok(sent.pin);
       assert.strictEqual(sent.command, 'echo hello_world');
-      assert.strictEqual(sent.qrData, 'data:image/png;base64,mockqr');
+      assert.ok(!sent.pin, 'the approval PIN must never be pushed over the channel');
+      assert.ok(!sent.qrData, 'the approval QR must never be pushed over the channel');
     });
 
     it('remote command with invalid ticket is denied', async () => {
@@ -237,7 +244,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
     });
 
     it('remote command with tampered command string is denied (input-hash verification)', async () => {
-      const { wifiSyncService } = setupSyncHandlerEnv();
+      const { wifiSyncService, capabilityController } = setupSyncHandlerEnv();
 
       // Step 1: Request approval for safe command
       let step1Response = null;
@@ -254,7 +261,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
       await new Promise((r) => setImmediate(r));
 
       const ticketId = step1Response.ticketId;
-      const validPin = wifiSyncService.messagesSent[0].pin;
+      const validPin = capabilityController.ticketManager.tickets.get(ticketId).metadata.pin;
 
       // Step 2: Tamper with command using the legitimate ticket and PIN
       let step2Response = null;
@@ -278,7 +285,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
     });
 
     it('remote command succeeds with valid ticket + PIN and cannot be replayed (single-use)', async () => {
-      const { wifiSyncService } = setupSyncHandlerEnv();
+      const { wifiSyncService, capabilityController } = setupSyncHandlerEnv();
 
       // Step 1: Request approval
       let step1Response = null;
@@ -295,7 +302,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
       await new Promise((r) => setImmediate(r));
 
       const ticketId = step1Response.ticketId;
-      const validPin = wifiSyncService.messagesSent[0].pin;
+      const validPin = capabilityController.ticketManager.tickets.get(ticketId).metadata.pin;
 
       // Step 2: Execute with valid ticket and pin
       let step2Response = null;
@@ -356,7 +363,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
         return { on: () => {} };
       });
       try {
-        const { wifiSyncService } = setupSyncHandlerEnv();
+        const { wifiSyncService, capabilityController } = setupSyncHandlerEnv();
 
         let step1Response = null;
         wifiSyncService.emit('command', {
@@ -378,7 +385,7 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
             action: 'shell-command',
             command: 'echo hello_fallback',
             ticketId: step1Response.ticketId,
-            pin: wifiSyncService.messagesSent[0].pin,
+            pin: capabilityController.ticketManager.tickets.get(step1Response.ticketId).metadata.pin,
           },
           sendResponse: (res) => {
             step2Response = res;
@@ -396,6 +403,151 @@ describe('Issue 1: Remote-origin shell commands require approval', () => {
         sandboxSpy.mockRestore();
         execSpy.mockRestore();
       }
+    });
+
+    it('the desktop renders the approval QR — the PIN exists only on the ticket and on screen', async () => {
+      const { wifiSyncService, capabilityController, ipcHandlers } = setupSyncHandlerEnv();
+
+      let step1Response = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'shell-command',
+          command: 'echo qr_render',
+        },
+        sendResponse: (res) => {
+          step1Response = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      const ticketId = step1Response.ticketId;
+      const ticket = capabilityController.ticketManager.tickets.get(ticketId);
+      assert.ok(ticket.metadata.pin, 'the ticket carries the PIN');
+
+      const rendered = JSON.parse(await ipcHandlers['generate-shell-ticket-qr'](null, ticketId));
+      assert.ok(rendered.qrImage, 'a pending ticket renders a QR');
+      assert.strictEqual(rendered.pin, ticket.metadata.pin, 'the on-screen PIN is the ticket PIN');
+
+      const unknown = JSON.parse(await ipcHandlers['generate-shell-ticket-qr'](null, 'no-such-ticket'));
+      assert.ok(unknown.error, 'unknown tickets fail closed with an error, not a QR');
+    });
+
+    it('approve-shell (the phone scan path) executes with the ticket PIN, single-use', async () => {
+      const { wifiSyncService, capabilityController } = setupSyncHandlerEnv();
+
+      let step1Response = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'shell-command',
+          command: 'echo scan_approved',
+        },
+        sendResponse: (res) => {
+          step1Response = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      const ticketId = step1Response.ticketId;
+      const validPin = capabilityController.ticketManager.tickets.get(ticketId).metadata.pin;
+
+      let approveResponse = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'approve-shell',
+          approvalId: ticketId,
+          approved: true,
+          pin: validPin,
+          command: 'echo scan_approved',
+        },
+        sendResponse: (res) => {
+          approveResponse = res;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 200));
+
+      assert.ok(approveResponse);
+      assert.strictEqual(approveResponse.success, true);
+      assert.ok(String(approveResponse.output).includes('scan_approved'));
+
+      // The redeemed ticket cannot be used again — a second confirm is refused.
+      let replayResponse = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'approve-shell',
+          approvalId: ticketId,
+          approved: true,
+          pin: validPin,
+          command: 'echo scan_approved',
+        },
+        sendResponse: (res) => {
+          replayResponse = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      assert.ok(replayResponse);
+      assert.strictEqual(replayResponse.success, false);
+    });
+
+    it('approve-shell with the wrong PIN or an unknown ticket is denied', async () => {
+      const { wifiSyncService } = setupSyncHandlerEnv();
+
+      let step1Response = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'shell-command',
+          command: 'echo deny_scan',
+        },
+        sendResponse: (res) => {
+          step1Response = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      let wrongPinResponse = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'approve-shell',
+          approvalId: step1Response.ticketId,
+          approved: true,
+          pin: '000000',
+          command: 'echo deny_scan',
+        },
+        sendResponse: (res) => {
+          wrongPinResponse = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      assert.ok(wrongPinResponse);
+      assert.strictEqual(wrongPinResponse.success, false);
+      assert.strictEqual(wrongPinResponse.error, 'Invalid PIN for approval ticket.');
+
+      let unknownTicketResponse = null;
+      wifiSyncService.emit('command', {
+        command: 'desktop-control',
+        args: {
+          action: 'approve-shell',
+          approvalId: 'no-such-ticket',
+          approved: true,
+          pin: '123456',
+          command: 'echo deny_scan',
+        },
+        sendResponse: (res) => {
+          unknownTicketResponse = res;
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      assert.ok(unknownTicketResponse);
+      assert.strictEqual(unknownTicketResponse.success, false);
+      assert.strictEqual(unknownTicketResponse.error, 'Invalid or expired ticket.');
     });
   });
 });

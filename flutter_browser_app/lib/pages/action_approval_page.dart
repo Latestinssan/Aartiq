@@ -351,16 +351,31 @@ class _ActionApprovalPageState extends State<ActionApprovalPage> {
         'approvalId': widget.approvalId,
         'approved': true,
         'pin': enteredPin,
+        // The desktop re-checks this against the approval ticket's own
+        // command; a mismatch is rejected there (anti-tamper).
+        'command': widget.command,
       });
 
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Shell command approved!'),
-            backgroundColor: Color(0xFF00E5FF),
-          ),
-        );
+        if (result != null && result['success'] == true) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Approved — command executed on the desktop.'),
+              backgroundColor: Color(0xFF00E676),
+            ),
+          );
+        } else {
+          // The desktop is authoritative (ticket, PIN, single-use). Report
+          // its refusal instead of claiming success — this page used to show
+          // "Shell command approved!" even when the desktop answered
+          // "Unknown action" and nothing ran.
+          HapticFeedback.vibrate();
+          setState(() {
+            _error =
+                (result?['error'] ?? 'Approval was not accepted.').toString();
+          });
+        }
       }
     } catch (e) {
       setState(() {

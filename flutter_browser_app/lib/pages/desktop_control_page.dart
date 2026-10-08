@@ -75,11 +75,10 @@ class _DesktopControlPageState extends State<DesktopControlPage>
     _desktopToMobileSubscription =
         SyncService().onDesktopToMobile.listen((msg) {
       if (mounted && msg['action'] == 'shell-approval-qr') {
-        _showShellApprovalDialog(
-          msg['command'] as String,
-          msg['pin'] as String,
-          msg['qrData'] as String?,
-        );
+        // The push is informational only: it deliberately carries no PIN and
+        // no QR (those exist only on the desktop screen, so a compromised
+        // paired device cannot confirm without pointing a camera at it).
+        _showShellApprovalDialog(msg['command'] as String);
       } else if (mounted && msg['action'] == 'power-approval-qr') {
         // Handle shutdown/restart/sleep/lock QR approval
         _showPowerApprovalDialog(
@@ -238,7 +237,7 @@ class _DesktopControlPageState extends State<DesktopControlPage>
     );
   }
 
-  void _showShellApprovalDialog(String command, String pin, String? qrData) {
+  void _showShellApprovalDialog(String command) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -271,19 +270,10 @@ class _DesktopControlPageState extends State<DesktopControlPage>
               ),
             ),
             const SizedBox(height: 20),
-            const Text('Approve on your mobile using the QR code below:',
+            const Text(
+                'To approve: open the Aartiq desktop window, scan the QR '
+                'it displays with this phone, then enter the PIN shown there.',
                 style: TextStyle(color: Colors.white70)),
-            if (qrData != null) ...[
-              const SizedBox(height: 10),
-              Image.memory(base64Decode(qrData.split(',').last),
-                  width: 200, height: 200),
-            ],
-            const SizedBox(height: 10),
-            Text('PIN: $pin',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
           ],
         ),
         actions: [
@@ -1101,10 +1091,19 @@ class _ShellCommandPanelState extends State<_ShellCommandPanel> {
       if (mounted) {
         setState(() {
           if (_history.isNotEmpty) {
+            // awaiting_approval means nothing has run yet: the desktop is
+            // waiting for the QR + PIN confirm. Reporting that as success
+            // with "No output" made a pending approval look finished.
+            final awaiting = result?['awaiting_approval'] == true;
             _history[_history.length - 1] = {
               'cmd': command,
-              'output': result?['output'] ?? result?['error'] ?? 'No output',
-              'status': result?['success'] == true ? 'success' : 'error',
+              'output': awaiting
+                  ? 'Approval required — scan the QR shown in the Aartiq '
+                      'desktop window with this phone, then enter the PIN.'
+                  : (result?['output'] ?? result?['error'] ?? 'No output'),
+              'status': awaiting
+                  ? 'approval'
+                  : (result?['success'] == true ? 'success' : 'error'),
             };
           }
           _isRunning = false;
@@ -1226,6 +1225,9 @@ class _ShellCommandPanelState extends State<_ShellCommandPanel> {
                                     height: 15,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2, color: Colors.white38)),
+                              if (item['status'] == 'approval')
+                                const Icon(Icons.hourglass_top,
+                                    size: 15, color: Colors.amber),
                               if (item['status'] == 'success')
                                 const Icon(Icons.check_circle,
                                     size: 15, color: Colors.green),

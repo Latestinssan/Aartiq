@@ -37,6 +37,8 @@ interface ClickPermissionModalProps {
     requiresDeviceUnlock?: boolean;
     affectedPaths?: string[];
     estimatedImpact?: string;
+    /** Present for TICKET:* actions; identifies the approval ticket. */
+    ticketId?: string;
   };
   onAllow?: (alwaysAllow?: boolean) => void;
   onDeny: () => void;
@@ -121,6 +123,7 @@ function HighRiskQrSection({
   mobileApproved,
   qrLoading,
   qrError,
+  phoneApprovalOnly = false,
 }: {
   qrImage: string | null;
   expectedPin: string;
@@ -131,6 +134,9 @@ function HighRiskQrSection({
   mobileApproved: boolean;
   qrLoading: boolean;
   qrError: boolean;
+  /** Remote-shell tickets: the phone scans THIS screen's QR and types the PIN
+   *  shown here — the desktop enters nothing and cannot approve. */
+  phoneApprovalOnly?: boolean;
 }) {
   return (
     <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 space-y-4">
@@ -139,7 +145,9 @@ function HighRiskQrSection({
         Mobile QR + PIN verification required
       </div>
       <p className="text-[12px] leading-relaxed text-secondary-text">
-        Scan the QR code with Aartiq Mobile, then enter the matching PIN to confirm this high-risk action.
+        {phoneApprovalOnly
+          ? 'Approve from your phone: scan this QR with Aartiq Mobile, then enter the PIN shown here on the phone.'
+          : 'Scan the QR code with Aartiq Mobile, then enter the matching PIN to confirm this high-risk action.'}
       </p>
 
       {qrLoading && (
@@ -164,43 +172,52 @@ function HighRiskQrSection({
             <div className="mt-1 font-mono text-2xl font-black tracking-[0.3em] text-primary-text">{expectedPin}</div>
           </div>
 
-          <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] ${mobileApproved ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-            {mobileApproved ? <Check size={14} /> : <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500" />}
-            {mobileApproved ? 'Mobile approval received!' : 'Waiting for mobile approval...'}
-          </div>
+          {phoneApprovalOnly ? (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[12px] text-amber-500">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500" />
+              Waiting for your phone: scan this QR with Aartiq Mobile and enter the PIN shown above
+            </div>
+          ) : (
+            <>
+              <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] ${mobileApproved ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                {mobileApproved ? <Check size={14} /> : <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-500" />}
+                {mobileApproved ? 'Mobile approval received!' : 'Waiting for mobile approval...'}
+              </div>
 
-          <div className="w-full max-w-xs space-y-1.5">
-            <label className="text-[11px] font-medium text-secondary-text">Enter PIN to confirm</label>
-            <input
-              type="password"
-              value={pinInput}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '');
-                setPinInput(val);
-                if (val.length === expectedPin.length && expectedPin.length > 0) {
-                  setPinVerified(val === expectedPin);
-                } else {
-                  setPinVerified(false);
-                }
-              }}
-              disabled={false}
-              maxLength={expectedPin.length || 6}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              placeholder={`Enter ${expectedPin.length || 6}-digit PIN`}
-              className={`w-full rounded-lg border px-3 py-2.5 text-center font-mono text-sm font-semibold tracking-widest outline-none transition-colors ${
-                pinVerified
-                  ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-400'
-                  : pinInput.length === expectedPin.length
-                    ? 'border-red-500/50 bg-red-500/5 text-red-400'
-                    : 'border-white/20 bg-white/5 text-primary-text focus:border-[var(--accent)]'
-              }`}
-            />
-            {pinInput.length === expectedPin.length && !pinVerified && (
-              <p className="text-[11px] text-red-400">PIN does not match</p>
-            )}
-          </div>
+              <div className="w-full max-w-xs space-y-1.5">
+                <label className="text-[11px] font-medium text-secondary-text">Enter PIN to confirm</label>
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    setPinInput(val);
+                    if (val.length === expectedPin.length && expectedPin.length > 0) {
+                      setPinVerified(val === expectedPin);
+                    } else {
+                      setPinVerified(false);
+                    }
+                  }}
+                  disabled={false}
+                  maxLength={expectedPin.length || 6}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
+                  placeholder={`Enter ${expectedPin.length || 6}-digit PIN`}
+                  className={`w-full rounded-lg border px-3 py-2.5 text-center font-mono text-sm font-semibold tracking-widest outline-none transition-colors ${
+                    pinVerified
+                      ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-400'
+                      : pinInput.length === expectedPin.length
+                        ? 'border-red-500/50 bg-red-500/5 text-red-400'
+                        : 'border-white/20 bg-white/5 text-primary-text focus:border-[var(--accent)]'
+                  }`}
+                />
+                {pinInput.length === expectedPin.length && !pinVerified && (
+                  <p className="text-[11px] text-red-400">PIN does not match</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -219,6 +236,12 @@ function SinglePermissionCard({
   const [alwaysAllow, setAlwaysAllow] = useState(false);
   const actionName = humanAction(context.action, context.actionType);
   const isHighRisk = context.risk === 'high' || context.risk === 'critical';
+  // A remote-shell ticket is approved from the PHONE (scan the desktop QR,
+  // type the PIN shown here) — see action_approval_page on the paired side.
+  // The desktop dialog only displays that QR and can deny; it must not offer
+  // its own approve button, which would redeem the ticket without executing
+  // anything and leave the phone's later confirm dead.
+  const isRemoteShellTicket = context.actionType === 'TICKET:execute-shell-command';
 
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [expectedPin, setExpectedPin] = useState('');
@@ -244,15 +267,24 @@ function SinglePermissionCard({
     (async () => {
       try {
         const electronAPI = (window as any).electronAPI;
-        const result = await electronAPI?.generateHighRiskQr?.(actionId);
+        // Remote-shell tickets render the TICKET's own QR (its PIN never
+        // leaves the network — this screen is the only place it is shown);
+        // other high-risk actions keep their per-action QR.
+        const result = isRemoteShellTicket
+          ? await electronAPI?.generateShellTicketQr?.(context.ticketId)
+          : await electronAPI?.generateHighRiskQr?.(actionId);
         if (cancelled) return;
 
         if (result) {
           const parsed = typeof result === 'string' ? JSON.parse(result) : result;
           if (!cancelled) {
-            setQrImage(parsed.qrImage || null);
-            setExpectedPin(parsed.pin || '');
-            expectedPinRef.current = parsed.pin || '';
+            if (parsed && parsed.error) {
+              setQrError(true);
+            } else {
+              setQrImage(parsed.qrImage || null);
+              setExpectedPin(parsed.pin || '');
+              expectedPinRef.current = parsed.pin || '';
+            }
           }
         } else {
           if (!cancelled) setQrError(true);
@@ -268,10 +300,10 @@ function SinglePermissionCard({
     return () => {
       cancelled = true;
     };
-  }, [isHighRisk, context.actionType]);
+  }, [isHighRisk, context.actionType, context.ticketId, isRemoteShellTicket]);
 
   useEffect(() => {
-    if (!isHighRisk) return;
+    if (!isHighRisk || isRemoteShellTicket) return;
 
     const electronAPI = (window as any).electronAPI;
     if (!electronAPI?.onMobileApproveHighRisk) return;
@@ -290,9 +322,11 @@ function SinglePermissionCard({
       cleanupMobileListenerRef.current?.();
       cleanupMobileListenerRef.current = null;
     };
-  }, [isHighRisk]);
+  }, [isHighRisk, isRemoteShellTicket]);
 
-  const canApprove = isHighRisk ? (mobileApproved && pinVerified) : true;
+  // Remote-shell tickets approve on the phone; this dialog only shows the QR
+  // and can deny, so its approve affordance is never enabled.
+  const canApprove = isRemoteShellTicket ? false : isHighRisk ? (mobileApproved && pinVerified) : true;
   const approveLabel = isHighRisk
     ? (!mobileApproved || !pinVerified)
       ? (!mobileApproved ? 'Scan QR on Mobile' : 'Enter PIN to Approve')
@@ -383,6 +417,7 @@ function SinglePermissionCard({
               mobileApproved={mobileApproved}
               qrLoading={qrLoading}
               qrError={qrError}
+              phoneApprovalOnly={isRemoteShellTicket}
             />
           )}
 
@@ -434,18 +469,20 @@ function SinglePermissionCard({
         >
           Deny
         </button>
-        <button
-          type="button"
-          onClick={() => onAllow(context.risk === 'high' || context.risk === 'critical' ? false : alwaysAllow)}
-          disabled={!canApprove}
-          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm ${
-            canApprove
-              ? 'bg-[var(--accent)]'
-              : 'cursor-not-allowed bg-white/10 text-secondary-text/50'
-          }`}
-        >
-          {approveLabel}
-        </button>
+        {!isRemoteShellTicket && (
+          <button
+            type="button"
+            onClick={() => onAllow(context.risk === 'high' || context.risk === 'critical' ? false : alwaysAllow)}
+            disabled={!canApprove}
+            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm ${
+              canApprove
+                ? 'bg-[var(--accent)]'
+                : 'cursor-not-allowed bg-white/10 text-secondary-text/50'
+            }`}
+          >
+            {approveLabel}
+          </button>
+        )}
       </div>
     </PermissionShell>
   );

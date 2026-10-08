@@ -61,6 +61,34 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
     catch (err) { return null; }
   });
 
+  // Render the approval QR for a remote-shell ticket. The QR is the ONLY
+  // carrier of the ticket's PIN — it is never sent over the network — so
+  // this is fail-closed: unknown, expired, already-used, or non-shell
+  // tickets get an error instead of a QR. Scanning this with Aartiq Mobile
+  // opens aartiq://shell-approve, which lands on the phone's
+  // action-approval page (PIN typed by the user, read off this screen).
+  ipcMain.handle('generate-shell-ticket-qr', async (event, ticketId) => {
+    try {
+      const capabilityController = handlers.capabilityController;
+      const id = String(ticketId || '');
+      const ticket = capabilityController?.ticketManager?.tickets?.get(id);
+      if (
+        !ticket ||
+        ticket.status !== 'pending' ||
+        ticket.action !== 'execute-shell-command' ||
+        !ticket.metadata?.pin
+      ) {
+        return JSON.stringify({ error: 'No pending approval for that ticket.' });
+      }
+      const command = ticket.params?.rawCommand || ticket.params?.command || '';
+      const pin = String(ticket.metadata.pin);
+      const deepLinkUrl = `aartiq://shell-approve?id=${encodeURIComponent(id)}&deviceId=${encodeURIComponent(os.hostname())}&pin=${encodeURIComponent(pin)}&command=${encodeURIComponent(command)}`;
+      return JSON.stringify({ qrImage: await QRCode.toDataURL(deepLinkUrl), pin });
+    } catch (err) {
+      return JSON.stringify({ error: 'QR generation failed.' });
+    }
+  });
+
   ipcMain.handle('login-to-cloud', async (event, email, password) => {
     if (!cloudSyncService) return { success: false, error: 'Cloud sync not initialized' };
     try { await cloudSyncService.login(email, password); return { success: true }; }
@@ -232,7 +260,20 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
           sendResponse({ success: true, promptId });
         } else if (action === 'get-status') {
           sendResponse({ success: true, desktopName: os.hostname(), platform: os.platform() });
-        } else if (action === 'shell-command') {
+        } else if (action === 'shell-command' || action === 'approve-shell') {
+          if (action === 'approve-shell') {
+            // The phone's action-approval page sends this after the user
+            // scans the desktop's QR (aartiq://shell-approve deeplink) and
+            // types the PIN shown on the desktop screen. It is the same
+            // protocol confirmation as a second shell-command message —
+            // approvalId is the ticket id carried by the QR — so it flows
+            // through every check below unchanged: ticket lookup, command
+            // match against the ticket, per-ticket PIN, single-use redeem.
+            // Before this wiring existed the action had no handler at all:
+            // every scan dead-ended at "Unknown action" while the phone
+            // still displayed a success message.
+            actionArgs.ticketId = actionArgs.approvalId;
+          }
           // ====================================================================
           // SECURITY FIX (audit-doc §3e): Remote shell execution from WiFi Sync.
           //
@@ -290,7 +331,14 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
               });
 
               if (capResult.needsApproval && capResult.ticketId) {
-                // 4. Require QR/PIN approval (dual-gate mobile approval flow)
+                // 4. Require QR/PIN approval — and the PIN never crosses the
+                // network channel. It lives on the ticket and reaches the
+                // phone only through the QR the DESKTOP renders
+                // (generate-shell-ticket-qr IPC). Pushing pin/qrData here
+                // would hand the confirmation secret to anyone holding the
+                // paired device's token, so a compromised phone could
+                // confirm any command without ever being pointed at the
+                // desktop's screen — the exact threat the QR step covers.
                 const { randomBytes } = require('crypto');
                 const generatedPin = String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
                 const ticket = capabilityController.ticketManager?.tickets?.get(capResult.ticketId);
@@ -298,14 +346,11 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
                   ticket.metadata = { ...(ticket.metadata || {}), pin: generatedPin, command: shellCmd };
                 }
 
-                const qrResult = await generateShellApprovalQR(shellCmd, capResult.ticketId, generatedPin);
                 wifiSyncService.sendToMobile({
                   action: 'shell-approval-qr',
                   commandId: capResult.ticketId,
                   ticketId: capResult.ticketId,
-                  pin: generatedPin,
                   command: shellCmd,
-                  qrData: qrResult ? qrResult.qrImage : null,
                 });
                 sendResponse({ success: true, awaiting_approval: true, ticketId: capResult.ticketId });
                 return;
@@ -357,6 +402,14 @@ module.exports = function registerSyncHandlers(ipcMain, handlers) {
             sendResponse({ success: false, error: `Ticket redemption failed: ${redeemRes.reason}` });
             return;
           }
+
+          // The approval itself is complete: the single-use ticket is
+          // redeemed. Tell the renderer so the desktop's approval dialog
+          // closes instead of waiting on a phone that already approved —
+          // and so it does not keep blocking the next approval (a pending
+          // dialog auto-denies every ticket that arrives behind it).
+          const approvalWin = liveWindow();
+          if (approvalWin) approvalWin.webContents.send('approval-ticket-resolved', { ticketId });
 
           // 6. Execute — sandboxed with direct execFile fallback
           const { executeSandboxed } = require('../../core/sandbox-executor');

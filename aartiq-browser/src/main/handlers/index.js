@@ -46,7 +46,7 @@ function registerAllHandlers(ipcMain, handlers) {
     'ollama-list-models',
     'get-wifi-sync-uri','wifi-sync-broadcast','get-wifi-sync-qr','get-wifi-sync-info',
     'get-active-sync-devices','sync-remove-device',
-    'generate-high-risk-qr','login-to-cloud','logout-from-cloud','save-cloud-config',
+    'generate-high-risk-qr','generate-shell-ticket-qr','login-to-cloud','logout-from-cloud','save-cloud-config',
     'get-cloud-devices','connect-to-cloud-device','disconnect-from-cloud-device',
     'sync-clipboard','sync-history','send-desktop-control','connect-to-remote-device',
     'forward-ai-stream',
