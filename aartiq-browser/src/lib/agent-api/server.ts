@@ -21,6 +21,7 @@ import { defaultConfig, bindHost } from './providers';
 // macOS bridge. require() of a CJS module from TS is fine here because the file
 // is plain data and pure functions with no Node-only dependencies.
 import { checkLocalRequest } from '../local-server-auth';
+import { maybeHandleClientAdminRoute } from '../client-credentials';
 import { loadOrCreateSessionToken } from '../session-token';
 import type { AgentApiConfig, ToolContext, Bridge } from './types';
 import type { SecurityPipeline } from '../guardrails';
@@ -114,6 +115,11 @@ export class AgentApiServer {
         res.end(JSON.stringify({ error: verdict.code }));
         return;
       }
+      // Per-client credentials: GET /clients, POST /clients, POST
+      // /clients/revoke. Shared implementation; administration requires the
+      // PRIMARY token (verdict.auth), so a client credential minted here can
+      // never mint or revoke another.
+      if (maybeHandleClientAdminRoute(req, res, { verdict })) return;
       if (req.method === 'GET' && req.url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, tools: this.registry.list().length, remote: this.config.remote }));

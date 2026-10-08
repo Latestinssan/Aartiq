@@ -1,7 +1,7 @@
 # Remote / LAN mode authentication design
 
 **Label:** security
-**Status:** partially resolved — stable tokens and a failed-auth lockout shipped; URL carrier, per-client pairing and named binds remain open
+**Status:** partially resolved — stable tokens, the failed-auth lockout, and per-client credentials with individual revocation shipped; URL carrier, pairing UX and named binds remain open
 
 ## Summary
 
@@ -76,12 +76,27 @@ repeated rejections the way loopback rejections are logged now.
    but logs a warning at 100 failures. A successful auth clears the record.
    Covered by `tests/local-server-auth-lockout.test.js`.
 
+**Per-client revocation — shipped** (gap 3, revocation half). Each listener
+now accepts a second credential class minted by
+`src/lib/client-credentials.js`: `POST /clients` issues a per-client token
+(primary token required, returned exactly once — only its sha256 is stored in
+`~/.aartiq-clients.json`, mode 0600, atomic replace), `POST /clients/revoke`
+tombstones exactly that client, and `GET /clients` lists metadata only.
+`checkLocalRequest` accepts an active credential with `auth: 'client'` and
+refuses a revoked one with 401 `token_revoked` — its peers and the listener's
+primary token are untouched, and a credential minted for one listener is
+`unknown` to the others. An unreadable registry classifies every client token
+as unknown (fail closed); administration is primary-token-only, so a client
+credential can never mint or revoke another. Covered by
+`tests/client-credentials.test.js`.
+
 Still open, and deliberately deferred:
 
 - **Gap 2 (URL carrier)** — the token still travels as an `mcp-remote` query
   parameter; tracked by `pairing-token-in-url.md`.
-- **Gap 3 (provisioning), per-client revocation, and the pairing model** — one
-  shared credential per listener is stable, but several clients still cannot be
-  revoked individually, and nothing writes a token to a remote client.
+- **Gap 3 (provisioning) and the pairing UX** — per-client credentials and
+  individual revocation shipped (Resolution above); still open are the
+  short-lived pairing-code exchange and anything that writes a credential to
+  a remote client.
 - **Named-interface bind** — `resolveBindHost` accepts a `bindHost` override
   but no config surface exposes one.

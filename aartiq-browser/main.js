@@ -280,6 +280,7 @@ const { FlutterBridgeServer } = require('./src/lib/bridge-server.js');
 const { FileSystemMcpServer, NativeAppMcpServer } = require('./src/lib/mcp-desktop-server.js');
 const { BrowserMcpServer } = require('./src/lib/mcp-browser-server.js');
 const { checkLocalRequest } = require('./src/lib/local-server-auth.js');
+const { maybeHandleClientAdminRoute } = require('./src/lib/client-credentials.js');
 const { buildMcpRemoteServerConfig } = require('./src/lib/mcp-bridge-url.js');
 const { RagService } = require('./src/lib/rag-service.js');
 const { VoiceService } = require('./src/lib/voice-service.js');
@@ -1326,6 +1327,11 @@ const startNativeMacUiBridge = () => {
         res.status(verdict.status).json({ error: verdict.code });
         return;
       }
+      // Per-client credentials: GET /clients, POST /clients, POST
+      // /clients/revoke. Shared implementation; administration requires the
+      // PRIMARY token (verdict.auth), so a client credential minted here can
+      // never mint or revoke another.
+      if (maybeHandleClientAdminRoute(req, res, { verdict })) return;
       next();
     });
 
