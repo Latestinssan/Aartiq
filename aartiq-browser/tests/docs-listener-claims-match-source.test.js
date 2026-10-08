@@ -39,6 +39,7 @@ const read = (...p) => fs.readFileSync(path.join(...p), 'utf8');
 const MCP_PAGE = read(LANDING, 'src/app/mcp-settings/page.tsx');
 const SEARCH_IDX = read(LANDING, 'src/lib/search-index.ts');
 const SECURITY = read(LANDING, 'src/app/docs/security/page.tsx');
+const AI_COMMANDS_PAGE = read(LANDING, 'src/app/docs/ai-commands/page.tsx');
 const SKILLS = read(LANDING, 'src/app/docs/skills/page.tsx');
 const FEATURES = read(LANDING, 'src/app/features/page.tsx');
 const OVERVIEW = read(LANDING, 'src/app/docs/overview/page.tsx');
@@ -267,6 +268,42 @@ describe('docs listener / count claims match source', () => {
     // can deny — it has no approve affordance for this action type.
     const MODAL_SRC = read(REPO, 'src/components/ai/ClickPermissionModal.tsx');
     expect(MODAL_SRC).toMatch(/isRemoteShellTicket/);
+  });
+
+  // M23: the security page put `curl / wget` under "Blocked Patterns" and said
+  // downloads are "blocked by the firewall" / "flagged". Both claims came from
+  // config/command-policy.json, which is dead config: only
+  // src/lib/command-validator.js loads it, and that module has no importer in
+  // the app or the tests, so its blockedCommands list never reaches the gate.
+  // The live policy is shell-command-tiers.js — BLOCKED_COMMANDS is
+  // {sudo, su, passwd, chgrp, rm}, and curl/wget are medium tier (asked every
+  // time, Allow Always withheld), with the OS sandbox denying network by
+  // default. The pages must describe the enforced policy, and the tier module
+  // must keep saying what the pages now claim.
+  test('M23: curl/wget are described the way the classifier treats them, not as firewall-blocked', () => {
+    expect(SECURITY).not.toMatch(/blocked by the firewall/);
+    expect(SECURITY).not.toMatch(/flagged; sandbox denies net/);
+    expect(SECURITY).toMatch(/asked every time, Allow Always withheld for network-capable binaries/);
+    expect(SECURITY).toMatch(/Medium tier — approval every time, no Allow Always; sandbox denies network/);
+    // The ai-commands page must not advertise a curl method restriction that
+    // no code enforces.
+    expect(AI_COMMANDS_PAGE).not.toMatch(/GET requests only/);
+
+    // The classifier is the source of the corrected claims.
+    const TIERS_SRC = read(REPO, 'src/lib/shell-command-tiers.js');
+    expect(TIERS_SRC).toMatch(/const BLOCKED_COMMANDS = new Set\(\[\s*'sudo', 'su', 'passwd', 'chgrp', 'rm',\s*\]\)/);
+    expect(TIERS_SRC).toMatch(/curl: \{ tier: SHELL_TIERS\.MEDIUM/);
+    expect(TIERS_SRC).toMatch(/wget: \{ tier: SHELL_TIERS\.MEDIUM/);
+    const { BLOCKED_COMMANDS } = require('../src/lib/shell-command-tiers');
+    expect(BLOCKED_COMMANDS.has('curl')).toBe(false);
+    expect(BLOCKED_COMMANDS.has('wget')).toBe(false);
+
+    // The dead policy file still lists them as blocked — that is exactly why
+    // the pages must not cite it. Its only reader stays unreferenced.
+    const DEAD_POLICY = JSON.parse(read(REPO, 'config/command-policy.json'));
+    expect(DEAD_POLICY.blockedCommands).toContain('curl');
+    const LIB_VALIDATOR = read(REPO, 'src/lib/command-validator.js');
+    expect(LIB_VALIDATOR).toMatch(/config\/command-policy\.json/);
   });
 
   test('X3: the changelog scopes the token claim to the three tokened listeners', () => {
