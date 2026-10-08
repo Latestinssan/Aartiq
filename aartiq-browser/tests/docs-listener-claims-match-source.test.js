@@ -239,6 +239,24 @@ describe('docs listener / count claims match source', () => {
     expect(README).toMatch(/publisher-key allowlisting/);
   });
 
+  // M22: the security page flagged remote-origin shell as executing with
+  // requiresApproval 'never' (main.js:869) — text written 52 minutes BEFORE
+  // the fix landed (a4e1f5eb, shipped with tests/remote-shell-approval.test.js).
+  // The stale note is retired; the page must describe the enforced flow, and
+  // the enforcement it describes must still exist in the source.
+  test('M22: the security page describes remote shell approval the way the code enforces it', () => {
+    expect(SECURITY).not.toMatch(/requiresApproval 'never'/);
+    expect(SECURITY).not.toMatch(/flagged for maintainer review/);
+    expect(SECURITY).not.toMatch(/executes without the QR step/);
+    expect(SECURITY).toMatch(/single-use ticket pushed to the paired device as a QR \+ PIN challenge/);
+
+    const CAPABILITY_SRC = read(REPO, 'src/core/capability-controller.js');
+    expect(CAPABILITY_SRC).toMatch(/origin === 'remote' && name === 'execute-shell-command'/);
+    const SYNC_HANDLERS = read(REPO, 'src/main/handlers/sync-handlers.js');
+    expect(SYNC_HANDLERS).toMatch(/origin: 'remote'/);
+    expect(SYNC_HANDLERS).toMatch(/shell-approval-qr/);
+  });
+
   test('X3: the changelog scopes the token claim to the three tokened listeners', () => {
     expect(CHANGELOG).not.toMatch(/Every route on the local listeners — including/);
     expect(CHANGELOG).toMatch(/three tokened local listeners/);
