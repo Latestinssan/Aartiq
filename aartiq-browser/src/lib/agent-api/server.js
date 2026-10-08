@@ -55,6 +55,7 @@ const providers_1 = require("./providers");
 // macOS bridge. require() of a CJS module from TS is fine here because the file
 // is plain data and pure functions with no Node-only dependencies.
 const local_server_auth_1 = require("../local-server-auth");
+const client_credentials_1 = require("../client-credentials");
 const session_token_1 = require("../session-token");
 class AgentApiServer {
     constructor(deps) {
@@ -117,6 +118,12 @@ class AgentApiServer {
                 res.end(JSON.stringify({ error: verdict.code }));
                 return;
             }
+            // Per-client credentials: GET /clients, POST /clients, POST
+            // /clients/revoke. Shared implementation; administration requires the
+            // PRIMARY token (verdict.auth), so a client credential minted here can
+            // never mint or revoke another.
+            if ((0, client_credentials_1.maybeHandleClientAdminRoute)(req, res, { verdict }))
+                return;
             if (req.method === 'GET' && req.url === '/health') {
                 res.writeHead(200, { 'content-type': 'application/json' });
                 res.end(JSON.stringify({ ok: true, tools: this.registry.list().length, remote: this.config.remote }));

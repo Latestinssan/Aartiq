@@ -11,7 +11,10 @@
  * header. The checks here are the server's own contribution to that problem:
  *
  *   1. bind to loopback unless remote mode was explicitly requested
- *   2. require a per-process token on every route, including /sse and /messages
+ *   2. require a credential on every route, including /sse and /messages:
+ *      either the listener's primary token or one of its active per-client
+ *      credentials (client-credentials.js) — so a single client can be
+ *      revoked without rotating the primary or disturbing its peers
  *   3. validate the Host header against the loopback host and port
  *   4. reject any browser Origin that is not on an explicit allow-list
  *
@@ -20,6 +23,7 @@
  */
 
 const crypto = require('crypto');
+const { clientTokenState } = require('./client-credentials');
 
 /** Hostnames that address this machine. */
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '[::ffff:127.0.0.1]']);
@@ -264,8 +268,12 @@ function resetFailedAuthCounters() {
  * @param {import('http').IncomingMessage} req
  * @param {{ port: number, token: string, requireToken?: boolean, allowRemote?: boolean,
  *           remoteHosts?: string[], allowedOrigins?: (RegExp|string)[], service?: string }} [options]
- * @returns {{ ok: true, service: string }
+ * @returns {{ ok: true, service: string, auth: 'primary' }   // primary token
+ *          | { ok: true, service: string, auth: 'client' }   // active per-client credential
  *          | { ok: false, status: number, code: string, log: string }}
+ *
+ * `auth` distinguishes the two accepted credentials so administration routes
+ * (/clients*) can require the primary token even though both pass the gate.
  */
 function checkLocalRequest(req, options = {}) {
   const {
@@ -289,8 +297,11 @@ function checkLocalRequest(req, options = {}) {
     return { ok: false, status: 403, code: 'bad_origin', log: `rejected ${req.method} ${req.url} — Origin not allowed` };
   }
 
-  // 3. Token — required on every route in loopback mode too, because loopback
-  //    reachability is not the same as authorisation.
+  // 3. Credential — required on every route in loopback mode too, because
+  //    loopback reachability is not the same as authorisation. Either the
+  //    listener's primary token or one of its active per-client credentials;
+  //    a revoked one is refused with its own code so the log can tell
+  //    "you revoked this client" from "this client has the wrong token".
   if (requireToken) {
     const ip = clientIp(req);
     if (isAuthLocked(ip)) {
@@ -307,11 +318,20 @@ function checkLocalRequest(req, options = {}) {
       recordAuthFailure(ip);
       return { ok: false, status: 401, code: 'no_token', log: `rejected ${req.method} ${req.url} — no token presented` };
     }
-    if (!tokensMatch(token, provided)) {
-      recordAuthFailure(ip);
-      return { ok: false, status: 401, code: 'bad_token', log: `rejected ${req.method} ${req.url} — token did not match` };
+    if (tokensMatch(token, provided)) {
+      clearAuthFailures(ip);
+      return { ok: true, service, auth: 'primary' };
     }
-    clearAuthFailures(ip);
+    const state = options.service ? clientTokenState(options.service, provided) : 'unknown';
+    if (state === 'active') {
+      clearAuthFailures(ip);
+      return { ok: true, service, auth: 'client' };
+    }
+    recordAuthFailure(ip);
+    if (state === 'revoked') {
+      return { ok: false, status: 401, code: 'token_revoked', log: `rejected ${req.method} ${req.url} — client credential has been revoked` };
+    }
+    return { ok: false, status: 401, code: 'bad_token', log: `rejected ${req.method} ${req.url} — token did not match` };
   }
 
   return { ok: true, service };
