@@ -322,8 +322,8 @@ const EXTENSIONS = [
         async handler(_a, ctx) { return (0, types_1.jsonResult)(await ctx.bridge.call('extensionList')); },
     }),
     t({
-        name: 'extension_install_webstore', category: 'Extensions', description: 'Install an extension from the Chrome Web Store. CRX3 signature is verified before load.',
-        inputSchema: { type: 'object', properties: { url: str('CRX download URL') }, required: ['url'] }, verb: 'sideEffecting',
+        name: 'extension_install_webstore', category: 'Extensions', description: 'Install an extension from the Chrome Web Store. The URL must declare the extension id it serves (x=id%3D…); the CRX3 signature is verified and the package\'s crx_id must match that declared id before load — a URL for one extension can only install that extension.',
+        inputSchema: { type: 'object', properties: { url: str('CRX download URL declaring the extension id (…x=id%3D<32-char id>…)') }, required: ['url'] }, verb: 'sideEffecting',
         async handler(args, ctx) { return (0, types_1.jsonResult)(await ctx.bridge.call('extensionInstallWebStore', args)); },
     }),
     t({
