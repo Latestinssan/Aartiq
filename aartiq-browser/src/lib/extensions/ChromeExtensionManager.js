@@ -5,6 +5,7 @@ const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { extractCRX, extractZip, isCRXFile, isExtensionDirectory } = require('./crx-extractor');
+const { assertUrlDeclaresExtensionId, assertCrxIdMatchesUrl } = require('./crx-id-binding');
 
 class ChromeExtensionManager extends EventEmitter {
   constructor() {
@@ -254,22 +255,39 @@ class ChromeExtensionManager extends EventEmitter {
   }
 
   /**
-   * Install an extension from the Chrome Web Store by URL. The CRX3 package
-   * signature is verified before any code is extracted (fail-closed): a package
-   * that fails verification is rejected and never loaded.
+   * Install an extension from the Chrome Web Store by URL. Fail-closed in two
+   * steps: the URL must declare the exact extension id it serves, and the
+   * CRX3 package signature is verified and bound to that declared id before
+   * any code is extracted — a package that fails either check is rejected and
+   * never loaded.
    */
   async installFromWebStore(crxUrl) {
+    // Refuse an unbindable request before spending the download: without a
+    // declared id there is nothing to compare the verified package against,
+    // and a valid signature alone only proves self-consistency — anyone can
+    // mint a key and sign a package that verifies as that key's own id.
+    assertUrlDeclaresExtensionId(crxUrl);
     const buf = await this._downloadBuffer(crxUrl);
     const { verifyCrx } = require('./crx-verifier');
     const verified = verifyCrx(buf);
     if (!verified.valid) {
       throw new Error(`CRX signature invalid: ${verified.error}`);
     }
+    // Identity, not just self-consistency: the package's crx_id must equal
+    // the id the URL declared — a URL promising extension X installs X or
+    // nothing at all, so substituting any other (even validly signed)
+    // package fails closed here.
+    assertCrxIdMatchesUrl(crxUrl, verified.extensionId);
     const zipBuf = buf.subarray(verified.zipStart);
     const tempDir = path.join(app.getPath('temp'), `cws-${Date.now()}`);
     extractZip(zipBuf, tempDir);
-    const manifest = this.readManifest(tempDir);
-    const extId = verified.extensionId || this.generateExtensionId(manifest.name);
+    // Validates the archive actually carries a readable manifest.json before
+    // anything is installed; the id itself comes from the signed header.
+    this.readManifest(tempDir);
+    // The verified crx_id — no name-derived fallback: a store package without
+    // a verifiable id is rejected by the verifier, and a URL that declared one
+    // has already been matched against it above.
+    const extId = verified.extensionId;
     const destPath = path.join(this.extensionsDir, extId);
     if (fs.existsSync(destPath)) fs.rmSync(destPath, { recursive: true });
     this.copyDirectory(tempDir, destPath);
