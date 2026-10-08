@@ -243,18 +243,30 @@ describe('docs listener / count claims match source', () => {
   // requiresApproval 'never' (main.js:869) — text written 52 minutes BEFORE
   // the fix landed (a4e1f5eb, shipped with tests/remote-shell-approval.test.js).
   // The stale note is retired; the page must describe the enforced flow, and
-  // the enforcement it describes must still exist in the source.
+  // the enforcement it describes must still exist in the source. Follow-up:
+  // the page's "PIN is never sent over the network" claim pins the push
+  // payload (no pin/qrData), the desktop-rendered QR carrier, and the
+  // deny-only desktop dialog for these tickets.
   test('M22: the security page describes remote shell approval the way the code enforces it', () => {
     expect(SECURITY).not.toMatch(/requiresApproval 'never'/);
     expect(SECURITY).not.toMatch(/flagged for maintainer review/);
     expect(SECURITY).not.toMatch(/executes without the QR step/);
-    expect(SECURITY).toMatch(/single-use ticket pushed to the paired device as a QR \+ PIN challenge/);
+    expect(SECURITY).toMatch(/whose PIN is never sent over the network/);
 
     const CAPABILITY_SRC = read(REPO, 'src/core/capability-controller.js');
     expect(CAPABILITY_SRC).toMatch(/origin === 'remote' && name === 'execute-shell-command'/);
     const SYNC_HANDLERS = read(REPO, 'src/main/handlers/sync-handlers.js');
     expect(SYNC_HANDLERS).toMatch(/origin: 'remote'/);
     expect(SYNC_HANDLERS).toMatch(/shell-approval-qr/);
+    // The push must stay informational: no PIN and no pin-bearing QR image
+    // in the shell-approval-qr object, and the QR is rendered desktop-side.
+    expect(SYNC_HANDLERS).toMatch(/generate-shell-ticket-qr/);
+    expect(SYNC_HANDLERS).not.toMatch(/action: 'shell-approval-qr',[^}]*\bpin:/);
+    expect(SYNC_HANDLERS).not.toMatch(/action: 'shell-approval-qr',[^}]*qrData/);
+    // The desktop dialog for a remote-shell ticket only displays that QR and
+    // can deny — it has no approve affordance for this action type.
+    const MODAL_SRC = read(REPO, 'src/components/ai/ClickPermissionModal.tsx');
+    expect(MODAL_SRC).toMatch(/isRemoteShellTicket/);
   });
 
   test('X3: the changelog scopes the token claim to the three tokened listeners', () => {

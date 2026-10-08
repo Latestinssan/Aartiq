@@ -719,6 +719,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revokeCallShape: (shapeId) => ipcRenderer.invoke('approval-revoke-call-shape', shapeId),
   
   generateHighRiskQr: (actionId) => ipcRenderer.invoke('generate-high-risk-qr', actionId),
+  // Approval QR for a remote-shell ticket — the desktop-side carrier of the
+  // ticket PIN (never sent over the network).
+  generateShellTicketQr: (ticketId) => ipcRenderer.invoke('generate-shell-ticket-qr', ticketId),
+  // Fired when a pending approval ticket has been redeemed (e.g. the paired
+  // phone scanned the desktop QR and confirmed) so the approval dialog can close.
+  onApprovalTicketResolved: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('approval-ticket-resolved', subscription);
+    return () => ipcRenderer.removeListener('approval-ticket-resolved', subscription);
+  },
   onMobileApproveHighRisk: (callback) => {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('mobile-approve-high-risk', subscription);

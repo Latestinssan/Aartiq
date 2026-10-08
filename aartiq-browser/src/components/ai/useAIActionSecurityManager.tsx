@@ -25,6 +25,8 @@ interface PermissionContext {
   requiresDeviceUnlock?: boolean;
   affectedPaths?: string[];
   estimatedImpact?: string;
+  /** Set for TICKET:* actions so the dialog can be closed when the ticket resolves elsewhere (e.g. confirmed from the paired phone). */
+  ticketId?: string;
 }
 
 interface BatchCommandInfo {
@@ -391,6 +393,7 @@ export function useAIActionSecurityManager() {
             reason: ticket.metadata?.approvalReason || `Action "${ticket.action}" requires approval`,
             risk,
             requiresDeviceUnlock: risk === 'high',
+            ticketId: ticket.ticketId,
           },
         };
 
@@ -401,7 +404,22 @@ export function useAIActionSecurityManager() {
     return cleanup;
   }, []);
 
-
+  // Close this dialog when its ticket resolves elsewhere — the paired phone
+  // scanned the desktop QR, typed the PIN, and the ticket was redeemed. The
+  // ticket is already consumed, so close without sending a denial; leaving it
+  // open would also block every later approval (a pending dialog auto-denies
+  // the tickets that arrive behind it).
+  useEffect(() => {
+    if (!window.electronAPI?.onApprovalTicketResolved) return;
+    const cleanup = window.electronAPI.onApprovalTicketResolved((data: { ticketId: string }) => {
+      if (!data?.ticketId) return;
+      if (pendingPermissionRef.current?.context.ticketId === data.ticketId) {
+        pendingPermissionRef.current = null;
+        setPendingPermission(null);
+      }
+    });
+    return cleanup;
+  }, []);
 
   // Directory permission warning panel
   const directoryPermissionPanel = dirPermissionRequest ? (
