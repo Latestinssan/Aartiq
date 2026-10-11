@@ -120,15 +120,15 @@ The full model — risk levels, layer-by-layer detail, encryption & vault migrat
 ### Continuous integration
 
 <!-- SSOT:START ci -->
-**.github/workflows/jest.yml** — on-demand.
+**.github/workflows/jest.yml** — pull_request.
 
-Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
+Runs the full matrix automatically on every pull request, so the gate does not depend on someone remembering to dispatch it, and stays manually dispatchable for the skip-full-suite and windows-test-pattern inputs and for re-runs. There is no push trigger.
 
-Latest green run: [#37772437527](https://github.com/Latestinssan/Aartiq/actions/runs/37772437527) (run #83, `workflow_dispatch`, 2026-10-08, `a31a5bf5`, success).
+Latest green run: [#37817113470](https://github.com/Latestinssan/Aartiq/actions/runs/37817113470) (run #94, `pull_request`, 2026-10-08, `8132937a`, success).
 
 **5 jobs.** All five jobs were green on the run above — four Jest jobs (full suite, macOS Seatbelt, Linux bubblewrap, Windows AppContainer) plus a typecheck job (tsc --noEmit) that reports no test counts; per-job results live on the testing page. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
-Test counts are generated, not typed. On macOS (local) the full suite reports **1479 passed / 12 skipped / 0 failed of 1491 declared** (generated 2026-10-08).
+Test counts are generated, not typed. On macOS (local) the full suite reports **1479 passed / 12 skipped / 0 failed of 1491 declared** (generated 2026-10-11).
 
 > The per-job figures on the testing page belong to their run and commit, not to the current tree, which may have grown since — for a current figure use the generated macOS line above. The same commit yields a different pass/skip split per platform, which is why every published count carries its environment.
 

@@ -311,8 +311,8 @@ flutter_browser_app/
 ## Testing Strategy
 
 ### Unit Tests
-- `src/tests/security-validator.test.js` - 30+ test cases
-- `src/tests/automation.test.js` - Automation layer tests
+- `tests/security-validator.test.js` - 30+ test cases
+- `tests/automation.test.js` - Automation layer tests
 - `src/tests/component-tests.test.js` - Component tests
 
 ### Test Coverage Areas

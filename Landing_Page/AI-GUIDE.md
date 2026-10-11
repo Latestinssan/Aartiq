@@ -5,25 +5,29 @@ This guide helps AI code writers understand the Aartiq project structure, write 
 ## Project Structure
 
 ```
-Aartiq/
-├── aartiq-browser/           # Electron Desktop App (main)
-├── flutter_browser_app/      # Flutter Mobile App
-├── Landing_Page/             # Next.js Landing Page + Docs (THIS REPO)
-│   ├── src/
-│   │   ├── app/              # Next.js App Router pages
-│   │   │   ├── docs/         # Documentation pages
-│   │   │   ├── api/          # API routes
-│   │   │   └── llms.txt/     # Dynamic llms.txt generation
-│   │   ├── components/       # React components
-│   │   ├── lib/              # Utilities, constants, data
-│   │   └── public/          # Static assets
-│   └── public/
-│       ├── sitemap.xml       # XML sitemap for SEO
-│       ├── robots.txt        # AI crawler permissions
-│       ├── llms.txt          # AI-readable index
-│       └── .well-known/     # AI plugin manifest
-├── presenton/               # FastAPI Backend
+Aartiq-Landing-Page/                 # THIS REPO — the public site + docs
+├── src/
+│   ├── app/                        # Next.js App Router pages
+│   │   ├── docs/                   # Documentation pages
+│   │   ├── api/                    # API routes
+│   │   ├── llms.txt/               # Dynamic llms.txt generation
+│   │   └── sitemap.ts              # XML sitemap for SEO (served at /sitemap.xml)
+│   ├── components/                 # React components (docs/ + shared UI)
+│   ├── data/                       # project-facts.ts (the fact SSOT) + generated facts
+│   └── lib/                        # Version re-export, release notes, search index
+├── public/
+│   ├── LLM.md                      # Static AI-readable overview
+│   ├── robots.txt                  # AI crawler permissions
+│   └── .well-known/                # AI plugin manifest
+├── AI-GUIDE.md                     # This file
 └── README.md
+
+Aartiq/                             # The product — a separate repository
+├── aartiq-browser/                 # Electron desktop app (main.js, src/)
+├── aartiq-mcp/                     # MCP server (MIT)
+├── flutter_browser_app/            # Flutter mobile companion
+├── Landing_Page/                   # Residual copy of AI-GUIDE.md + src/lib/release-notes.ts only
+└── scripts/                        # gen-test-facts.ts, gen-repo-facts.ts, sync-docs.ts, check-docs.ts
 ```
 
 ---
@@ -43,15 +47,23 @@ Aartiq/
 - Single source of truth: `src/data/project-facts.ts` (`version`). `src/lib/version.ts` re-exports it; nothing defines a version on its own.
 
 ### Files to Update on Version Change
+Version is written once, in `src/data/project-facts.ts`:
+
 ```typescript
-// src/lib/version.ts
-export const APP_VERSION = {
-  version: '0.2.8',      // UPDATE THIS
-  codename: 'Nebula',     // Optional codename
-  releaseDate: '2026-04-10',
-  channel: 'alpha',
+// src/data/project-facts.ts — the single source of truth
+export const version = {
+  semver: '0.3.8',        // UPDATE THIS
+  codename: 'Palisade',
+  releaseDate: '2026-10-04',
+  status: 'stable',
+  // ...
 };
 ```
+
+`src/lib/version.ts` only re-exports it, so nothing defines a version on its own.
+After a change, run `npm run docs:sync` followed by `npm run docs:check` in the
+`Aartiq` repo — that re-renders every `SSOT:START version` block and fails if any
+page still hard-codes the old value.
 
 ---
 
@@ -62,21 +74,25 @@ export const APP_VERSION = {
 | Page | Path | Description | When to Update |
 |------|------|-------------|----------------|
 | Getting Started | `/docs/getting-started` | Installation, setup, AI providers | New platform support |
+| Keyboard Shortcuts | `/docs/keyboard-shortcuts` | Docs search and global hotkeys | New shortcuts |
 | Overview | `/docs/overview` | Features, architecture, tech stack | Major features |
 | Components | `/docs/components` | UI components, services | New components |
 | Changelog | `/docs/changelog` | Release notes | Every release |
 | Cloud Sync | `/docs/cloud-sync` | WiFi P2P, E2EE sync, mobile | Sync changes |
 | AI Commands | `/docs/ai-commands` | All JSON commands for AI | New/modified commands |
-| Security | `/docs/security` | Six-layer security model | Security changes |
+| Skills | `/docs/skills` | Skill guides loaded on demand | New skills |
+| Security Model | `/docs/security` | Six-layer security model | Security changes |
 | Automation | `/docs/automation` | Background scheduling, cron | New automation features |
 | Native API | `/docs/native-api` | macOS SwiftUI panels, IPC | New APIs |
 | Apple Integration | `/docs/apple-integration` | Siri, Shortcuts, Voice, Raycast | macOS integration |
 | Windows Integration | `/docs/windows-integration` | Shortcuts, Voice, Copilot | Windows integration |
+| Linux Integration | `/docs/linux-integration` | bubblewrap sandbox, desktop entry | Linux changes |
 | Deep Links | `/docs/deep-links` | URL schemes (`aartiq-browser://`) | New protocols |
 | Plugins | `/docs/plugins` | Plugin system, SDK, hooks | Plugin changes |
 | Extensions | `/docs/extensions` | Browser extensions | Extension features |
 | API Reference | `/docs/api-reference` | Full IPC/API documentation | Any API changes |
 | Troubleshooting | `/docs/troubleshooting` | Common issues, solutions | New issues found |
+| Testing & Test Series | `/docs/testing` | Test suite, CI runs, platform matrix | Test/CI changes |
 | Contributing | `/docs/contributing` | Development guide, standards | Dev process changes |
 | Aartiq CLI | `/docs/native-api#cli` | Terminal-based browser control | CLI feature changes |
 
@@ -122,52 +138,66 @@ Aartiq uses structured JSON commands. Always respond with JSON format:
 
 ### All Supported Commands
 
+The registry is `COMMAND_REGISTRY` in `aartiq-browser/src/lib/AICommandParser.ts`
+(73 commands). The public reference with parameters and examples is
+`/docs/ai-commands`; every command below is registered.
+
 | Command | Category | Description |
 |---------|----------|-------------|
-| `NAVIGATE` | Navigation | Go to URL |
+| `NAVIGATE` | Navigation | Go to a URL |
 | `SEARCH` | Navigation | Web search |
 | `WEB_SEARCH` | Navigation | Real-time search with RAG |
 | `SEARCH_RESULTS` | Navigation | Get search result URLs (no tab) |
-| `RELOAD` | Navigation | Refresh page |
+| `RELOAD` | Navigation | Refresh the current tab |
 | `GO_BACK` | Navigation | Back in history |
 | `GO_FORWARD` | Navigation | Forward in history |
 | `READ_PAGE_CONTENT` | Browser | Extract page text |
-| `LIST_OPEN_TABS` | Browser | Get open tabs |
+| `LIST_OPEN_TABS` | Browser | List open tabs |
 | `SWITCH_TAB` | Browser | Switch to a tab |
 | `CLOSE_TAB` | Browser | Close a tab |
-| `CLICK_ELEMENT` | Browser | Click on page element |
-| `FIND_AND_CLICK` | Browser | Find text and click |
+| `CLICK_ELEMENT` | Browser | Click a DOM element |
+| `FIND_AND_CLICK` | Browser | Find text and click near it |
 | `CLICK_AT` | Browser | Click at screen coordinates |
 | `FILL_FORM` | Browser | Fill form fields |
 | `MULTI_FILL_FORM` | Browser | Fill multiple fields atomically |
-| `DOM_SEARCH` | Browser | Search within page DOM |
-| `DOM_READ_FILTERED` | Browser | Read DOM with filtering |
-| `SCROLL_TO` | Browser | Scroll to element |
-| `SCREENSHOT_AND_ANALYZE` | Browser | Capture and analyze screenshot |
+| `DOM_SEARCH` | Browser | Search within the page DOM |
+| `DOM_READ_FILTERED` | Browser | Read DOM text through the injection check |
+| `SCROLL_TO` | Browser | Scroll to an element |
+| `SCREENSHOT_AND_ANALYZE` | Browser | Capture and analyze a screenshot |
 | `DEEP_RESEARCH` | Browser | Iterative deep research |
 | `ORGANIZE_TABS` | Browser | AI tab grouping |
-| `CREATE_PDF_JSON` | PDF | Generate PDF document |
-| `CREATE_FILE_JSON` | PDF | Create file (PDF/PPTX/DOCX) |
-| `GENERATE_PDF` | PDF | Create PDF from markdown |
+| `GROUP_TABS` | Browser | Group tabs by ai/domain/priority/recency |
+| `OPEN_VIEW` | Browser | Switch browser workspace views |
+| `ANALYSE_TABS` | Browser | Analyse all open tabs |
+| `ANALYZE_TABS` | Browser | US-spelling variant of ANALYSE_TABS |
+| `SUMMARIZE_TABS` | Browser | Summarize open tabs |
+| `READ_TAB_CONTENT` | Browser | Read one specific tab |
+| `COMPARE_TABS` | Browser | Compare content across tabs |
+| `FIND_INFORMATION_IN_TABS` | Browser | Search across open tabs |
+| `CREATE_TAB_RESEARCH_CONTEXT` | Browser | Build a research context from open tabs |
+| `CREATE_PDF_JSON` | PDF | Generate a structured PDF (preferred) |
+| `CREATE_FILE_JSON` | PDF | Create PDF/PPTX/DOCX from JSON |
+| `GENERATE_PDF` | PDF | Create PDF from markdown (fallback) |
 | `GENERATE_DIAGRAM` | PDF | Create Mermaid diagrams |
-| `SHELL_COMMAND` | Shell | Execute terminal command |
+| `SHELL_COMMAND` | Shell | Execute a terminal command (approval-gated) |
 | `SET_VOLUME` | System | Set system volume |
 | `SET_BRIGHTNESS` | System | Set display brightness |
-| `OPEN_APP` | System | Launch application |
-| `ENABLE_CLI` | System | Enable Aartiq CLI tool |
-| `OCR_SCREEN` | OCR | Screen recognition |
-| `OCR_COORDINATES` | OCR | Get element coordinates |
-| `CLICK_APP_ELEMENT` | OCR | Click in external app |
-| `GENERATE_IMAGE` | Media | Generate AI image |
+| `OPEN_APP` | System | Launch an application |
+| `ENABLE_CLI` | System | Enable the Aartiq CLI tool |
+| `OCR_SCREEN` | OCR | Screen/region text recognition |
+| `GENERATE_IMAGE` | Media | Generate an AI image |
 | `APPLE_INTELLIGENCE_IMAGE` | Media | Generate image (Apple local) |
 | `APPLE_INTELLIGENCE_SUMMARY` | Media | Summarize text (Apple local) |
 | `PLAY_VIDEO` | Media | Play YouTube inline |
 | `SEARCH_VIDEO` | Media | Search and play YouTube |
-| `SCHEDULE_TASK` | Scheduling | Schedule automation task |
+| `SCHEDULE_TASK` | Scheduling | Schedule a recurring task |
+| `OPEN_SCHEDULING_MODAL` | Scheduling | Open the scheduling modal pre-filled |
 | `LIST_AUTOMATIONS` | Automation | List scheduled tasks |
-| `DELETE_AUTOMATION` | Automation | Remove scheduled task |
-| `RECORD_WORKFLOW` | Automation | Record user workflow |
-| `PLAY_WORKFLOW` | Automation | Replay recorded workflow |
+| `DELETE_AUTOMATION` | Automation | Remove a scheduled task |
+| `RECORD_WORKFLOW` | Automation | Record a workflow |
+| `PLAY_WORKFLOW` | Automation | Replay a recorded workflow |
+| `OPEN_AUTOMATION_SETTINGS` | Automation | Open automation settings |
+| `OPEN_MCP_SETTINGS` | Automation | Open MCP server settings |
 | `LIST_BOOKMARKS` | Bookmarks | List saved bookmarks |
 | `ADD_BOOKMARK` | Bookmarks | Add a bookmark |
 | `REMOVE_BOOKMARK` | Bookmarks | Remove a bookmark |
@@ -177,24 +207,29 @@ Aartiq uses structured JSON commands. Always respond with JSON format:
 | `LIST_SKILLS` | Skills | List available skill guides |
 | `LOAD_SKILL` | Skills | Load a skill guide |
 | `SETTINGS_QUERY` | Settings | Read current settings |
-| `SETTINGS_UPDATE` | Settings | Change a setting |
-| `OPEN_SETTINGS_PANEL` | Settings | Open settings panel |
+| `SETTINGS_UPDATE` | Settings | Request a settings change |
+| `OPEN_SETTINGS_PANEL` | Settings | Open a settings panel |
+| `SET_THEME` | Settings | Switch dark/light mode |
+| `SET_CHAT_STYLE` | Settings | Customize chat font and glow |
 | `THINK` | Meta | Chain-of-thought reasoning |
 | `PLAN` | Meta | Plan execution steps |
 | `EXPLAIN_CAPABILITIES` | Meta | List AI features |
-| `PLUGIN_COMMAND` | Integration | Execute plugin command |
+| `WAIT` | Meta | Pause execution (ms) |
+| `STATUS` | Meta | Show a custom status indicator |
+| `PLUGIN_COMMAND` | Integration | Execute a plugin command |
 
 ---
 
-### Seven-Layer Security Architecture
+### Six-Layer Security Architecture
 
-1. **Visual Sandbox & SecureDOM** - AI uses `OCR_SCREEN` for external apps and a dedicated **SecureDOM Reader** (`READ_PAGE_CONTENT`) for internal pages. Raw HTML is filtered via a PII-stripping sanitization layer before reaching the agent.
-2. **In-Page DOM Search** - AI can perform targeted `SEARCH_DOM` queries to find specific text without loading the entire page into context, minimizing token usage and security exposure.
-3. **Syntactic Firewall** - Pattern analysis blocks dangerous shell commands and prompt injection attempts.
-4. **Human-in-the-Loop** - User approval required for critical actions (Shell, Native Clicks).
-5. **Directory Allowlist** - AI file access restricted to explicitly approved directories with read/write separation. Symlinks resolved via `fs.realpath()`.
-6. **OS-Level Sandboxing** - Platform-specific sandboxes: Seatbelt (macOS), bubblewrap (Linux), and AppContainer + Job Objects (Windows) enforce filesystem, network, and process boundaries at the kernel level. Sandbox setup failures fail closed and never fall back to unsandboxed execution.
-7. **Capability-Scoped Execution** - Actions must be explicitly registered; unregistered actions are rejected entirely.
+1. **Visual Sandbox & SecureDOM** - AI reads external apps via `OCR_SCREEN` and internal pages via the SecureDOM reader (`READ_PAGE_CONTENT`, `DOM_SEARCH`, `DOM_READ_FILTERED`). Raw HTML is sanitized and screened for prompt injection before it reaches the agent. First-pass heuristic.
+2. **Syntactic Firewall** - Pattern analysis blocks dangerous shell commands and prompt-injection attempts. A first-pass heuristic only — text filters are bypassable and are not the primary defence.
+3. **Human-in-the-Loop Approval** - The user approves critical actions (shell, native clicks, settings changes) before they run. Policy layer.
+4. **Directory Allowlist** - AI file access is restricted to explicitly approved directories with read/write separation; symlinks are resolved via `fs.realpath()`. Policy layer.
+5. **OS-Level Sandboxing** - Platform sandboxes — Seatbelt (macOS), bubblewrap (Linux), AppContainer + Job Objects (Windows) — enforce filesystem, network and process boundaries at the kernel level. Setup failure fails closed and never falls back to unsandboxed execution. Enforcement boundary.
+6. **Capability-Scoped Execution** - Actions run only through registered capabilities with single-use approval tickets; unregistered actions are rejected. Enforcement boundary.
+
+Only layers 5 and 6 are enforcement boundaries in the strict sense; the first four are policy and first-pass checks. The [Security page](https://aartiq.ponsrischool.in/docs/security) carries the full breakdown.
 
 ### Risk Levels
 
@@ -227,19 +262,19 @@ guarantee is documented on the
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `llms.txt` | `/public/llms.txt` | Plain text index for LLMs |
-| `sitemap.xml` | `/public/sitemap.xml` | XML sitemap for search engines |
+| `LLM.md` | `/public/LLM.md` | Static overview text for LLMs |
 | `robots.txt` | `/public/robots.txt` | AI crawler permissions |
 | `ai-plugin.json` | `/public/.well-known/` | AI plugin manifest |
 
-### Dynamic Routes
+### Generated Routes
 - `/llms.txt` - Generated at `src/app/llms.txt/route.ts`
+- `/sitemap.xml` - Generated at `src/app/sitemap.ts`
 - `/api/search` - Search API at `src/app/api/search/route.ts`
 
 ### Update When
-- New doc pages added → Update sitemap.xml, llms.txt
-- New features → Update llms.txt content
-- New AI commands → Update both llms.txt and search-index.ts
+- New doc pages added → Update `src/app/sitemap.ts` and `src/app/llms.txt/route.ts`
+- New features → Update `src/app/llms.txt/route.ts` (and `public/LLM.md`)
+- New AI commands → Update `src/app/llms.txt/route.ts` and `src/lib/search-index.ts`
 
 ---
 
@@ -329,10 +364,10 @@ export interface ReleaseEntry {
 ### Example Release Entry
 ```typescript
 {
-  version: '0.2.8',
-  date: '2026-04-10',
-  codename: 'Nebula',
-  channel: 'alpha',
+  version: '0.3.8',
+  date: '2026-10-04',
+  codename: 'Palisade',
+  channel: 'stable',
   changes: {
     new: [
       'Added new AI command EXAMPLE_COMMAND',
@@ -359,7 +394,7 @@ export interface ReleaseEntry {
 When preparing a new release, ensure all these are updated:
 
 ### 1. Version Update
-- [x] Update `src/lib/version.ts` with new version number
+- [x] Update the `version` object in `src/data/project-facts.ts`, then run `npm run docs:sync` and `npm run docs:check` in the `Aartiq` repo
 - [x] Add entry to `src/lib/release-notes.ts`
 
 ### 2. Documentation
@@ -373,9 +408,9 @@ When preparing a new release, ensure all these are updated:
 - [x] Add new command/API entries
 
 ### 4. AI Crawlability
-- [x] Update `public/sitemap.xml` with new pages
-- [x] Update `public/llms.txt` with new features
-- [x] Update `src/app/llms.txt/route.ts` if needed
+- [x] Update `src/app/sitemap.ts` with new pages
+- [x] Update `src/app/llms.txt/route.ts` with new features
+- [x] Update `public/LLM.md` if the overview changed
 
 ### 5. Build & Test
 - [ ] Run `npm run build` to verify no errors
@@ -397,16 +432,16 @@ When preparing a new release, ensure all these are updated:
 1. Create file: `src/app/docs/{name}/page.tsx`
 2. Add to sidebar: Update `navigation` array in `layout.tsx`
 3. Add to search: Add entry in `search-index.ts`
-4. Add to sitemap: Update `public/sitemap.xml`
-5. Add to llms.txt: Update both file and route
+4. Add to sitemap: Update `src/app/sitemap.ts`
+5. Add to llms.txt: Update `src/app/llms.txt/route.ts`
 
 ### Adding New AI Command
 
-1. Add to `aartiq-browser/src/components/AIConstants.ts`
-2. Add handler in `aartiq-browser/src/lib/AICommandParser.ts`
+1. Register the command in `COMMAND_REGISTRY` (`aartiq-browser/src/lib/AICommandParser.ts`) and add any shared constants in `aartiq-browser/src/components/ai/AIConstants.ts`
+2. Add the handler in `aartiq-browser/src/lib/AICommandParser.ts`
 3. Document in `src/app/docs/ai-commands/page.tsx`
 4. Add to search index with type: "command"
-5. Add to llms.txt documentation
+5. Add to `src/app/llms.txt/route.ts`
 
 ### Adding New API/Feature
 
@@ -414,7 +449,7 @@ When preparing a new release, ensure all these are updated:
 2. Document in relevant doc page
 3. Add to `src/app/docs/api-reference/page.tsx`
 4. Update search index
-5. Update llms.txt
+5. Update `src/app/llms.txt/route.ts`
 
 ### Adding New IPC Handler (User Preferences Pattern)
 
@@ -462,11 +497,11 @@ node scripts/component-scanner.js --update
 The script generates `component-data.json` with:
 ```json
 {
-  "generated": "2026-09-13T14:13:48.553Z",
-  "version": "0.3.6",
+  "generated": "2026-10-08T17:17:38.884Z",
+  "version": "0.3.8",
   "desktop": {
-    "total": 230,
-    "totalLines": 59710,
+    "total": 381,
+    "totalLines": 117706,
     "components": [
       {
         "name": "AIAssistOverlay.tsx",
@@ -474,7 +509,7 @@ The script generates `component-data.json` with:
         "lines": 282,
         "description": "Assist Overlay",
         "tags": ["React", "Security", "AI", "macOS"],
-        "lastModified": "2026-09-13",
+        "lastModified": "2026-10-08",
         "codeAnalysis": { ... }
       }
     ]
@@ -574,5 +609,5 @@ export default function PageName() {
 
 ---
 
-*Last Updated: 2026-07-20*
+*Last Updated: 2026-10-11*
 *For AI code writers - maintain consistency and update all related files*
