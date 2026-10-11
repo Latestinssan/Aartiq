@@ -37,7 +37,7 @@ aartiq-browser/
 │   │   ├── DOMEngine.ts
 │   │   ├── Security.ts
 │   │   ├── webauthn-service.js     # WebAuthn/FIDO2 native verification
-│   │   ├── AdvancedDocumentEngine.ts
+│   │   ├── PDFCommandParser.ts
 │   │   ├── WiFiSyncService.ts
 │   │   ├── tesseract-service.js
 │   │   └── plugin-manager.js
@@ -65,7 +65,7 @@ aartiq-browser/
 | `AICommandParser.ts` | Parses AI output into executable commands |
 | `DOMEngine.ts` | Centralized DOM interaction engine v2 with cascading fallbacks |
 | `skill-loader.js` | On-demand AI skill loading and management |
-| `AdvancedDocumentEngine.ts` | PDF/XLSX/PPTX generation |
+| `PDFCommandParser.ts` | Document command parsing; PDF/XLSX/DOCX/PPTX generation runs in `src/main/handlers/file-handlers.js` |
 | `WiFiSyncService.ts` | WebSocket sync desktop↔mobile with permanent authentication tokens |
 | `MasterPINService.ts` | Master PIN (PBKDF2-SHA256, 600k rounds) stored in Native OS Keychain |
 | `UnifiedSessionManager.ts` | Unified session manager (tabs, history, tasks, permissions, sync snapshots) |
@@ -73,7 +73,7 @@ aartiq-browser/
 | `DeviceIdentifier.ts` | Hardware detection & real friendly computer name detection |
 | `P2PFileSyncService.ts` | Peer-to-peer file transfer |
 | `CloudSyncService.ts` | Firebase cloud sync |
-| `SiriShortcutsIntegration.ts` | macOS Siri/Shortcuts bridge |
+| `SiriShortcutsIntegration.js` | macOS Siri/Shortcuts bridge |
 | `tesseract-service.js` | OCR via Tesseract.js |
 | `plugin-manager.js` | Dynamic plugin loading |
 | `context-compactor.ts` | Token-aware message history compaction |

@@ -17,7 +17,7 @@ Aartiq uses Firebase for Authentication and secondary state synchronization.
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_id
     NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
     ```
-4.  **Security Note:** Firebase initialization in `src/lib/firebase.config.ts` uses these environment variables. Ensure they are set in your hosting environment (e.g., Vercel).
+4.  **Security Note:** Firebase initialization in `Aartiq-Landing-Page/src/lib/firebase.ts` uses these environment variables. Ensure they are set in your hosting environment (e.g., Vercel).
 5.  **Admin SDK (Desktop Backend):** If you are using administrative features in the Electron main process:
     -   Download your service account JSON from Firebase Console.
     -   Save it as `aartiq-browser/config/firebase-admin.json`.

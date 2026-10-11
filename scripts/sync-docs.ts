@@ -252,7 +252,7 @@ function renderWorkflows(): string {  const w = ci.workflows;
   return [
     `${w.count} GitHub Actions workflows live in \`.github/workflows/\`. ${w.note}`,
     ``,
-    `The test suite (\`${ci.workflow}\`) is one of the manual ones: ${ci.trigger.detail}`,
+    `The test suite (\`${ci.workflow}\`): ${ci.trigger.detail}`,
   ].join("\n");
 }
 

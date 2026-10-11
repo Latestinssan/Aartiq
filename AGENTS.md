@@ -89,8 +89,8 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 | `WiFiSyncService.ts` | WebSocket sync between desktop and mobile |
 | `P2PFileSyncService.ts` | Peer-to-peer file transfer |
 | `CloudSyncService.ts` | Firebase cloud sync |
-| `AdvancedDocumentEngine.ts` | PDF/XLSX/PPTX generation |
-| `SiriShortcutsIntegration.ts` | macOS Siri and Shortcuts bridge |
+| `PDFCommandParser.ts` | Document command parsing; PDF/XLSX/DOCX/PPTX generation runs in `src/main/handlers/file-handlers.js` |
+| `SiriShortcutsIntegration.js` | macOS Siri and Shortcuts bridge |
 | `tesseract-service.js` | OCR via Tesseract.js |
 | `plugin-manager.js` | Dynamic plugin loading |
 | `agent-api/` | External agent tools over HTTP + MCP (verb gate → tab lock → handler) |
@@ -132,9 +132,9 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 ## CI/CD
 
 <!-- SSOT:START workflows -->
-13 GitHub Actions workflows live in `.github/workflows/`. release.yml fires on version tag push, sync-component-docs.yml fires on push to main, and the remaining eleven are workflow_dispatch. docs-gate.yml lives on the ci/docs-gate branch and does not run on main.
+13 GitHub Actions workflows live in `.github/workflows/`. release.yml fires on version tag push, sync-component-docs.yml fires on push to main, and jest.yml fires on every pull_request. All three also stay manually dispatchable; the remaining ten are workflow_dispatch only. docs-gate.yml lives on the ci/docs-gate branch and does not run on main.
 
-The test suite (`.github/workflows/jest.yml`) is one of the manual ones: Manual dispatch only. There is no push or pull_request trigger, so a green run is not evidence about the latest commit.
+The test suite (`.github/workflows/jest.yml`): Runs the full matrix automatically on every pull request, so the gate does not depend on someone remembering to dispatch it, and stays manually dispatchable for the skip-full-suite and windows-test-pattern inputs and for re-runs. There is no push trigger.
 <!-- SSOT:END workflows -->
 
 ## Dependencies
