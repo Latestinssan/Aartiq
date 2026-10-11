@@ -122,7 +122,11 @@ describe('docs listener / count claims match source', () => {
   test('M11: the enforcement-layer count matches the README security model', () => {
     expect(SECURITY).not.toMatch(/Enforcement Layers Beyond The Firewall/);
     expect(SECURITY).not.toMatch(/six independent security layers/);
-    expect(SECURITY).toMatch(/Enforcement Boundaries \(OS-applied\)/);
+    // The tile used to read "Enforcement Boundaries (OS-applied)" — a mislabel,
+    // because capability-scoped execution is applied by the main process, not the
+    // OS. Only the OS sandbox is OS-applied; the tile now says so.
+    expect(SECURITY).not.toMatch(/Enforcement Boundaries \(OS-applied\)/);
+    expect(SECURITY).toMatch(/1 OS-applied \+ 1 main-process/);
     expect(SECURITY).toMatch(/only two of them are enforcement boundaries/);
   });
 

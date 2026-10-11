@@ -28,8 +28,8 @@ If you have an idea for a feature or an improvement:
 1.  **Fork the repository** on GitHub: [https://github.com/Latestinssan/Aartiq](https://github.com/Latestinssan/Aartiq)
 2.  **Clone the Repo** locally:
     ```bash
-    git clone https://github.com/YOUR-USERNAME/Browser-AI.git
-    cd Browser-AI
+    git clone https://github.com/YOUR-USERNAME/Aartiq.git
+    cd Aartiq
     ```
 3.  **Create a branch** for your feature or fix:
     ```bash
@@ -61,11 +61,11 @@ The desktop code is located in `aartiq-browser`.
 
 ### 📱 Mobile (Flutter)
 
-The mobile code is located in `AartiqBrowserMobile/aartiq`.
+The mobile code is located in `flutter_browser_app` (a Flutter app in the same repository).
 
 1.  Navigate to the directory:
     ```bash
-    cd AartiqBrowserMobile/aartiq
+    cd flutter_browser_app
     ```
 2.  Install dependencies:
     ```bash
@@ -100,13 +100,13 @@ The mobile code is located in `AartiqBrowserMobile/aartiq`.
 
 ### Quick Release (Tag Push)
 ```bash
-git tag v0.2.4-stable
-git push origin v0.2.4-stable
+git tag v0.3.8
+git push origin v0.3.8
 ```
 The CI will automatically build all platforms and create a GitHub release.
 
 ### Manual Release
-1. Go to **Actions** → **Release Build (Landing Page Optimized)**
+1. Go to **Actions** → **🚀 Publish Release** (release.yml)
 2. Click **Run workflow**
 3. Enter version number and options
 
