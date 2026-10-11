@@ -241,9 +241,9 @@ guarantee is documented on the
 <!-- SSOT:START risk-table -->
 | Tier | Approval behaviour | Auto-approved? | Examples |
 | --- | --- | --- | --- |
-| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` |
+| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo` |
 | **medium** | Asked every time. autoApproveMidRisk does not reach shell commands — it still applies to MCP tool actions, which is a separate question. | No. There is no setting that auto-approves a medium shell command. | `cp`, `mv`, `mkdir`, `touch`, `npm`, `git`, `node`, `python`, `curl`, `wget`, `osascript` |
-| **high** | Asked every time, then offered as Allow Once / Always / Deny. | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` |
+| **high** | Asked every time, then offered as Allow Once / Deny — the Always button is not offered for the destructive commands in this tier (every example here matches a destructive pattern, so the Always button is always absent in practice). | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` |
 | **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Refused before the grant store and the auto-approve settings are consulted, and unreachable from every one of them. | _none assigned by any registry_ |
 <!-- SSOT:END risk-table -->
 

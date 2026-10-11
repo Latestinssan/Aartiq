@@ -74,9 +74,9 @@ Risk tiers are assigned to the capability being invoked, not inferred from the w
 <!-- SSOT:START risk-table -->
 | Tier | Approval behaviour | Auto-approved? | Examples |
 | --- | --- | --- | --- |
-| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo`, `NAVIGATE` |
+| **low** | Asked every time, unless you turn on autoApproveLowRiskShell. With it off — the default — a low-risk command shows the same dialog as any other. | Only behind the opt-in autoApproveLowRiskShell setting, which defaults to off. Nothing is granted at startup. | `ls`, `cat`, `pwd`, `find`, `grep`, `echo` |
 | **medium** | Asked every time. autoApproveMidRisk does not reach shell commands — it still applies to MCP tool actions, which is a separate question. | No. There is no setting that auto-approves a medium shell command. | `cp`, `mv`, `mkdir`, `touch`, `npm`, `git`, `node`, `python`, `curl`, `wget`, `osascript` |
-| **high** | Asked every time, then offered as Allow Once / Always / Deny. | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` |
+| **high** | Asked every time, then offered as Allow Once / Deny — the Always button is not offered for the destructive commands in this tier (every example here matches a destructive pattern, so the Always button is always absent in practice). | Only if a grant exists for that exact command line, or a SHELL_HIGH / SHELL_ALL grant was made deliberately. | `chmod`, `find . -delete`, `kill`, `dd`, `mount`, `iptables`, `shutdown` |
 | **critical** | Denied at the policy gate unconditionally, then offered to the user as an interactive Allow / Deny prompt. | Never. Refused before the grant store and the auto-approve settings are consulted, and unreachable from every one of them. | _none assigned by any registry_ |
 <!-- SSOT:END risk-table -->
 
@@ -103,7 +103,7 @@ Aartiq uses a defense-in-depth security model with risk-based permissions, capab
 The security model, including which layers actually enforce and which only advise:
 
 <!-- SSOT:START layers -->
-The model has 6 layers. Only 2 of them are enforcement boundaries in the strict sense — controls the OS applies that application code cannot bypass. The rest are policy and first-pass checks, and are labelled as such rather than presented as equally strong.
+The model has 6 layers. Only 2 of them are enforcement boundaries: the OS sandbox (applied by the OS, unbypassable by application code) and capability-scoped execution (applied by the main process — the only path any action can run through). The rest are policy and first-pass checks, and are labelled as such rather than presented as equally strong.
 
 | # | Layer | Strength |
 | --- | --- | --- |
@@ -124,7 +124,7 @@ The full model — risk levels, layer-by-layer detail, encryption & vault migrat
 
 Runs the full matrix automatically on every pull request, so the gate does not depend on someone remembering to dispatch it, and stays manually dispatchable for the skip-full-suite and windows-test-pattern inputs and for re-runs. There is no push trigger.
 
-Latest green run: [#37817113470](https://github.com/Latestinssan/Aartiq/actions/runs/37817113470) (run #94, `pull_request`, 2026-10-08, `8132937a`, success).
+Latest green run: [#38147731942](https://github.com/Latestinssan/Aartiq/actions/runs/38147731942) (run #95, `pull_request`, 2026-10-11, `9cc2a8fa`, success).
 
 **5 jobs.** All five jobs were green on the run above — four Jest jobs (full suite, macOS Seatbelt, Linux bubblewrap, Windows AppContainer) plus a typecheck job (tsc --noEmit) that reports no test counts; per-job results live on the testing page. Dispatch inputs can reduce the Jest jobs to 3 (skip-full-suite) or 1 (windows-test-pattern), so this is a default-dispatch count rather than an invariant. Node 24. 30 minutes on the full-suite job, 10 minutes on the typecheck job; the three sandbox jobs have no timeout configured.
 
@@ -151,7 +151,7 @@ Every socket the application opens, and what actually protects it:
 | Background task service (separate Electron app) | 3999 | `127.0.0.1` | Authentication token required on all file endpoints (Bearer, X-Aartiq-Token, or ?token=) compared in constant time against the service token (options.authToken, AARTIQ_PDF_SYNC_TOKEN, or a generated per-process token), plus Host header validation against DNS rebinding. |
 <!-- SSOT:END network -->
 
-One of these binds all interfaces by default with no switch to restrict it. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
+One of these binds all interfaces by default: the WiFi sync server has to be reachable from the phone. `AARTIQ_WIFI_SYNC_HOST` narrows the bind to an address you name — set it to the loopback address and the server is reachable from this machine only. Every other listener is loopback-only by default. If you run Aartiq on a shared or untrusted network, that is the part to think about first.
 
 ### Known limits
 
@@ -161,7 +161,7 @@ The full list — product-wide, not just the test suite — lives on the [testin
 
 ## Capabilities
 
-- **Agent API & tool server** — one security-enforced tool registry over two transports: **MCP** (Claude Desktop and other MCP clients) and **HTTP** (local scripts, the in-product assistant, remote access over Tailscale / LAN). Both pass every call through the security pipeline.
+- **Agent API & tool server** — one security-enforced tool registry over two transports: **MCP** (Claude Desktop and other MCP clients) and **HTTP** (local scripts, the in-product assistant, and remote access over Tailscale / LAN — experimental: remote mode has no pairing UI yet, and is documented in the known limits). Both pass every call through the security pipeline.
 - **Multiple agents, one browser** — each connection gets a trust level that scopes its verbs and origins; a per-tab lock manager stops two agents colliding on form filling.
 - **Accessibility snapshots with stable `@ref` ids** — an AX tree whose interactive nodes carry identity-bound ids that survive navigation and DOM changes, instead of raw DOM dumps.
 - **Form filling** — credentials and profiles live in an encrypted vault (AES-GCM, passphrase-derived key); a field matcher autocompletes page inputs from it.
@@ -196,7 +196,7 @@ Google Gemini · OpenAI GPT · Anthropic Claude · Groq · xAI · Azure OpenAI �
 
 ## Performance
 
-Aartiq opens the Chromium window immediately and loads background services asynchronously, so the interface is usable before every subsystem has finished starting. Long-running automation runs as a background task, not a blocking modal.
+Aartiq shows the Chromium window first and loads background services asynchronously, so the interface is usable before every subsystem has finished starting. Long-running automation runs as a background task, not a blocking modal.
 
 ### Startup benchmark
 
@@ -259,11 +259,12 @@ cd Aartiq/aartiq-browser
 
 npm install
 
-# Next.js development server
+# Everything in one command: Next.js dev server on :3003 + Electron shell
 npm run dev
 
-# Electron shell
-npm run electron-start
+# Or run the two parts in separate terminals:
+#   terminal 1: npm run electron-dev   (Next.js dev server on :3003)
+#   terminal 2: npm run electron-start (Electron shell loading :3003)
 ```
 
 ### Android
@@ -334,13 +335,13 @@ Capability, approval ticket, risk tier, fail-closed — the vocabulary this READ
 | --- | --- | --- | --- |
 | Aartiq Browser — desktop, mobile, and core code | Apache-2.0 | `LICENSE + aartiq-browser/LICENSE.txt` | verified |
 | Aartiq MCP Server — aartiq-mcp/ | MIT | `aartiq-mcp/LICENSE` | verified |
-| Landing page / documentation site | Unlicensed (private repository) | `none` | verified |
+| Landing page / documentation site | Unlicensed (no LICENSE file) | `none` | verified |
 
 The MCP server is MIT-licensed for compatibility with Claude Desktop and other MCP clients.
 
 ### Trademark
 
-Aartiq™ is a trademark of Latestinssan. The open-source licence permits use, modification, and redistribution of the source code. It does not grant permission to use the Aartiq name, logo, trademarks, or visual identity. Modified distributions must be rebranded under a different name and must not present themselves as official Aartiq releases.
+Aartiq™ is a trademark of Latestinssan. Apache-2.0 permits use, modification, and redistribution of the source code but grants no right to the trademark. Trademark policy: a modified distribution must not present itself as an official Aartiq release or use the Aartiq name, logo, or visual identity in a way that implies it is one.
 <!-- SSOT:END license -->
 
 ---
@@ -356,4 +357,4 @@ It's what AI asks you before it acts.**
 
 **Aartiq™**
 
-© 2026 Aartiq™. All rights reserved.
+© 2026 Latestinssan. Aartiq™ is a trademark of Latestinssan.
