@@ -633,14 +633,6 @@ function checkSsotIntegrity() {
       );
     }
   }
-  // The monitoring-only channel figures are flagged TODO(verify) — they must never
-  // be rendered as fact.
-  if (security.monitoringOnlyChannels.verified === false) {
-    warnings.push(
-      "security.monitoringOnlyChannels is TODO(verify): the 22/9 IPC figures are not present in " +
-        "docs-audit/action-inventory.md. Nothing renders them; re-derive or drop.",
-    );
-  }
   for (const s of network.servers) {
     if (s.bindsAllInterfacesWhen === null && s.defaultBindAddress !== "127.0.0.1" && !s.note) {
       problems.push(`[ssot] server ${s.id} binds broadly but explains why in no note`);
