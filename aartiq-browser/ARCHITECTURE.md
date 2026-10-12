@@ -156,19 +156,34 @@ Actions are gated by an allowlist of registered capabilities:
 
 **Encryption**: AES-256-GCM + PBKDF2 (600K iterations). No silent base64 fallback.
 
-**Risk Levels:**
-- `LOW` - Safe, auto-executable
-- `MEDIUM` - Requires confirmation
-- `HIGH` - Requires explicit approval
-- `CRITICAL` - Blocked by default
+**Risk Levels** (`src/lib/shell-command-tiers.js` — the single per-command
+classifier, read by both the runtime and the generated docs):
 
-**Auto-Executable Commands:**
+- `LOW` - Read-only. Cannot write, reach the network, or run code.
+- `MEDIUM` - Writes files, runs installers, or reaches the network. Never auto-approved by default.
+- `HIGH` - Changes permissions or destroys state. `DESTRUCTIVE_COMMAND_PATTERNS` raises any match here.
+- `CRITICAL` - Refused at the policy gate before the grant store is consulted.
+
+`sudo`, `su`, `passwd`, `chgrp` and `rm` are rejected before any tier is consulted
+(`BLOCKED_COMMANDS`).
+
+**Low-tier commands — the only auto-approvable set.** `autoApproveLowRiskShell`
+covers the whole low tier and defaults to off; with it off a low-risk command
+shows the same dialog as any other. The low tier is read-only:
+
 ```javascript
-const SAFE_COMMANDS = [
-  'ls', 'pwd', 'echo', 'cat', 'grep', 'find',
-  'curl', 'wget', 'git status', 'git log'
+// src/lib/shell-command-tiers.js — the SHELL_TIERS.LOW entries
+const LOW = [
+  'ls', 'll', 'dir', 'pwd', 'cat', 'bat', 'head', 'tail', 'less', 'more',
+  'file', 'stat', 'wc', 'du', 'df', 'tree', 'grep', 'egrep', 'fgrep', 'rg',
+  'find', 'which', 'type', 'whoami', 'hostname', 'uname', 'date', 'echo',
+  'printf', 'true', 'sleep'
 ];
 ```
+
+Network- and script-capable binaries (`curl`, `wget`, `git`, `npm`, `node`,
+`python`, …) are **medium**, never auto-approved, and are refused "Allow Always".
+An unrecognised binary is **medium**, never low.
 
 ### Network Security (`src/core/network-security.js`)
 
